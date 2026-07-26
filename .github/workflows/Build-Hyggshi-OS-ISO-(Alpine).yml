@@ -1,0 +1,438 @@
+name: Build Hyggshi OS ISO (Alpine)
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: "Desktop environment"
+        required: false
+        type: choice
+        options: [xfce, lxqt, none]
+        default: "xfce"
+      alpine_version:
+        description: "Phiên bản Alpine (branch)"
+        required: false
+        type: choice
+        options: [edge, v3.20, v3.19]
+        default: "v3.20"
+      panel_style:
+        description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
+        required: false
+        type: choice
+        options: [windows10, classic]
+        default: "windows10"
+      icon_theme:
+        description: "Bộ icon (chỉ áp dụng cho XFCE)"
+        required: false
+        type: choice
+        options: [papirus, numix, breeze, adwaita]
+        default: "papirus"
+      username:
+        description: "Username mặc định trong live session"
+        required: false
+        default: "hyggshi"
+      user_password:
+        description: "Mật khẩu user (plaintext, chỉ dùng cho ISO test)"
+        required: false
+        default: "hyggshi"
+      hostname:
+        description: "Hostname máy"
+        required: false
+        default: "hyggshi-os"
+      timezone:
+        description: "Múi giờ (vd Asia/Ho_Chi_Minh, UTC)"
+        required: false
+        default: "Asia/Ho_Chi_Minh"
+      include_browser:
+        description: "Cài sẵn Firefox ESR?"
+        type: boolean
+        default: true
+      include_office:
+        description: "Cài sẵn LibreOffice?"
+        type: boolean
+        default: false
+      extra_packages:
+        description: "Gói apk thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
+        required: false
+        default: ""
+      release_iso:
+        description: "Attach ISO to a GitHub Release?"
+        type: boolean
+        default: false
+  push:
+    branches: [ main ]
+    paths:
+      - "build-hyggshi-os-alpine.yml"
+      - "iso-config/**"
+
+env:
+  DISTRO_NAME: "Hyggshi OS"
+  ALPINE_BRANCH: ${{ github.event.inputs.alpine_version || 'v3.20' }}
+  ISO_FILENAME: "hyggshi-os-alpine-${{ github.run_number }}.iso"
+  DE: ${{ github.event.inputs.desktop || 'xfce' }}
+  PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
+  ICON_THEME: ${{ github.event.inputs.icon_theme || 'papirus' }}
+  OS_USERNAME: ${{ github.event.inputs.username || 'hyggshi' }}
+  OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
+  OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
+  OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
+  INCLUDE_BROWSER: ${{ github.event.inputs.include_browser || 'true' }}
+  INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
+  EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
+  ALPINE_MIRROR: "https://dl-cdn.alpinelinux.org/alpine"
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    # Alpine không có debootstrap — bootstrap rootfs bằng apk-tools-static
+    # thay vì debootstrap/chroot kiểu Debian.
+    steps:
+      - name: Checkout repo (config files, Plymouth theme, branding...)
+        uses: actions/checkout@v4
+
+      - name: Free up disk space (runner mặc định ~14GB free, ISO build cần nhiều hơn)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+          df -h
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            squashfs-tools xorriso isolinux syslinux-efi \
+            grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools \
+            curl ca-certificates
+
+      - name: Bootstrap apk-tools-static (dùng để cài rootfs Alpine, thay debootstrap)
+        run: |
+          mkdir -p live-build/chroot
+          cd /tmp
+          APK_TOOLS_URL=$(curl -sL "${{ env.ALPINE_MIRROR }}/${{ env.ALPINE_BRANCH }}/main/x86_64/" \
+            | grep -oE 'apk-tools-static[^"]*\.apk' | head -n1)
+          curl -sLo apk-tools-static.apk "${{ env.ALPINE_MIRROR }}/${{ env.ALPINE_BRANCH }}/main/x86_64/${APK_TOOLS_URL}"
+          tar -xzf apk-tools-static.apk
+          sudo mv sbin/apk.static /usr/local/bin/apk.static
+
+      - name: Bootstrap base system into chroot (apk root install)
+        run: |
+          sudo /usr/local/bin/apk.static \
+            -X "${{ env.ALPINE_MIRROR }}/${{ env.ALPINE_BRANCH }}/main" \
+            -X "${{ env.ALPINE_MIRROR }}/${{ env.ALPINE_BRANCH }}/community" \
+            -U --allow-untrusted --root live-build/chroot --initdb \
+            add alpine-base
+
+      - name: Mount virtual filesystems for chroot
+        run: |
+          sudo mount --bind /dev live-build/chroot/dev
+          sudo mount --bind /run live-build/chroot/run
+          sudo chroot live-build/chroot mount -t proc none /proc
+          sudo chroot live-build/chroot mount -t sysfs none /sys
+          sudo cp /etc/resolv.conf live-build/chroot/etc/resolv.conf
+
+      - name: Configure APK repositories inside chroot
+        run: |
+          sudo tee live-build/chroot/etc/apk/repositories > /dev/null <<EOF
+          ${{ env.ALPINE_MIRROR }}/${{ env.ALPINE_BRANCH }}/main
+          ${{ env.ALPINE_MIRROR }}/${{ env.ALPINE_BRANCH }}/community
+          EOF
+
+      - name: Install desktop environment + Plymouth + Calamares (in chroot)
+        run: |
+          cat <<'EOF' | sudo tee live-build/chroot/tmp/install.sh
+          #!/bin/sh
+          set -e
+          apk update
+
+          apk add linux-lts linux-firmware alpine-conf openrc \
+            eudev networkmanager sudo tzdata plymouth \
+            lsb-release-lite calamares calamares-branding-generic
+
+          # hostname
+          echo "$OS_HOSTNAME" > /etc/hostname
+          echo "127.0.1.1 $OS_HOSTNAME" >> /etc/hosts
+
+          # timezone
+          setup-timezone -z "$OS_TIMEZONE" || ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
+
+          # openrc services cần cho live session
+          rc-update add networkmanager default || true
+          rc-update add udev sysinit || true
+          rc-update add udev-trigger sysinit || true
+
+          case "$DE" in
+            lxqt)
+              apk add lxqt sddm xorg-server xf86-video-fbdev mesa-dri-gallium
+              rc-update add sddm default || true
+              ;;
+            none)
+              echo "Không cài desktop environment (headless / tuỳ biến sau)."
+              ;;
+            *)
+              apk add xfce4 xfce4-panel xfce4-whiskermenu-plugin \
+                lightdm lightdm-gtk-greeter xorg-server xf86-video-fbdev \
+                mesa-dri-gallium git
+              rc-update add lightdm default || true
+
+              # icon theme theo lựa chọn
+              case "$ICON_THEME" in
+                numix)   apk add numix-icon-theme || true ;;
+                breeze)  apk add breeze-icon-theme || true ;;
+                adwaita) apk add adwaita-icon-theme || true ;;
+                *)       apk add papirus-icon-theme || true ;;
+              esac
+
+              # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
+              git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
+                /usr/share/themes/Windows-10 || true
+              ;;
+          esac
+
+          # trình duyệt / office (tùy chọn)
+          [ "$INCLUDE_BROWSER" = "true" ] && apk add firefox-esr
+          [ "$INCLUDE_OFFICE" = "true" ] && apk add libreoffice
+
+          # gói thêm do người dùng chỉ định
+          if [ -n "$EXTRA_PACKAGES" ]; then
+            apk add $EXTRA_PACKAGES || true
+          fi
+
+          # user mặc định cho live session
+          adduser -D -s /bin/sh "$OS_USERNAME" || true
+          echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
+          addgroup "$OS_USERNAME" wheel || true
+
+          rm -rf /var/cache/apk/*
+          EOF
+          sudo chmod +x live-build/chroot/tmp/install.sh
+          sudo chroot live-build/chroot env \
+            DE="${{ env.DE }}" \
+            ICON_THEME="${{ env.ICON_THEME }}" \
+            OS_USERNAME="${{ env.OS_USERNAME }}" \
+            OS_PASSWORD="${{ env.OS_PASSWORD }}" \
+            OS_HOSTNAME="${{ env.OS_HOSTNAME }}" \
+            OS_TIMEZONE="${{ env.OS_TIMEZONE }}" \
+            INCLUDE_BROWSER="${{ env.INCLUDE_BROWSER }}" \
+            INCLUDE_OFFICE="${{ env.INCLUDE_OFFICE }}" \
+            EXTRA_PACKAGES="${{ env.EXTRA_PACKAGES }}" \
+            /bin/sh /tmp/install.sh
+
+      - name: (Optional) Copy custom branding / Plymouth theme / wallpapers
+        run: |
+          if [ -d "iso-config/branding" ]; then
+            sudo cp -r iso-config/branding/* live-build/chroot/usr/share/plymouth/themes/ 2>/dev/null || true
+          fi
+
+          sudo mkdir -p live-build/chroot/usr/share/backgrounds/hyggshi
+          if [ -f "iso-config/branding/wallpaper.png" ]; then
+            sudo cp iso-config/branding/wallpaper.png \
+              live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
+            echo "Đã dùng wallpaper custom từ iso-config/branding/wallpaper.png"
+          else
+            echo "⚠️  Không thấy iso-config/branding/wallpaper.png — tự tạo wallpaper gradient tạm thời."
+            echo "    Thêm file wallpaper.png (1920x1080) vào iso-config/branding/ để dùng ảnh thật."
+            sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+            convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
+            sudo cp /tmp/wallpaper.png \
+              live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
+          fi
+
+      - name: Rebrand hệ thống (os-release, banner, distributor logo)
+        run: |
+          CHROOT=live-build/chroot
+
+          # /etc/os-release - phần lớn tool (neofetch, XFCE About, systemd-alt) đọc file này
+          cat <<EOF | sudo tee "$CHROOT/etc/os-release" > /dev/null
+          PRETTY_NAME="${{ env.DISTRO_NAME }} 1.0 (Alpine ${{ env.ALPINE_BRANCH }})"
+          NAME="${{ env.DISTRO_NAME }}"
+          VERSION_ID="1.0"
+          VERSION="1.0 (alpine-${{ env.ALPINE_BRANCH }})"
+          ID=hyggshios
+          ID_LIKE=alpine
+          HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
+          SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
+          BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
+          LOGO=distributor-logo
+          EOF
+          sudo ln -sf /etc/os-release "$CHROOT/usr/lib/os-release"
+
+          # banner khi login console (tty), không phải GUI
+          printf "${{ env.DISTRO_NAME }} \\\\n \\\\l\n\n" | sudo tee "$CHROOT/etc/issue" > /dev/null
+          echo "Welcome to ${{ env.DISTRO_NAME }} — built on Alpine Linux ${{ env.ALPINE_BRANCH }}" | \
+            sudo tee "$CHROOT/etc/motd" > /dev/null
+
+          # distributor logo - dùng cho About XFCE, một số greeter
+          if [ -f "iso-config/branding/logo.png" ]; then
+            sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+            for size in 16 22 24 32 48 64 128 192 256; do
+              DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
+              sudo mkdir -p "$DEST"
+              convert iso-config/branding/logo.png -resize ${size}x${size} "/tmp/logo-$size.png"
+              sudo cp "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
+            done
+            sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+            echo "Đã áp logo custom từ iso-config/branding/logo.png"
+          else
+            echo "⚠️  Không thấy iso-config/branding/logo.png trong repo — vẫn giữ logo Alpine mặc định."
+            echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
+          fi
+
+      - name: Configure XFCE panel style + icon theme + wallpaper (skel profile)
+        if: ${{ env.DE == 'xfce' }}
+        run: |
+          SKEL="live-build/chroot/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml"
+          sudo mkdir -p "$SKEL"
+
+          case "${{ env.ICON_THEME }}" in
+            numix)   ICON_NAME="Numix" ;;
+            breeze)  ICON_NAME="breeze" ;;
+            adwaita) ICON_NAME="Adwaita" ;;
+            *)       ICON_NAME="Papirus" ;;
+          esac
+
+          if [ "${{ env.PANEL_STYLE }}" = "windows10" ]; then
+          cat <<XML | sudo tee "$SKEL/xfce4-panel.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-panel" version="1.0">
+            <property name="configver" type="int" value="2"/>
+            <property name="panels" type="array">
+              <value type="int" value="1"/>
+              <property name="panel-1" type="empty">
+                <property name="position" type="string" value="p=8;x=0;y=0"/>
+                <property name="length" type="uint" value="100"/>
+                <property name="length-adjust" type="bool" value="true"/>
+                <property name="position-locked" type="bool" value="true"/>
+                <property name="size" type="uint" value="34"/>
+                <property name="mode" type="uint" value="0"/>
+                <property name="autohide-behavior" type="uint" value="0"/>
+                <property name="plugin-ids" type="array">
+                  <value type="int" value="1"/>
+                  <value type="int" value="2"/>
+                  <value type="int" value="3"/>
+                  <value type="int" value="4"/>
+                  <value type="int" value="5"/>
+                </property>
+              </property>
+            </property>
+            <property name="plugins" type="empty">
+              <property name="plugin-1" type="string" value="whiskermenu">
+                <property name="button-title" type="string" value=""/>
+                <property name="button-icon" type="string" value="start-here"/>
+                <property name="show-button-title" type="bool" value="false"/>
+              </property>
+              <property name="plugin-2" type="string" value="tasklist">
+                <property name="grouping" type="uint" value="1"/>
+                <property name="show-labels" type="bool" value="false"/>
+                <property name="show-handle" type="bool" value="false"/>
+              </property>
+              <property name="plugin-3" type="string" value="separator">
+                <property name="expand" type="bool" value="true"/>
+                <property name="style" type="uint" value="0"/>
+              </property>
+              <property name="plugin-4" type="string" value="systray"/>
+              <property name="plugin-5" type="string" value="clock">
+                <property name="digital-format" type="string" value="%H:%M  %d/%m/%Y"/>
+                <property name="digital-layout" type="uint" value="2"/>
+              </property>
+            </property>
+          </channel>
+          XML
+          fi
+
+          cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-desktop" version="1.0">
+            <property name="backdrop" type="empty">
+              <property name="screen0" type="empty">
+                <property name="monitor0" type="empty">
+                  <property name="workspace0" type="empty">
+                    <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
+                    <property name="image-style" type="int" value="5"/>
+                  </property>
+                </property>
+              </property>
+            </property>
+          </channel>
+          XML
+
+          cat <<XML | sudo tee "$SKEL/xsettings.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xsettings" version="1.0">
+            <property name="Net" type="empty">
+              <property name="IconThemeName" type="string" value="$ICON_NAME"/>
+              <property name="ThemeName" type="string" value="Windows-10"/>
+            </property>
+          </channel>
+          XML
+
+          cat <<XML | sudo tee "$SKEL/xfwm4.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfwm4" version="1.0">
+            <property name="general" type="empty">
+              <property name="theme" type="string" value="Windows-10"/>
+              <property name="button_layout" type="string" value="O|SHMC"/>
+            </property>
+          </channel>
+          XML
+
+          sudo chroot live-build/chroot chown -R root:root /etc/skel/.config
+
+          # user đã được tạo (adduser -D) TRƯỚC bước này nên đã copy sẵn config
+          # skel cũ. Ghi đè thẳng vào home để tránh dính config panel mặc định.
+          USER_HOME="live-build/chroot/home/${{ env.OS_USERNAME }}"
+          sudo rm -rf "$USER_HOME/.config/xfce4" "$USER_HOME/.cache"
+          sudo mkdir -p "$USER_HOME/.config"
+          sudo cp -r live-build/chroot/etc/skel/.config/xfce4 "$USER_HOME/.config/xfce4"
+          sudo chroot live-build/chroot chown -R "${{ env.OS_USERNAME }}:${{ env.OS_USERNAME }}" \
+            "/home/${{ env.OS_USERNAME }}/.config"
+
+      - name: Unmount chroot filesystems
+        run: |
+          sudo chroot live-build/chroot umount /proc || true
+          sudo chroot live-build/chroot umount /sys || true
+          sudo umount live-build/chroot/run || true
+          sudo umount live-build/chroot/dev || true
+
+      - name: Build squashfs from chroot
+        run: |
+          mkdir -p live-build/image/live
+          sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
+            -e boot -comp xz
+
+      - name: Prepare boot files (kernel + initramfs)
+        run: |
+          mkdir -p live-build/image/live
+          sudo cp live-build/chroot/boot/vmlinuz-lts live-build/image/live/vmlinuz
+          sudo cp live-build/chroot/boot/initramfs-lts live-build/image/live/initrd
+
+      - name: Build bootable ISO with grub
+        run: |
+          mkdir -p live-build/image/boot/grub
+          cat <<EOF > live-build/image/boot/grub/grub.cfg
+          set timeout=10
+          set default=0
+          menuentry "${{ env.DISTRO_NAME }} Live (Alpine)" {
+            linux /live/vmlinuz modules=loop,squashfs,sd-mod,usb-storage quiet
+            initrd /live/initrd
+          }
+          EOF
+
+          sudo grub-mkrescue -o "${{ env.ISO_FILENAME }}" live-build/image \
+            --compress=xz -- -volid "HYGGSHI_OS_ALPINE"
+
+          ls -lh "${{ env.ISO_FILENAME }}"
+
+      - name: Upload ISO as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggshi-os-alpine-iso
+          path: ${{ env.ISO_FILENAME }}
+          retention-days: 14
+
+      - name: Attach ISO to GitHub Release (optional)
+        if: ${{ github.event.inputs.release_iso == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ISO_FILENAME }}
+          tag_name: "hyggshi-os-alpine-${{ github.run_number }}"
+          name: "Hyggshi OS (Alpine) build #${{ github.run_number }}"
