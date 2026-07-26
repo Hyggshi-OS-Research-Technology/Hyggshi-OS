@@ -1,0 +1,152 @@
+name: Build Hyggshi OS ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: "Desktop environment (xfce / kde)"
+        required: false
+        default: "xfce"
+      release_iso:
+        description: "Attach ISO to a GitHub Release?"
+        type: boolean
+        default: false
+  push:
+    branches: [ main ]
+    paths:
+      - "build-hyggshi-os.yml"
+      - "iso-config/**"
+
+env:
+  DISTRO_NAME: "Hyggshi OS"
+  DISTRO_CODENAME: "bookworm"
+  ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
+  DE: ${{ github.event.inputs.desktop || 'xfce' }}
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    # debootstrap + chroot cần quyền root, và cần binfmt tắt an toàn cho amd64-on-amd64
+    steps:
+      - name: Checkout repo (config files, Plymouth theme, branding...)
+        uses: actions/checkout@v4
+
+      - name: Free up disk space (runner mặc định ~14GB free, ISO build cần nhiều hơn)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+          df -h
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap squashfs-tools xorriso isolinux syslinux-efi \
+            grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools \
+            live-boot live-boot-doc
+
+      - name: Debootstrap base system
+        run: |
+          sudo debootstrap --arch=amd64 --variant=minbase \
+            ${{ env.DISTRO_CODENAME }} live-build/chroot \
+            http://deb.debian.org/debian/
+
+      - name: Mount virtual filesystems for chroot
+        run: |
+          sudo mount --bind /dev live-build/chroot/dev
+          sudo mount --bind /run live-build/chroot/run
+          sudo chroot live-build/chroot mount -t proc none /proc
+          sudo chroot live-build/chroot mount -t sysfs none /sys
+
+      - name: Configure APT sources inside chroot
+        run: |
+          sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
+          deb http://deb.debian.org/debian ${{ env.DISTRO_CODENAME }} main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian ${{ env.DISTRO_CODENAME }}-updates main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security ${{ env.DISTRO_CODENAME }}-security main contrib non-free non-free-firmware
+          EOF
+          sudo cp /etc/resolv.conf live-build/chroot/etc/resolv.conf
+
+      - name: Install desktop environment + Plymouth + Calamares (in chroot)
+        run: |
+          cat <<'EOF' | sudo tee live-build/chroot/tmp/install.sh
+          #!/bin/bash
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y linux-image-amd64 live-boot systemd-sysv \
+            plymouth plymouth-themes network-manager sudo locales \
+            calamares calamares-settings-debian
+
+          if [ "$DE" = "kde" ]; then
+            apt-get install -y kde-plasma-desktop sddm
+          else
+            apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter
+          fi
+
+          # user mặc định cho live session
+          useradd -m -s /bin/bash -G sudo hyggshi || true
+          echo "hyggshi:hyggshi" | chpasswd
+
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          EOF
+          sudo chmod +x live-build/chroot/tmp/install.sh
+          sudo chroot live-build/chroot env DE="${{ env.DE }}" /tmp/install.sh
+
+      - name: (Optional) Copy custom branding / Plymouth theme / wallpapers
+        run: |
+          if [ -d "iso-config/branding" ]; then
+            sudo cp -r iso-config/branding/* live-build/chroot/usr/share/plymouth/themes/ 2>/dev/null || true
+          fi
+
+      - name: Unmount chroot filesystems
+        run: |
+          sudo chroot live-build/chroot umount /proc || true
+          sudo chroot live-build/chroot umount /sys || true
+          sudo umount live-build/chroot/run || true
+          sudo umount live-build/chroot/dev || true
+
+      - name: Build squashfs from chroot
+        run: |
+          mkdir -p live-build/image/live
+          sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
+            -e boot -comp xz
+
+      - name: Prepare boot files (kernel + initrd)
+        run: |
+          mkdir -p live-build/image/live
+          sudo cp live-build/chroot/boot/vmlinuz-* live-build/image/live/vmlinuz
+          sudo cp live-build/chroot/boot/initrd.img-* live-build/image/live/initrd
+
+      - name: Build bootable ISO with grub
+        run: |
+          mkdir -p live-build/image/boot/grub
+          cat <<EOF > live-build/image/boot/grub/grub.cfg
+          set timeout=10
+          set default=0
+          menuentry "${{ env.DISTRO_NAME }} Live" {
+            linux /live/vmlinuz boot=live quiet splash
+            initrd /live/initrd
+          }
+          EOF
+
+          sudo grub-mkrescue -o "${{ env.ISO_FILENAME }}" live-build/image \
+            --compress=xz -- -volid "HYGGSHI_OS"
+
+          ls -lh "${{ env.ISO_FILENAME }}"
+
+      - name: Upload ISO as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggshi-os-iso
+          path: ${{ env.ISO_FILENAME }}
+          retention-days: 14
+
+      - name: Attach ISO to GitHub Release (optional)
+        if: ${{ github.event.inputs.release_iso == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ISO_FILENAME }}
+          tag_name: "hyggshi-os-${{ github.run_number }}"
+          name: "Hyggshi OS build #${{ github.run_number }}"
