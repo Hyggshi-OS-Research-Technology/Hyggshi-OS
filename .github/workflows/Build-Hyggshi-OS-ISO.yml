@@ -19,7 +19,7 @@ on:
 
 env:
   DISTRO_NAME: "Hyggshi OS"
-  DISTRO_CODENAME: "bookworm"
+  DISTRO_CODENAME: "trixie"
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
 
@@ -47,6 +47,7 @@ jobs:
 
       - name: Debootstrap base system
         run: |
+          mkdir -p live-build/chroot
           sudo debootstrap --arch=amd64 --variant=minbase \
             ${{ env.DISTRO_CODENAME }} live-build/chroot \
             http://deb.debian.org/debian/
