@@ -134,7 +134,7 @@ jobs:
           apt-get update
           apt-get install -y linux-image-amd64 live-boot systemd-sysv \
             plymouth plymouth-themes network-manager sudo locales tzdata \
-            calamares calamares-settings-debian
+            lsb-release calamares calamares-settings-debian
 
           # hostname
           echo "$OS_HOSTNAME" > /etc/hostname
@@ -205,6 +205,55 @@ jobs:
           else
             sudo cp live-build/chroot/usr/share/images/desktop-base/desktop-background \
               live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png 2>/dev/null || true
+          fi
+
+      - name: Rebrand hệ thống (os-release, lsb-release, banner, distributor logo)
+        run: |
+          CHROOT=live-build/chroot
+
+          # /etc/os-release - phần lớn tool (neofetch, GNOME/Xfce About, systemd) đọc file này
+          cat <<EOF | sudo tee "$CHROOT/etc/os-release" > /dev/null
+          PRETTY_NAME="${{ env.DISTRO_NAME }} 1.0 (${{ env.DISTRO_CODENAME }})"
+          NAME="${{ env.DISTRO_NAME }}"
+          VERSION_ID="1.0"
+          VERSION="1.0 (${{ env.DISTRO_CODENAME }})"
+          VERSION_CODENAME=${{ env.DISTRO_CODENAME }}
+          ID=hyggshios
+          ID_LIKE=debian
+          HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
+          SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
+          BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
+          LOGO=distributor-logo
+          EOF
+          sudo ln -sf /etc/os-release "$CHROOT/usr/lib/os-release"
+
+          # /etc/lsb-release - lệnh `lsb_release -a` và nhiều app khác đọc file này
+          cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
+          DISTRIB_ID=HyggshiOS
+          DISTRIB_RELEASE=1.0
+          DISTRIB_CODENAME=${{ env.DISTRO_CODENAME }}
+          DISTRIB_DESCRIPTION="${{ env.DISTRO_NAME }} 1.0"
+          EOF
+
+          # banner khi login console (tty), không phải GUI
+          printf "${{ env.DISTRO_NAME }} \\\\n \\\\l\n\n" | sudo tee "$CHROOT/etc/issue" > /dev/null
+          echo "Welcome to ${{ env.DISTRO_NAME }} — built on Debian ${{ env.DISTRO_CODENAME }}" | \
+            sudo tee "$CHROOT/etc/motd" > /dev/null
+
+          # distributor logo - dùng cho About Xfce/GNOME, một số greeter
+          if [ -f "iso-config/branding/logo.png" ]; then
+            sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+            for size in 16 22 24 32 48 64 128 192 256; do
+              DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
+              sudo mkdir -p "$DEST"
+              convert iso-config/branding/logo.png -resize ${size}x${size} "/tmp/logo-$size.png"
+              sudo cp "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
+            done
+            sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+            echo "Đã áp logo custom từ iso-config/branding/logo.png"
+          else
+            echo "⚠️  Không thấy iso-config/branding/logo.png trong repo — vẫn giữ logo Debian mặc định."
+            echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
           fi
 
       - name: Configure XFCE panel style + icon theme + wallpaper (skel profile)
