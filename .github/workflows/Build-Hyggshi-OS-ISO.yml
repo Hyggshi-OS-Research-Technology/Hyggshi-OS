@@ -59,6 +59,10 @@ on:
         description: "Attach ISO to a GitHub Release?"
         type: boolean
         default: false
+      debug_mode:
+        description: "Bật debug (log chi tiết + xuất debug-info.txt kèm ISO)"
+        type: boolean
+        default: false
   push:
     branches: [ main ]
     paths:
@@ -79,6 +83,7 @@ env:
   INCLUDE_BROWSER: ${{ github.event.inputs.include_browser || 'true' }}
   INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
+  DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
 
 jobs:
   build-iso:
@@ -130,6 +135,7 @@ jobs:
           cat <<'EOF' | sudo tee live-build/chroot/tmp/install.sh
           #!/bin/bash
           set -e
+          [ "$DEBUG_MODE" = "true" ] && set -x
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y linux-image-amd64 live-boot systemd-sysv \
@@ -182,6 +188,7 @@ jobs:
           sudo chmod +x live-build/chroot/tmp/install.sh
           sudo chroot live-build/chroot env \
             DE="${{ env.DE }}" \
+            DEBUG_MODE="${{ env.DEBUG_MODE }}" \
             ICON_THEME="${{ env.ICON_THEME }}" \
             OS_USERNAME="${{ env.OS_USERNAME }}" \
             OS_PASSWORD="${{ env.OS_PASSWORD }}" \
@@ -190,7 +197,7 @@ jobs:
             INCLUDE_BROWSER="${{ env.INCLUDE_BROWSER }}" \
             INCLUDE_OFFICE="${{ env.INCLUDE_OFFICE }}" \
             EXTRA_PACKAGES="${{ env.EXTRA_PACKAGES }}" \
-            /tmp/install.sh
+            /tmp/install.sh 2>&1 | tee install-debug.log
 
       - name: (Optional) Copy custom branding / Plymouth theme / wallpapers
         run: |
@@ -444,6 +451,70 @@ jobs:
           sudo chroot live-build/chroot umount /sys || true
           sudo umount live-build/chroot/run || true
           sudo umount live-build/chroot/dev || true
+
+      - name: Collect debug info (chỉ khi debug_mode = true)
+        if: ${{ env.DEBUG_MODE == 'true' }}
+        run: |
+          CHROOT=live-build/chroot
+          {
+            echo "===== Inputs / env ====="
+            echo "DE=${{ env.DE }} | DISTRO_CODENAME=${{ env.DISTRO_CODENAME }} | PANEL_STYLE=${{ env.PANEL_STYLE }} | ICON_THEME=${{ env.ICON_THEME }}"
+            echo "OS_USERNAME=${{ env.OS_USERNAME }} | OS_HOSTNAME=${{ env.OS_HOSTNAME }} | OS_TIMEZONE=${{ env.OS_TIMEZONE }}"
+            echo
+
+            echo "===== Disk usage (runner) ====="
+            df -h
+            echo
+
+            echo "===== iso-config/branding contents ====="
+            find iso-config/branding -type f -exec ls -la {} \; 2>/dev/null || echo "(không có thư mục iso-config/branding)"
+            echo
+
+            echo "===== /etc/os-release trong chroot ====="
+            cat "$CHROOT/etc/os-release" 2>/dev/null
+            echo
+
+            echo "===== /etc/lsb-release trong chroot ====="
+            cat "$CHROOT/etc/lsb-release" 2>/dev/null
+            echo
+
+            echo "===== backgrounds/hyggshi trong chroot ====="
+            ls -la "$CHROOT/usr/share/backgrounds/hyggshi/" 2>/dev/null
+            echo
+
+            echo "===== distributor-logo đã ghi vào hicolor (128x128) ====="
+            ls -la "$CHROOT/usr/share/icons/hicolor/128x128/apps/" 2>/dev/null | grep distributor
+            echo
+
+            echo "===== /usr/local/bin/hyggshi-set-wallpaper.sh ====="
+            cat "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh" 2>/dev/null
+            echo
+
+            echo "===== ~/.config/autostart của user ====="
+            ls -la "$CHROOT/home/${{ env.OS_USERNAME }}/.config/autostart/" 2>/dev/null
+            echo
+
+            echo "===== xfconf xfce4-desktop.xml (skel) ====="
+            cat "$CHROOT/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" 2>/dev/null
+            echo
+
+            echo "===== xfconf xfce4-panel.xml (skel) ====="
+            cat "$CHROOT/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" 2>/dev/null
+          } > debug-info.txt
+
+          echo "----- debug-info.txt preview -----"
+          cat debug-info.txt
+
+      - name: Upload debug artifact (log build + debug-info.txt)
+        if: ${{ env.DEBUG_MODE == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggshi-os-debug
+          path: |
+            install-debug.log
+            debug-info.txt
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Build squashfs from chroot
         run: |
