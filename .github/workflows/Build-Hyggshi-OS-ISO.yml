@@ -369,23 +369,52 @@ jobs:
           # cứng theo XML phía trên có thể không khớp và bị fallback default)
           cat <<'SCRIPT' | sudo tee live-build/chroot/usr/local/bin/hyggshi-set-wallpaper.sh > /dev/null
           #!/bin/bash
+          LOG="/tmp/hyggshi-wallpaper.log"
+          exec > "$LOG" 2>&1
+          echo "=== hyggshi-set-wallpaper.sh $(date) ==="
+
           sleep 2
           WALL="/usr/share/backgrounds/hyggshi/wallpaper.png"
-          [ -f "$WALL" ] || exit 0
+          echo "WALL=$WALL"
+          if [ ! -f "$WALL" ]; then
+            echo "LỖI: không tìm thấy file wallpaper, dừng."
+            exit 0
+          fi
 
           MON=$(xfconf-query -c xfce4-desktop -p /backdrop/screen0 -l 2>/dev/null \
             | grep -oP '(?<=/backdrop/screen0/)[^/]+' | sort -u | head -n1)
           [ -z "$MON" ] && MON=$(xrandr 2>/dev/null | awk '/ connected/{print $1; exit}')
           [ -z "$MON" ] && MON="monitor0"
+          echo "MON=$MON"
 
           for WS in 0 1 2 3; do
             PROP="/backdrop/screen0/$MON/workspace$WS/last-image"
             STYLE="/backdrop/screen0/$MON/workspace$WS/image-style"
-            xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>/dev/null \
-              || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>/dev/null
-            xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>/dev/null \
-              || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>/dev/null
+            xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
+              || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
+            xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
+              || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
           done
+
+          echo "--- verify sau khi set ---"
+          VERIFY=$(xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$MON/workspace0/last-image" 2>&1)
+          echo "last-image hiện tại = $VERIFY"
+
+          # ép xfdesktop nạp lại wallpaper (property có thể đã đúng nhưng
+          # xfdesktop chưa kịp lắng nghe thay đổi lúc mới login)
+          echo "--- reload xfdesktop ---"
+          xfdesktop --reload 2>>"$LOG"
+          sleep 1
+
+          # nếu vẫn không khớp file mong muốn -> restart hẳn xfdesktop
+          if [ "$VERIFY" != "$WALL" ]; then
+            echo "Verify không khớp, thử killall + restart xfdesktop"
+            killall xfdesktop 2>>"$LOG"
+            sleep 1
+            nohup xfdesktop >>"$LOG" 2>&1 &
+          fi
+
+          echo "=== xong ==="
           SCRIPT
           sudo chmod +x live-build/chroot/usr/local/bin/hyggshi-set-wallpaper.sh
 
