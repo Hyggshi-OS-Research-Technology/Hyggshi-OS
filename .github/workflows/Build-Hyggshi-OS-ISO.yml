@@ -199,12 +199,13 @@ jobs:
           fi
 
           sudo mkdir -p live-build/chroot/usr/share/backgrounds/hyggshi
-          if [ -f "iso-config/branding/wallpaper.png" ]; then
-            sudo cp iso-config/branding/wallpaper.png \
+          WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+          if [ -n "$WALLPAPER_FILE" ]; then
+            sudo cp "$WALLPAPER_FILE" \
               live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
-            echo "Đã dùng wallpaper custom từ iso-config/branding/wallpaper.png"
+            echo "Đã dùng wallpaper custom: $WALLPAPER_FILE"
           else
-            echo "⚠️  Không thấy iso-config/branding/wallpaper.png — tự tạo wallpaper gradient tạm thời."
+            echo "⚠️  Không thấy file wallpaper trong iso-config/branding/ — tự tạo wallpaper gradient tạm thời."
             echo "    Thêm file wallpaper.png (1920x1080) vào iso-config/branding/ để dùng ảnh thật."
             sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
             convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
@@ -246,18 +247,19 @@ jobs:
             sudo tee "$CHROOT/etc/motd" > /dev/null
 
           # distributor logo - dùng cho About Xfce/GNOME, một số greeter
-          if [ -f "iso-config/branding/logo.png" ]; then
+          LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+          if [ -n "$LOGO_FILE" ]; then
             sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
             for size in 16 22 24 32 48 64 128 192 256; do
               DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
               sudo mkdir -p "$DEST"
-              convert iso-config/branding/logo.png -resize ${size}x${size} "/tmp/logo-$size.png"
+              convert "$LOGO_FILE" -resize ${size}x${size} "/tmp/logo-$size.png"
               sudo cp "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
             done
             sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
-            echo "Đã áp logo custom từ iso-config/branding/logo.png"
+            echo "Đã áp logo custom: $LOGO_FILE"
           else
-            echo "⚠️  Không thấy iso-config/branding/logo.png trong repo — vẫn giữ logo Debian mặc định."
+            echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo Debian mặc định."
             echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
           fi
 
