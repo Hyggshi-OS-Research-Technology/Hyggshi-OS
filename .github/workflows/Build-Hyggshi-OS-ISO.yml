@@ -105,6 +105,7 @@ env:
   INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+  WALLPAPER_URL: "https://raw.githubusercontent.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/main/iso-config/branding/Wallpaper.png"
 
 jobs:
   build-iso:
@@ -311,14 +312,28 @@ jobs:
           fi
 
           sudo mkdir -p live-build/chroot/usr/share/backgrounds/hyggshi
+
+          # 1. Ưu tiên file wallpaper có sẵn trong repo (checkout local)
           WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+
+          # 2. Nếu không có, tải trực tiếp Wallpaper.png từ GitHub
+          if [ -z "$WALLPAPER_FILE" ]; then
+            echo "Không thấy wallpaper trong repo local, tải trực tiếp từ GitHub..."
+            if curl -fsSL "${{ env.WALLPAPER_URL }}" -o /tmp/wallpaper-remote.png && [ -s /tmp/wallpaper-remote.png ]; then
+              WALLPAPER_FILE=/tmp/wallpaper-remote.png
+              echo "Tải thành công: ${{ env.WALLPAPER_URL }}"
+            else
+              echo "Tải thất bại từ raw.githubusercontent.com"
+            fi
+          fi
+
+          # 3. Áp dụng, hoặc fallback gradient nếu cả 2 cách trên đều fail
           if [ -n "$WALLPAPER_FILE" ]; then
             sudo cp "$WALLPAPER_FILE" \
               live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
-            echo "Đã dùng wallpaper custom: $WALLPAPER_FILE"
+            echo "Đã dùng wallpaper: $WALLPAPER_FILE"
           else
-            echo "⚠️  Không thấy file wallpaper trong iso-config/branding/ — tự tạo wallpaper gradient tạm thời."
-            echo "    Thêm file wallpaper.png (1920x1080) vào iso-config/branding/ để dùng ảnh thật."
+            echo "⚠️  Không lấy được wallpaper — tự tạo wallpaper gradient tạm thời."
             sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
             convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
             sudo cp /tmp/wallpaper.png \
@@ -482,55 +497,69 @@ jobs:
 
           sudo chroot live-build/chroot chown -R root:root /etc/skel/.config
 
-          # === Script tự dò đúng tên monitor để set wallpaper lúc login ===
-          # (path xfconf như "monitor0" chỉ đúng trên một số máy; QEMU/VM
-          # thường đặt tên monitor khác, ví dụ "Virtual-1" -> wallpaper set
-          # cứng theo XML phía trên có thể không khớp và bị fallback default)
+          # === Script tự dò đúng property monitor/workspace + retry, chạy sau khi
+          # xfdesktop thật sự khởi động (tránh race condition lúc login) ===
           cat <<'SCRIPT' | sudo tee live-build/chroot/usr/local/bin/hyggshi-set-wallpaper.sh > /dev/null
           #!/bin/bash
           LOG="/tmp/hyggshi-wallpaper.log"
           exec > "$LOG" 2>&1
           echo "=== hyggshi-set-wallpaper.sh $(date) ==="
 
-          sleep 2
           WALL="/usr/share/backgrounds/hyggshi/wallpaper.png"
-          echo "WALL=$WALL"
           if [ ! -f "$WALL" ]; then
             echo "LỖI: không tìm thấy file wallpaper, dừng."
             exit 0
           fi
 
-          MON=$(xfconf-query -c xfce4-desktop -p /backdrop/screen0 -l 2>/dev/null \
-            | grep -oP '(?<=/backdrop/screen0/)[^/]+' | sort -u | head -n1)
-          [ -z "$MON" ] && MON=$(xrandr 2>/dev/null | awk '/ connected/{print $1; exit}')
-          [ -z "$MON" ] && MON="monitor0"
-          echo "MON=$MON"
-
-          for WS in 0 1 2 3; do
-            PROP="/backdrop/screen0/$MON/workspace$WS/last-image"
-            STYLE="/backdrop/screen0/$MON/workspace$WS/image-style"
-            xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
-              || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
-            xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
-              || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
+          # Chờ xfdesktop thật sự chạy (tối đa 15s), tránh race condition lúc login
+          for i in $(seq 1 15); do
+            if pgrep -x xfdesktop >/dev/null; then
+              echo "xfdesktop đã chạy sau ${i}s"
+              break
+            fi
+            sleep 1
           done
+          sleep 1
 
-          echo "--- verify sau khi set ---"
-          VERIFY=$(xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$MON/workspace0/last-image" 2>&1)
-          echo "last-image hiện tại = $VERIFY"
+          apply_wallpaper() {
+            # liệt kê MỌI property last-image mà xfdesktop đang thực sự dùng
+            # (tên monitor như "monitor0" không đúng trên mọi máy/VM, ví dụ QEMU
+            # thường đặt tên khác như "Virtual-1")
+            PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
+            if [ -z "$PROPS" ]; then
+              echo "Chưa có property nào, fallback monitor0/workspace0"
+              PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
+            fi
+            echo "PROPS tìm được:"
+            echo "$PROPS"
 
-          # ép xfdesktop nạp lại wallpaper (property có thể đã đúng nhưng
-          # xfdesktop chưa kịp lắng nghe thay đổi lúc mới login)
-          echo "--- reload xfdesktop ---"
+            while read -r PROP; do
+              [ -z "$PROP" ] && continue
+              STYLE="${PROP%last-image}image-style"
+              xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
+                || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
+              xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
+                || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
+              echo "Set $PROP -> $WALL"
+            done <<< "$PROPS"
+          }
+
+          apply_wallpaper
           xfdesktop --reload 2>>"$LOG"
           sleep 1
 
-          # nếu vẫn không khớp file mong muốn -> restart hẳn xfdesktop
-          if [ "$VERIFY" != "$WALL" ]; then
-            echo "Verify không khớp, thử killall + restart xfdesktop"
-            killall xfdesktop 2>>"$LOG"
-            sleep 1
-            nohup xfdesktop >>"$LOG" 2>&1 &
+          echo "--- verify sau khi set ---"
+          CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
+          if [ -n "$CHECK" ]; then
+            VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
+            echo "verify: $CHECK = $VAL"
+            if [ "$VAL" != "$WALL" ]; then
+              echo "Verify không khớp, retry lần 2 + restart xfdesktop"
+              apply_wallpaper
+              killall xfdesktop 2>>"$LOG"
+              sleep 1
+              nohup xfdesktop >>"$LOG" 2>&1 &
+            fi
           fi
 
           echo "=== xong ==="
