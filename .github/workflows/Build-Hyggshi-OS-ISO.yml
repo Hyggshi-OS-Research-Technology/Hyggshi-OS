@@ -82,7 +82,8 @@ jobs:
           if [ "$DE" = "kde" ]; then
             apt-get install -y kde-plasma-desktop sddm
           else
-            apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter
+            apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
+              xfce4-whiskermenu-plugin papirus-icon-theme
           fi
 
           # user mặc định cho live session
@@ -100,6 +101,88 @@ jobs:
           if [ -d "iso-config/branding" ]; then
             sudo cp -r iso-config/branding/* live-build/chroot/usr/share/plymouth/themes/ 2>/dev/null || true
           fi
+
+          sudo mkdir -p live-build/chroot/usr/share/backgrounds/hyggshi
+          if [ -f "iso-config/branding/wallpaper.png" ]; then
+            sudo cp iso-config/branding/wallpaper.png \
+              live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
+          else
+            sudo cp live-build/chroot/usr/share/images/desktop-base/desktop-background \
+              live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png 2>/dev/null || true
+          fi
+
+      - name: Configure Windows-10-style XFCE panel + wallpaper (skel profile)
+        run: |
+          SKEL="live-build/chroot/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml"
+          sudo mkdir -p "$SKEL"
+
+          cat <<'XML' | sudo tee "$SKEL/xfce4-panel.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-panel" version="1.0">
+            <property name="configver" type="int" value="2"/>
+            <property name="panels" type="array">
+              <value type="int" value="1"/>
+              <property name="panel-1" type="empty">
+                <property name="position" type="string" value="p=8;x=0;y=0"/>
+                <property name="length" type="uint" value="100"/>
+                <property name="length-adjust" type="bool" value="true"/>
+                <property name="position-locked" type="bool" value="true"/>
+                <property name="size" type="uint" value="34"/>
+                <property name="mode" type="uint" value="0"/>
+                <property name="autohide-behavior" type="uint" value="0"/>
+                <property name="plugin-ids" type="array">
+                  <value type="int" value="1"/>
+                  <value type="int" value="2"/>
+                  <value type="int" value="3"/>
+                  <value type="int" value="4"/>
+                  <value type="int" value="5"/>
+                </property>
+              </property>
+            </property>
+            <property name="plugins" type="empty">
+              <property name="plugin-1" type="string" value="whiskermenu"/>
+              <property name="plugin-2" type="string" value="tasklist">
+                <property name="grouping" type="uint" value="1"/>
+              </property>
+              <property name="plugin-3" type="string" value="separator">
+                <property name="expand" type="bool" value="true"/>
+                <property name="style" type="uint" value="0"/>
+              </property>
+              <property name="plugin-4" type="string" value="systray"/>
+              <property name="plugin-5" type="string" value="clock">
+                <property name="digital-format" type="string" value="%H:%M  %d/%m/%Y"/>
+              </property>
+            </property>
+          </channel>
+          XML
+
+          cat <<'XML' | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-desktop" version="1.0">
+            <property name="backdrop" type="empty">
+              <property name="screen0" type="empty">
+                <property name="monitor0" type="empty">
+                  <property name="workspace0" type="empty">
+                    <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
+                    <property name="image-style" type="int" value="5"/>
+                  </property>
+                </property>
+              </property>
+            </property>
+          </channel>
+          XML
+
+          cat <<'XML' | sudo tee "$SKEL/xsettings.xml" > /dev/null
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xsettings" version="1.0">
+            <property name="Net" type="empty">
+              <property name="IconThemeName" type="string" value="Papirus-Dark"/>
+              <property name="ThemeName" type="string" value="Adwaita-dark"/>
+            </property>
+          </channel>
+          XML
+
+          sudo chroot live-build/chroot chown -R root:root /etc/skel/.config
 
       - name: Unmount chroot filesystems
         run: |
