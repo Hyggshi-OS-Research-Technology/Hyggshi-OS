@@ -330,7 +330,14 @@ jobs:
           CHROOT=live-build/chroot
 
           # /etc/os-release - phần lớn tool (neofetch, GNOME/Xfce About, systemd) đọc file này
-          cat <<EOF | sudo tee "$CHROOT/etc/os-release" > /dev/null
+          # Debian mặc định để /etc/os-release là symlink -> ../usr/lib/os-release.
+          # Ta xoá symlink cũ, ghi nội dung THẬT vào usr/lib/os-release, rồi tạo lại
+          # /etc/os-release như một symlink TƯƠNG ĐỐI (không phải tuyệt đối) trỏ tới
+          # nó. Dùng đường dẫn tuyệt đối "/etc/os-release" ở đây từng gây ra vòng lặp
+          # symlink (etc -> usr/lib -> etc -> ...) khi đọc từ ngoài chroot, khiến
+          # os-release thật sự đọc được lại là của máy host/runner.
+          sudo rm -f "$CHROOT/etc/os-release" "$CHROOT/usr/lib/os-release"
+          cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
           PRETTY_NAME="${{ env.DISTRO_NAME }} 1.0 (dựa trên ${{ env.DISTRO_LABEL }})"
           NAME="${{ env.DISTRO_NAME }}"
           VERSION_ID="1.0"
@@ -343,7 +350,7 @@ jobs:
           BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
           LOGO=distributor-logo
           EOF
-          sudo ln -sf /etc/os-release "$CHROOT/usr/lib/os-release"
+          sudo ln -sf ../usr/lib/os-release "$CHROOT/etc/os-release"
 
           # /etc/lsb-release - lệnh `lsb_release -a` và nhiều app khác đọc file này
           cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
