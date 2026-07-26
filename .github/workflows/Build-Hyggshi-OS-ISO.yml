@@ -577,45 +577,48 @@ jobs:
             echo
 
             echo "===== /etc/apt/sources.list trong chroot ====="
-            cat "$CHROOT/etc/apt/sources.list" 2>/dev/null
+            cat "$CHROOT/etc/apt/sources.list" 2>/dev/null || true
             echo
 
             echo "===== /etc/apt/sources.list.d/ trong chroot ====="
+            shopt -s nullglob
             for f in "$CHROOT"/etc/apt/sources.list.d/*; do
-              [ -f "$f" ] && { echo "--- $f ---"; cat "$f"; }
+              echo "--- $f ---"
+              cat "$f" || true
             done
+            shopt -u nullglob
             echo
 
             echo "===== /etc/os-release trong chroot ====="
-            cat "$CHROOT/etc/os-release" 2>/dev/null
+            cat "$CHROOT/etc/os-release" 2>/dev/null || true
             echo
 
             echo "===== /etc/lsb-release trong chroot ====="
-            cat "$CHROOT/etc/lsb-release" 2>/dev/null
+            cat "$CHROOT/etc/lsb-release" 2>/dev/null || true
             echo
 
             echo "===== backgrounds/hyggshi trong chroot ====="
-            ls -la "$CHROOT/usr/share/backgrounds/hyggshi/" 2>/dev/null
+            ls -la "$CHROOT/usr/share/backgrounds/hyggshi/" 2>/dev/null || true
             echo
 
             echo "===== distributor-logo đã ghi vào hicolor (128x128) ====="
-            ls -la "$CHROOT/usr/share/icons/hicolor/128x128/apps/" 2>/dev/null | grep distributor
+            ls -la "$CHROOT/usr/share/icons/hicolor/128x128/apps/" 2>/dev/null | grep distributor || true
             echo
 
             echo "===== /usr/local/bin/hyggshi-set-wallpaper.sh ====="
-            cat "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh" 2>/dev/null
+            cat "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh" 2>/dev/null || true
             echo
 
             echo "===== ~/.config/autostart của user ====="
-            ls -la "$CHROOT/home/${{ env.OS_USERNAME }}/.config/autostart/" 2>/dev/null
+            ls -la "$CHROOT/home/${{ env.OS_USERNAME }}/.config/autostart/" 2>/dev/null || true
             echo
 
             echo "===== xfconf xfce4-desktop.xml (skel) ====="
-            cat "$CHROOT/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" 2>/dev/null
+            cat "$CHROOT/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" 2>/dev/null || true
             echo
 
             echo "===== xfconf xfce4-panel.xml (skel) ====="
-            cat "$CHROOT/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" 2>/dev/null
+            cat "$CHROOT/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" 2>/dev/null || true
           } > debug-info.txt
 
           echo "----- debug-info.txt preview -----"
