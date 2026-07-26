@@ -3,18 +3,36 @@ name: Build Hyggshi OS ISO
 on:
   workflow_dispatch:
     inputs:
+      distro:
+        description: "Bản phân phối gốc (base distro)"
+        required: false
+        type: choice
+        options: [debian, ubuntu, linuxmint]
+        default: "debian"
+      debian_version:
+        description: "Phiên bản Debian (chỉ áp dụng khi distro = debian)"
+        required: false
+        type: choice
+        options: [trixie, bookworm, bullseye]
+        default: "trixie"
+      ubuntu_version:
+        description: "Phiên bản Ubuntu (chỉ áp dụng khi distro = ubuntu)"
+        required: false
+        type: choice
+        options: [noble, mantic, jammy, focal]
+        default: "noble"
+      mint_version:
+        description: "Phiên bản Linux Mint (chỉ áp dụng khi distro = linuxmint)"
+        required: false
+        type: choice
+        options: ["22", "21.3", "21.2"]
+        default: "22"
       desktop:
         description: "Desktop environment"
         required: false
         type: choice
         options: [xfce, kde]
         default: "xfce"
-      debian_version:
-        description: "Phiên bản Debian (codename)"
-        required: false
-        type: choice
-        options: [trixie, bookworm, bullseye]
-        default: "trixie"
       panel_style:
         description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
         required: false
@@ -71,7 +89,10 @@ on:
 
 env:
   DISTRO_NAME: "Hyggshi OS"
-  DISTRO_CODENAME: ${{ github.event.inputs.debian_version || 'trixie' }}
+  BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
+  DEBIAN_VERSION: ${{ github.event.inputs.debian_version || 'trixie' }}
+  UBUNTU_VERSION: ${{ github.event.inputs.ubuntu_version || 'noble' }}
+  MINT_VERSION: ${{ github.event.inputs.mint_version || '22' }}
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
   PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
@@ -107,12 +128,58 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools \
             live-boot live-boot-doc
 
+      - name: Resolve base distro (codename, mirror, apt template)
+        id: resolve_distro
+        run: |
+          set -e
+          case "${{ env.BASE_DISTRO }}" in
+            debian)
+              BASE_CODENAME="${{ env.DEBIAN_VERSION }}"
+              MIRROR="http://deb.debian.org/debian/"
+              SOURCES_TEMPLATE="debian"
+              MINT_CODENAME=""
+              DISTRO_LABEL="Debian ${BASE_CODENAME}"
+              ;;
+            ubuntu)
+              BASE_CODENAME="${{ env.UBUNTU_VERSION }}"
+              MIRROR="http://archive.ubuntu.com/ubuntu/"
+              SOURCES_TEMPLATE="ubuntu"
+              MINT_CODENAME=""
+              DISTRO_LABEL="Ubuntu ${BASE_CODENAME}"
+              ;;
+            linuxmint)
+              # Linux Mint không có mirror debootstrap riêng — nó được build trên
+              # nền Ubuntu, nên ta debootstrap Ubuntu base tương ứng rồi add
+              # thêm repo Mint lên trên (giống cách Mint thật sự được build).
+              case "${{ env.MINT_VERSION }}" in
+                22)   BASE_CODENAME="noble"; MINT_CODENAME="wilma" ;;
+                21.3) BASE_CODENAME="jammy"; MINT_CODENAME="virginia" ;;
+                21.2) BASE_CODENAME="jammy"; MINT_CODENAME="victoria" ;;
+                *)    BASE_CODENAME="noble"; MINT_CODENAME="wilma" ;;
+              esac
+              MIRROR="http://archive.ubuntu.com/ubuntu/"
+              SOURCES_TEMPLATE="mint"
+              DISTRO_LABEL="Linux Mint ${{ env.MINT_VERSION }} (${MINT_CODENAME}, nền Ubuntu ${BASE_CODENAME})"
+              ;;
+            *)
+              echo "Distro không hợp lệ: ${{ env.BASE_DISTRO }}"
+              exit 1
+              ;;
+          esac
+
+          echo "Sẽ build trên: $DISTRO_LABEL"
+          echo "BASE_CODENAME=$BASE_CODENAME" >> "$GITHUB_ENV"
+          echo "MIRROR=$MIRROR" >> "$GITHUB_ENV"
+          echo "SOURCES_TEMPLATE=$SOURCES_TEMPLATE" >> "$GITHUB_ENV"
+          echo "MINT_CODENAME=$MINT_CODENAME" >> "$GITHUB_ENV"
+          echo "DISTRO_LABEL=$DISTRO_LABEL" >> "$GITHUB_ENV"
+
       - name: Debootstrap base system
         run: |
           mkdir -p live-build/chroot
           sudo debootstrap --arch=amd64 --variant=minbase \
-            ${{ env.DISTRO_CODENAME }} live-build/chroot \
-            http://deb.debian.org/debian/
+            "${{ env.BASE_CODENAME }}" live-build/chroot \
+            "${{ env.MIRROR }}"
 
       - name: Mount virtual filesystems for chroot
         run: |
@@ -123,12 +190,46 @@ jobs:
 
       - name: Configure APT sources inside chroot
         run: |
-          sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
-          deb http://deb.debian.org/debian ${{ env.DISTRO_CODENAME }} main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian ${{ env.DISTRO_CODENAME }}-updates main contrib non-free non-free-firmware
-          deb http://security.debian.org/debian-security ${{ env.DISTRO_CODENAME }}-security main contrib non-free non-free-firmware
+          case "${{ env.SOURCES_TEMPLATE }}" in
+            debian)
+              sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
+          deb http://deb.debian.org/debian ${{ env.BASE_CODENAME }} main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian ${{ env.BASE_CODENAME }}-updates main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security ${{ env.BASE_CODENAME }}-security main contrib non-free non-free-firmware
           EOF
+              ;;
+            ubuntu)
+              sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
+          deb http://archive.ubuntu.com/ubuntu ${{ env.BASE_CODENAME }} main restricted universe multiverse
+          deb http://archive.ubuntu.com/ubuntu ${{ env.BASE_CODENAME }}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu ${{ env.BASE_CODENAME }}-security main restricted universe multiverse
+          EOF
+              ;;
+            mint)
+              # base apt sources = Ubuntu tương ứng, cộng thêm repo chính thức của Mint
+              sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
+          deb http://archive.ubuntu.com/ubuntu ${{ env.BASE_CODENAME }} main restricted universe multiverse
+          deb http://archive.ubuntu.com/ubuntu ${{ env.BASE_CODENAME }}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu ${{ env.BASE_CODENAME }}-security main restricted universe multiverse
+          EOF
+              sudo mkdir -p live-build/chroot/etc/apt/sources.list.d
+              sudo tee live-build/chroot/etc/apt/sources.list.d/official-package-repositories.list > /dev/null <<EOF
+          deb http://packages.linuxmint.com ${{ env.MINT_CODENAME }} main upstream import backport
+          EOF
+              ;;
+          esac
           sudo cp /etc/resolv.conf live-build/chroot/etc/resolv.conf
+
+      - name: Import Linux Mint APT signing key (chỉ khi distro = linuxmint)
+        if: ${{ env.BASE_DISTRO == 'linuxmint' }}
+        run: |
+          sudo apt-get install -y gnupg
+          curl -fsSL https://www.linuxmint.com/mint-repository-keyring/mint-archive-keyring.gpg \
+            | sudo tee live-build/chroot/usr/share/keyrings/mint-archive-keyring.gpg > /dev/null || \
+            sudo chroot live-build/chroot apt-key adv --keyserver keyserver.ubuntu.com \
+              --recv-keys 27DE097940FC9D0FDBDCC2404E163382636958F6 || true
+          sudo sed -i 's#^deb http://packages.linuxmint.com#deb [signed-by=/usr/share/keyrings/mint-archive-keyring.gpg] http://packages.linuxmint.com#' \
+            live-build/chroot/etc/apt/sources.list.d/official-package-repositories.list || true
 
       - name: Install desktop environment + Plymouth + Calamares (in chroot)
         run: |
@@ -138,6 +239,9 @@ jobs:
           [ "$DEBUG_MODE" = "true" ] && set -x
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
+          apt-get install -y linux-image-generic live-boot systemd-sysv \
+            plymouth plymouth-themes network-manager sudo locales tzdata \
+            lsb-release calamares calamares-settings-debian || \
           apt-get install -y linux-image-amd64 live-boot systemd-sysv \
             plymouth plymouth-themes network-manager sudo locales tzdata \
             lsb-release calamares calamares-settings-debian
@@ -170,7 +274,8 @@ jobs:
           fi
 
           # trình duyệt / office (tùy chọn)
-          [ "$INCLUDE_BROWSER" = "true" ] && apt-get install -y firefox-esr
+          [ "$INCLUDE_BROWSER" = "true" ] && apt-get install -y firefox-esr || \
+            { [ "$INCLUDE_BROWSER" = "true" ] && apt-get install -y firefox; }
           [ "$INCLUDE_OFFICE" = "true" ] && apt-get install -y libreoffice
 
           # gói thêm do người dùng chỉ định
@@ -226,13 +331,13 @@ jobs:
 
           # /etc/os-release - phần lớn tool (neofetch, GNOME/Xfce About, systemd) đọc file này
           cat <<EOF | sudo tee "$CHROOT/etc/os-release" > /dev/null
-          PRETTY_NAME="${{ env.DISTRO_NAME }} 1.0 (${{ env.DISTRO_CODENAME }})"
+          PRETTY_NAME="${{ env.DISTRO_NAME }} 1.0 (dựa trên ${{ env.DISTRO_LABEL }})"
           NAME="${{ env.DISTRO_NAME }}"
           VERSION_ID="1.0"
-          VERSION="1.0 (${{ env.DISTRO_CODENAME }})"
-          VERSION_CODENAME=${{ env.DISTRO_CODENAME }}
+          VERSION="1.0 (${{ env.DISTRO_LABEL }})"
+          VERSION_CODENAME=${{ env.BASE_CODENAME }}
           ID=hyggshios
-          ID_LIKE=debian
+          ID_LIKE=${{ env.BASE_DISTRO == 'debian' && 'debian' || 'ubuntu debian' }}
           HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
           SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
           BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
@@ -244,13 +349,13 @@ jobs:
           cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
           DISTRIB_ID=HyggshiOS
           DISTRIB_RELEASE=1.0
-          DISTRIB_CODENAME=${{ env.DISTRO_CODENAME }}
-          DISTRIB_DESCRIPTION="${{ env.DISTRO_NAME }} 1.0"
+          DISTRIB_CODENAME=${{ env.BASE_CODENAME }}
+          DISTRIB_DESCRIPTION="${{ env.DISTRO_NAME }} 1.0 (${{ env.DISTRO_LABEL }})"
           EOF
 
           # banner khi login console (tty), không phải GUI
           printf "${{ env.DISTRO_NAME }} \\\\n \\\\l\n\n" | sudo tee "$CHROOT/etc/issue" > /dev/null
-          echo "Welcome to ${{ env.DISTRO_NAME }} — built on Debian ${{ env.DISTRO_CODENAME }}" | \
+          echo "Welcome to ${{ env.DISTRO_NAME }} — built on ${{ env.DISTRO_LABEL }}" | \
             sudo tee "$CHROOT/etc/motd" > /dev/null
 
           # distributor logo - dùng cho About Xfce/GNOME, một số greeter
@@ -266,7 +371,7 @@ jobs:
             sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
             echo "Đã áp logo custom: $LOGO_FILE"
           else
-            echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo Debian mặc định."
+            echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo mặc định của distro gốc."
             echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
           fi
 
@@ -458,7 +563,8 @@ jobs:
           CHROOT=live-build/chroot
           {
             echo "===== Inputs / env ====="
-            echo "DE=${{ env.DE }} | DISTRO_CODENAME=${{ env.DISTRO_CODENAME }} | PANEL_STYLE=${{ env.PANEL_STYLE }} | ICON_THEME=${{ env.ICON_THEME }}"
+            echo "BASE_DISTRO=${{ env.BASE_DISTRO }} | BASE_CODENAME=${{ env.BASE_CODENAME }} | DISTRO_LABEL=${{ env.DISTRO_LABEL }}"
+            echo "DE=${{ env.DE }} | PANEL_STYLE=${{ env.PANEL_STYLE }} | ICON_THEME=${{ env.ICON_THEME }}"
             echo "OS_USERNAME=${{ env.OS_USERNAME }} | OS_HOSTNAME=${{ env.OS_HOSTNAME }} | OS_TIMEZONE=${{ env.OS_TIMEZONE }}"
             echo
 
@@ -468,6 +574,16 @@ jobs:
 
             echo "===== iso-config/branding contents ====="
             find iso-config/branding -type f -exec ls -la {} \; 2>/dev/null || echo "(không có thư mục iso-config/branding)"
+            echo
+
+            echo "===== /etc/apt/sources.list trong chroot ====="
+            cat "$CHROOT/etc/apt/sources.list" 2>/dev/null
+            echo
+
+            echo "===== /etc/apt/sources.list.d/ trong chroot ====="
+            for f in "$CHROOT"/etc/apt/sources.list.d/*; do
+              [ -f "$f" ] && { echo "--- $f ---"; cat "$f"; }
+            done
             echo
 
             echo "===== /etc/os-release trong chroot ====="
