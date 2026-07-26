@@ -4,9 +4,57 @@ on:
   workflow_dispatch:
     inputs:
       desktop:
-        description: "Desktop environment (xfce / kde)"
+        description: "Desktop environment"
         required: false
+        type: choice
+        options: [xfce, kde]
         default: "xfce"
+      debian_version:
+        description: "Phiên bản Debian (codename)"
+        required: false
+        type: choice
+        options: [trixie, bookworm, bullseye]
+        default: "trixie"
+      panel_style:
+        description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
+        required: false
+        type: choice
+        options: [windows10, classic]
+        default: "windows10"
+      icon_theme:
+        description: "Bộ icon (chỉ áp dụng cho XFCE)"
+        required: false
+        type: choice
+        options: [papirus, numix, breeze, adwaita]
+        default: "papirus"
+      username:
+        description: "Username mặc định trong live session"
+        required: false
+        default: "hyggshi"
+      user_password:
+        description: "Mật khẩu user (plaintext, chỉ dùng cho ISO test)"
+        required: false
+        default: "hyggshi"
+      hostname:
+        description: "Hostname máy"
+        required: false
+        default: "hyggshi-os"
+      timezone:
+        description: "Múi giờ (vd Asia/Ho_Chi_Minh, UTC)"
+        required: false
+        default: "Asia/Ho_Chi_Minh"
+      include_browser:
+        description: "Cài sẵn Firefox ESR?"
+        type: boolean
+        default: true
+      include_office:
+        description: "Cài sẵn LibreOffice?"
+        type: boolean
+        default: false
+      extra_packages:
+        description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
+        required: false
+        default: ""
       release_iso:
         description: "Attach ISO to a GitHub Release?"
         type: boolean
@@ -19,9 +67,18 @@ on:
 
 env:
   DISTRO_NAME: "Hyggshi OS"
-  DISTRO_CODENAME: "trixie"
+  DISTRO_CODENAME: ${{ github.event.inputs.debian_version || 'trixie' }}
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
+  PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
+  ICON_THEME: ${{ github.event.inputs.icon_theme || 'papirus' }}
+  OS_USERNAME: ${{ github.event.inputs.username || 'hyggshi' }}
+  OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
+  OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
+  OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
+  INCLUDE_BROWSER: ${{ github.event.inputs.include_browser || 'true' }}
+  INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
+  EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
 
 jobs:
   build-iso:
@@ -76,30 +133,64 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y linux-image-amd64 live-boot systemd-sysv \
-            plymouth plymouth-themes network-manager sudo locales \
+            plymouth plymouth-themes network-manager sudo locales tzdata \
             calamares calamares-settings-debian
+
+          # hostname
+          echo "$OS_HOSTNAME" > /etc/hostname
+          echo "127.0.1.1 $OS_HOSTNAME" >> /etc/hosts
+
+          # timezone
+          ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata || true
 
           if [ "$DE" = "kde" ]; then
             apt-get install -y kde-plasma-desktop sddm
           else
             apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-              xfce4-whiskermenu-plugin git papirus-icon-theme
+              xfce4-whiskermenu-plugin git
+
+            # icon theme theo lựa chọn
+            case "$ICON_THEME" in
+              numix)   apt-get install -y numix-icon-theme ;;
+              breeze)  apt-get install -y breeze-icon-theme ;;
+              adwaita) apt-get install -y adwaita-icon-theme ;;
+              *)       apt-get install -y papirus-icon-theme ;;
+            esac
 
             # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
-            # Icon theme dùng Papirus (mã nguồn mở, không dùng bộ icon Windows)
             git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
               /usr/share/themes/Windows-10
           fi
 
+          # trình duyệt / office (tùy chọn)
+          [ "$INCLUDE_BROWSER" = "true" ] && apt-get install -y firefox-esr
+          [ "$INCLUDE_OFFICE" = "true" ] && apt-get install -y libreoffice
+
+          # gói thêm do người dùng chỉ định
+          if [ -n "$EXTRA_PACKAGES" ]; then
+            apt-get install -y $EXTRA_PACKAGES || true
+          fi
+
           # user mặc định cho live session
-          useradd -m -s /bin/bash -G sudo hyggshi || true
-          echo "hyggshi:hyggshi" | chpasswd
+          useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
+          echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
 
           apt-get clean
           rm -rf /var/lib/apt/lists/*
           EOF
           sudo chmod +x live-build/chroot/tmp/install.sh
-          sudo chroot live-build/chroot env DE="${{ env.DE }}" /tmp/install.sh
+          sudo chroot live-build/chroot env \
+            DE="${{ env.DE }}" \
+            ICON_THEME="${{ env.ICON_THEME }}" \
+            OS_USERNAME="${{ env.OS_USERNAME }}" \
+            OS_PASSWORD="${{ env.OS_PASSWORD }}" \
+            OS_HOSTNAME="${{ env.OS_HOSTNAME }}" \
+            OS_TIMEZONE="${{ env.OS_TIMEZONE }}" \
+            INCLUDE_BROWSER="${{ env.INCLUDE_BROWSER }}" \
+            INCLUDE_OFFICE="${{ env.INCLUDE_OFFICE }}" \
+            EXTRA_PACKAGES="${{ env.EXTRA_PACKAGES }}" \
+            /tmp/install.sh
 
       - name: (Optional) Copy custom branding / Plymouth theme / wallpapers
         run: |
@@ -116,12 +207,21 @@ jobs:
               live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png 2>/dev/null || true
           fi
 
-      - name: Configure Windows-10-style XFCE panel + wallpaper (skel profile)
+      - name: Configure XFCE panel style + icon theme + wallpaper (skel profile)
+        if: ${{ env.DE == 'xfce' }}
         run: |
           SKEL="live-build/chroot/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml"
           sudo mkdir -p "$SKEL"
 
-          cat <<'XML' | sudo tee "$SKEL/xfce4-panel.xml" > /dev/null
+          case "${{ env.ICON_THEME }}" in
+            numix)   ICON_NAME="Numix" ;;
+            breeze)  ICON_NAME="breeze" ;;
+            adwaita) ICON_NAME="Adwaita" ;;
+            *)       ICON_NAME="Papirus" ;;
+          esac
+
+          if [ "${{ env.PANEL_STYLE }}" = "windows10" ]; then
+          cat <<XML | sudo tee "$SKEL/xfce4-panel.xml" > /dev/null
           <?xml version="1.0" encoding="UTF-8"?>
           <channel name="xfce4-panel" version="1.0">
             <property name="configver" type="int" value="2"/>
@@ -167,8 +267,9 @@ jobs:
             </property>
           </channel>
           XML
+          fi
 
-          cat <<'XML' | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
+          cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
           <?xml version="1.0" encoding="UTF-8"?>
           <channel name="xfce4-desktop" version="1.0">
             <property name="backdrop" type="empty">
@@ -184,17 +285,17 @@ jobs:
           </channel>
           XML
 
-          cat <<'XML' | sudo tee "$SKEL/xsettings.xml" > /dev/null
+          cat <<XML | sudo tee "$SKEL/xsettings.xml" > /dev/null
           <?xml version="1.0" encoding="UTF-8"?>
           <channel name="xsettings" version="1.0">
             <property name="Net" type="empty">
-              <property name="IconThemeName" type="string" value="Papirus"/>
+              <property name="IconThemeName" type="string" value="$ICON_NAME"/>
               <property name="ThemeName" type="string" value="Windows-10"/>
             </property>
           </channel>
           XML
 
-          cat <<'XML' | sudo tee "$SKEL/xfwm4.xml" > /dev/null
+          cat <<XML | sudo tee "$SKEL/xfwm4.xml" > /dev/null
           <?xml version="1.0" encoding="UTF-8"?>
           <channel name="xfwm4" version="1.0">
             <property name="general" type="empty">
@@ -205,6 +306,15 @@ jobs:
           XML
 
           sudo chroot live-build/chroot chown -R root:root /etc/skel/.config
+
+          # user đã được tạo (useradd -m) TRƯỚC bước này nên đã copy sẵn config
+          # skel cũ. Ghi đè thẳng vào home để tránh dính config panel mặc định.
+          USER_HOME="live-build/chroot/home/${{ env.OS_USERNAME }}"
+          sudo rm -rf "$USER_HOME/.config/xfce4"
+          sudo mkdir -p "$USER_HOME/.config"
+          sudo cp -r live-build/chroot/etc/skel/.config/xfce4 "$USER_HOME/.config/xfce4"
+          sudo chroot live-build/chroot chown -R "${{ env.OS_USERNAME }}:${{ env.OS_USERNAME }}" \
+            "/home/${{ env.OS_USERNAME }}/.config"
 
       - name: Unmount chroot filesystems
         run: |
