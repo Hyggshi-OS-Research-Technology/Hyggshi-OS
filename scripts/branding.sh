@@ -40,6 +40,30 @@ else
   sudo cp /tmp/wallpaper.png "$CHROOT/usr/share/backgrounds/hyggshi/wallpaper.png"
 fi
 
+echo "===== Ghi đè default wallpaper qua update-alternatives (KHÔNG phụ thuộc"
+echo "     tên monitor hay script chạy lúc login — đây là cơ chế Debian dùng"
+echo "     để chọn ảnh nền mặc định, ổn định hơn nhiều so với xfconf runtime) ====="
+for LINK in "$CHROOT/etc/alternatives/desktop-background" \
+            "$CHROOT/usr/share/backgrounds/desktop-background" \
+            "$CHROOT/usr/share/images/desktop-base/desktop-background"; do
+  if [ -e "$LINK" ] || [ -L "$LINK" ]; then
+    sudo rm -f "$LINK"
+    sudo ln -sf /usr/share/backgrounds/hyggshi/wallpaper.png "$LINK"
+    echo "Đã trỏ $LINK -> wallpaper.png"
+  fi
+done
+
+echo "===== Patch trực tiếp mọi xfce4-desktop.xml có sẵn trong hệ thống (không"
+echo "     phải file skel do ta tạo) — phòng trường hợp gói cài sẵn ghi đè lại ====="
+FOUND_XMLS=$(sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" -name "xfce4-desktop.xml" 2>/dev/null || true)
+for f in $FOUND_XMLS; do
+  echo "Patch: $f"
+  sudo sed -i -E \
+    -e 's#(<property name="last-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
+    -e 's#(<property name="image-style" type="int" value=")[0-9]+(")#\g<1>5\2#g' \
+    "$f" 2>/dev/null || true
+done
+
 echo "===== Rebrand os-release / lsb-release / banner ====="
 # Debian mặc định để /etc/os-release là symlink -> ../usr/lib/os-release.
 # Xoá symlink cũ, ghi nội dung THẬT vào usr/lib/os-release, rồi tạo lại
