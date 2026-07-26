@@ -310,7 +310,7 @@ jobs:
           # user đã được tạo (useradd -m) TRƯỚC bước này nên đã copy sẵn config
           # skel cũ. Ghi đè thẳng vào home để tránh dính config panel mặc định.
           USER_HOME="live-build/chroot/home/${{ env.OS_USERNAME }}"
-          sudo rm -rf "$USER_HOME/.config/xfce4"
+          sudo rm -rf "$USER_HOME/.config/xfce4" "$USER_HOME/.cache"
           sudo mkdir -p "$USER_HOME/.config"
           sudo cp -r live-build/chroot/etc/skel/.config/xfce4 "$USER_HOME/.config/xfce4"
           sudo chroot live-build/chroot chown -R "${{ env.OS_USERNAME }}:${{ env.OS_USERNAME }}" \
