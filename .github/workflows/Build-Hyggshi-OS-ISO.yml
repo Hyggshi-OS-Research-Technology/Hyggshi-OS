@@ -202,9 +202,14 @@ jobs:
           if [ -f "iso-config/branding/wallpaper.png" ]; then
             sudo cp iso-config/branding/wallpaper.png \
               live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
+            echo "Đã dùng wallpaper custom từ iso-config/branding/wallpaper.png"
           else
-            sudo cp live-build/chroot/usr/share/images/desktop-base/desktop-background \
-              live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png 2>/dev/null || true
+            echo "⚠️  Không thấy iso-config/branding/wallpaper.png — tự tạo wallpaper gradient tạm thời."
+            echo "    Thêm file wallpaper.png (1920x1080) vào iso-config/branding/ để dùng ảnh thật."
+            sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+            convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
+            sudo cp /tmp/wallpaper.png \
+              live-build/chroot/usr/share/backgrounds/hyggshi/wallpaper.png
           fi
 
       - name: Rebrand hệ thống (os-release, lsb-release, banner, distributor logo)
