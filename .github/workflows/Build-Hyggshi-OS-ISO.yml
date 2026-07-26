@@ -576,15 +576,38 @@ jobs:
           NoDisplay=true
           DESKTOP
 
+          # === QUAN TRỌNG: cài vào /etc/xdg/autostart (system-wide, chuẩn XDG) ===
+          # thay vì chỉ copy vào ~/.config/autostart của 1 user cụ thể. Cách này
+          # áp dụng tự động cho MỌI user, kể cả user được Calamares tạo sau khi
+          # cài đặt thật (user đó KHÔNG PHẢI "hyggshi"), nên không cần biết
+          # trước username và không phụ thuộc thứ tự copy skel/home nữa.
+          sudo mkdir -p live-build/chroot/etc/xdg/autostart
+          sudo cp live-build/chroot/etc/skel/.config/autostart/hyggshi-wallpaper.desktop \
+            live-build/chroot/etc/xdg/autostart/hyggshi-wallpaper.desktop
+
+          if [ -f live-build/chroot/etc/xdg/autostart/hyggshi-wallpaper.desktop ]; then
+            echo "OK: đã cài autostart system-wide vào /etc/xdg/autostart/"
+          else
+            echo "LỖI: cài autostart system-wide thất bại!"
+            exit 1
+          fi
+
           # user đã được tạo (useradd -m) TRƯỚC bước này nên đã copy sẵn config
           # skel cũ. Ghi đè thẳng vào home để tránh dính config panel mặc định.
+          # (autostart giờ không còn phụ thuộc bước copy này nữa, nhưng vẫn giữ
+          # lại để đồng bộ theme/panel cho user live-session "hyggshi")
           USER_HOME="live-build/chroot/home/${{ env.OS_USERNAME }}"
-          sudo rm -rf "$USER_HOME/.config/xfce4" "$USER_HOME/.config/autostart" "$USER_HOME/.cache"
-          sudo mkdir -p "$USER_HOME/.config"
-          sudo cp -r live-build/chroot/etc/skel/.config/xfce4 "$USER_HOME/.config/xfce4"
-          sudo cp -r live-build/chroot/etc/skel/.config/autostart "$USER_HOME/.config/autostart"
-          sudo chroot live-build/chroot chown -R "${{ env.OS_USERNAME }}:${{ env.OS_USERNAME }}" \
-            "/home/${{ env.OS_USERNAME }}/.config"
+          if [ -d "$USER_HOME" ]; then
+            sudo rm -rf "$USER_HOME/.config/xfce4" "$USER_HOME/.cache"
+            sudo mkdir -p "$USER_HOME/.config"
+            sudo cp -r live-build/chroot/etc/skel/.config/xfce4 "$USER_HOME/.config/xfce4" \
+              && echo "OK: copy xfce4 config vào $USER_HOME" \
+              || echo "CẢNH BÁO: copy xfce4 config vào $USER_HOME thất bại"
+            sudo chroot live-build/chroot chown -R "${{ env.OS_USERNAME }}:${{ env.OS_USERNAME }}" \
+              "/home/${{ env.OS_USERNAME }}/.config"
+          else
+            echo "CẢNH BÁO: không tìm thấy $USER_HOME, bỏ qua copy config riêng cho user (autostart vẫn hoạt động vì đã ở system-wide)"
+          fi
 
       - name: Unmount chroot filesystems
         run: |
@@ -645,8 +668,12 @@ jobs:
             cat "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh" 2>/dev/null || true
             echo
 
-            echo "===== ~/.config/autostart của user ====="
-            ls -la "$CHROOT/home/${{ env.OS_USERNAME }}/.config/autostart/" 2>/dev/null || true
+            echo "===== /etc/xdg/autostart (system-wide, áp dụng cho MỌI user) ====="
+            ls -la "$CHROOT/etc/xdg/autostart/" 2>/dev/null || true
+            echo
+
+            echo "===== ~/.config/autostart của user (chỉ để tham khảo, không còn bắt buộc) ====="
+            ls -la "$CHROOT/home/${{ env.OS_USERNAME }}/.config/autostart/" 2>/dev/null || echo "(không tồn tại — bình thường, autostart giờ dùng system-wide /etc/xdg/autostart)"
             echo
 
             echo "===== xfconf xfce4-desktop.xml (skel) ====="
