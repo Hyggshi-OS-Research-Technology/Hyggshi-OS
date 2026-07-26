@@ -144,9 +144,13 @@ jobs:
           set -e
           apk update
 
+          # LƯU Ý: Alpine không đóng gói Calamares ổn định trên x86_64 (chỉ có
+          # rải rác trên x86/armv7 ở các branch cũ, không có ở v3.20+), nên
+          # bản Alpine dùng setup-alpine (trình cài đặt text mặc định của
+          # alpine-conf) thay vì Calamares. Có launcher desktop riêng bên dưới.
           apk add linux-lts linux-firmware alpine-conf openrc \
             eudev networkmanager sudo tzdata plymouth \
-            lsb-release-lite calamares calamares-branding-generic
+            lsb-release-minimal xterm
 
           # hostname
           echo "$OS_HOSTNAME" > /etc/hostname
@@ -276,6 +280,32 @@ jobs:
             echo "⚠️  Không thấy iso-config/branding/logo.png trong repo — vẫn giữ logo Alpine mặc định."
             echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
           fi
+
+      - name: Add "Install Hyggshi OS" desktop launcher (setup-alpine, thay Calamares)
+        run: |
+          CHROOT=live-build/chroot
+          sudo mkdir -p "$CHROOT/usr/share/applications"
+          sudo mkdir -p "$CHROOT/usr/local/bin"
+
+          cat <<'SH' | sudo tee "$CHROOT/usr/local/bin/hyggshi-install" > /dev/null
+          #!/bin/sh
+          # Wrapper quanh setup-alpine — Alpine không có Calamares ổn định
+          # trên x86_64 nên dùng thẳng trình cài text mặc định của Alpine,
+          # chạy trong terminal cho người dùng live session.
+          exec sudo setup-alpine
+          SH
+          sudo chmod +x "$CHROOT/usr/local/bin/hyggshi-install"
+
+          cat <<EOF | sudo tee "$CHROOT/usr/share/applications/hyggshi-install.desktop" > /dev/null
+          [Desktop Entry]
+          Type=Application
+          Name=Install ${{ env.DISTRO_NAME }}
+          Comment=Cài đặt ${{ env.DISTRO_NAME }} vào ổ đĩa (setup-alpine)
+          Exec=xterm -T "Install ${{ env.DISTRO_NAME }}" -e hyggshi-install
+          Icon=system-software-install
+          Terminal=false
+          Categories=System;
+          EOF
 
       - name: Configure XFCE panel style + icon theme + wallpaper (skel profile)
         if: ${{ env.DE == 'xfce' }}
