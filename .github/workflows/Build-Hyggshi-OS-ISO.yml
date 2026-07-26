@@ -148,7 +148,7 @@ jobs:
             apt-get install -y kde-plasma-desktop sddm
           else
             apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-              xfce4-whiskermenu-plugin git
+              xfce4-whiskermenu-plugin git libgtk-3-bin
 
             # icon theme theo lựa chọn
             case "$ICON_THEME" in
@@ -363,12 +363,49 @@ jobs:
 
           sudo chroot live-build/chroot chown -R root:root /etc/skel/.config
 
+          # === Script tự dò đúng tên monitor để set wallpaper lúc login ===
+          # (path xfconf như "monitor0" chỉ đúng trên một số máy; QEMU/VM
+          # thường đặt tên monitor khác, ví dụ "Virtual-1" -> wallpaper set
+          # cứng theo XML phía trên có thể không khớp và bị fallback default)
+          cat <<'SCRIPT' | sudo tee live-build/chroot/usr/local/bin/hyggshi-set-wallpaper.sh > /dev/null
+          #!/bin/bash
+          sleep 2
+          WALL="/usr/share/backgrounds/hyggshi/wallpaper.png"
+          [ -f "$WALL" ] || exit 0
+
+          MON=$(xfconf-query -c xfce4-desktop -p /backdrop/screen0 -l 2>/dev/null \
+            | grep -oP '(?<=/backdrop/screen0/)[^/]+' | sort -u | head -n1)
+          [ -z "$MON" ] && MON=$(xrandr 2>/dev/null | awk '/ connected/{print $1; exit}')
+          [ -z "$MON" ] && MON="monitor0"
+
+          for WS in 0 1 2 3; do
+            PROP="/backdrop/screen0/$MON/workspace$WS/last-image"
+            STYLE="/backdrop/screen0/$MON/workspace$WS/image-style"
+            xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>/dev/null \
+              || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>/dev/null
+            xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>/dev/null \
+              || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>/dev/null
+          done
+          SCRIPT
+          sudo chmod +x live-build/chroot/usr/local/bin/hyggshi-set-wallpaper.sh
+
+          sudo mkdir -p live-build/chroot/etc/skel/.config/autostart
+          cat <<'DESKTOP' | sudo tee live-build/chroot/etc/skel/.config/autostart/hyggshi-wallpaper.desktop > /dev/null
+          [Desktop Entry]
+          Type=Application
+          Name=Hyggshi Wallpaper Setup
+          Exec=/usr/local/bin/hyggshi-set-wallpaper.sh
+          X-GNOME-Autostart-enabled=true
+          NoDisplay=true
+          DESKTOP
+
           # user đã được tạo (useradd -m) TRƯỚC bước này nên đã copy sẵn config
           # skel cũ. Ghi đè thẳng vào home để tránh dính config panel mặc định.
           USER_HOME="live-build/chroot/home/${{ env.OS_USERNAME }}"
-          sudo rm -rf "$USER_HOME/.config/xfce4" "$USER_HOME/.cache"
+          sudo rm -rf "$USER_HOME/.config/xfce4" "$USER_HOME/.config/autostart" "$USER_HOME/.cache"
           sudo mkdir -p "$USER_HOME/.config"
           sudo cp -r live-build/chroot/etc/skel/.config/xfce4 "$USER_HOME/.config/xfce4"
+          sudo cp -r live-build/chroot/etc/skel/.config/autostart "$USER_HOME/.config/autostart"
           sudo chroot live-build/chroot chown -R "${{ env.OS_USERNAME }}:${{ env.OS_USERNAME }}" \
             "/home/${{ env.OS_USERNAME }}/.config"
 
