@@ -165,39 +165,46 @@ jobs:
             echo
 
             echo "===== /etc/apt/sources.list trong chroot ====="
-            cat "$CHROOT/etc/apt/sources.list" 2>/dev/null || true
+            sudo cat "$CHROOT/etc/apt/sources.list" 2>/dev/null || true
             echo
 
             echo "===== /etc/os-release trong chroot ====="
-            cat "$CHROOT/etc/os-release" 2>/dev/null || true
+            sudo cat "$CHROOT/etc/os-release" 2>/dev/null || true
             echo
 
             echo "===== /etc/lsb-release trong chroot ====="
-            cat "$CHROOT/etc/lsb-release" 2>/dev/null || true
+            sudo cat "$CHROOT/etc/lsb-release" 2>/dev/null || true
             echo
 
             echo "===== backgrounds/hyggshi trong chroot ====="
-            ls -la "$CHROOT/usr/share/backgrounds/hyggshi/" 2>/dev/null || true
+            sudo ls -la "$CHROOT/usr/share/backgrounds/hyggshi/" 2>/dev/null || true
             echo
 
             echo "===== distributor-logo đã ghi vào hicolor (128x128) ====="
-            ls -la "$CHROOT/usr/share/icons/hicolor/128x128/apps/" 2>/dev/null | grep distributor || true
+            sudo ls -la "$CHROOT/usr/share/icons/hicolor/128x128/apps/" 2>/dev/null | grep distributor || true
             echo
 
             echo "===== /etc/xdg/autostart (system-wide) ====="
-            ls -la "$CHROOT/etc/xdg/autostart/" 2>/dev/null || true
+            sudo ls -la "$CHROOT/etc/xdg/autostart/" 2>/dev/null || true
             echo
 
             echo "===== update-alternatives desktop-background ====="
             sudo chroot "$CHROOT" update-alternatives --display desktop-background 2>&1 || true
             echo
 
+            # LƯU Ý: sudo find có thể liệt kê được cả file bên trong
+            # $CHROOT/home/<user> (thường mode 700), nhưng `cat` KHÔNG sudo
+            # sẽ bị "Permission denied" khi đọc file trong đó -> exit code
+            # khác 0 -> vì đây là lệnh CUỐI trong pipe (while), dưới `set -e`
+            # (shell mặc định của GitHub Actions) toàn bộ step sẽ bị abort
+            # NGAY LẬP TỨC và không in được dòng nào ra debug-info.txt.
+            # Fix: thêm `sudo` vào cat, và `|| true` chặn an toàn cho cả pipeline.
             echo "===== Mọi file xfce4-desktop.xml tìm thấy trong hệ thống ====="
             sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" "$CHROOT/home" \
               -name "xfce4-desktop.xml" 2>/dev/null | while read -r f; do
               echo "--- $f ---"
-              cat "$f" 2>/dev/null
-            done
+              sudo cat "$f" 2>/dev/null
+            done || true
           } > debug-info.txt
 
           echo "----- debug-info.txt preview -----"
