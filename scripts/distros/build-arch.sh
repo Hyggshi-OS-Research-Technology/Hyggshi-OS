@@ -50,6 +50,18 @@ Server = $MIRROR/\$repo/os/\$arch
 EOF
 sudo cp /etc/resolv.conf live-build/chroot/etc/resolv.conf
 
+echo "===== Tắt CheckSpace trong pacman.conf ====="
+# BUG: pacman dùng statvfs để check dung lượng trống trước khi cài, nhưng
+# trên overlayfs (chính là root filesystem của GitHub Actions runner khi
+# chạy trong chroot) nó không xác định đúng được mount point của
+# /var/cache/pacman/pkg -> báo nhầm "could not determine cachedir mount
+# point" / "not enough free disk space" dù ổ đĩa runner còn hàng chục GB
+# trống. Đây là vấn đề đã biết của pacman khi chạy trong container/chroot
+# trên overlayfs, không phải do thật sự hết dung lượng. Tắt CheckSpace là
+# cách khắc phục chuẩn (đánh đổi: mất cảnh báo sớm nếu THẬT SỰ hết đĩa —
+# chấp nhận được vì runner luôn có >100GB trống).
+sudo sed -i 's/^CheckSpace/#CheckSpace/' live-build/chroot/etc/pacman.conf
+
 echo "===== Mount virtual filesystems for chroot ====="
 sudo mount --bind /dev live-build/chroot/dev
 sudo mount --bind /run live-build/chroot/run
@@ -63,7 +75,16 @@ echo "===== Khởi tạo pacman keyring + cài base/linux ====="
 # nếu không sẽ lỗi kiểu "no such file or directory" ngầm khó hiểu.
 sudo chroot live-build/chroot pacman-key --init
 sudo chroot live-build/chroot pacman-key --populate archlinux
-sudo chroot live-build/chroot pacman -Sy --noconfirm --needed base linux linux-firmware
+
+# LƯU Ý: chỉ định rõ "mkinitcpio" trong danh sách gói cài, KHÔNG để trống.
+# "base"+"linux" cần một gói cung cấp initramfs (mkinitcpio/booster/dracut)
+# nhưng đây là "virtual package" có nhiều provider -> nếu không chỉ định rõ,
+# pacman sẽ dừng lại hỏi "Enter a number (default=1):" để chọn provider.
+# --noconfirm tự trả lời prompt "Proceed with installation? [Y/n]" nhưng
+# KHÔNG tự trả lời prompt chọn provider này -> build treo/chờ input vô thời
+# hạn trên CI (không có TTY để gõ). Ghi rõ "mkinitcpio" loại bỏ luôn việc
+# phải chọn.
+sudo chroot live-build/chroot pacman -Sy --noconfirm --needed base linux linux-firmware mkinitcpio
 
 echo "===== Unmount virtual filesystems ====="
 sudo chroot live-build/chroot umount /proc || true
