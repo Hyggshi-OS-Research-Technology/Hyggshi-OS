@@ -276,50 +276,43 @@ for i in $(seq 1 15); do
 done
 sleep 1
 
-apply_wallpaper() {
-  # liệt kê MỌI property last-image mà xfdesktop đang thực sự dùng (tên
-  # monitor như "monitor0" không đúng trên mọi máy/VM, QEMU thường đặt tên
-  # khác như "Virtual-1")
-  PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
-  if [ -z "$PROPS" ]; then
-    echo "Chưa có property nào, fallback monitor0 (schema không có workspace)"
-    PROPS="/backdrop/screen0/monitor0/last-image"
-  fi
-  echo "PROPS tìm được:"
-  echo "$PROPS"
+# ĐÃ XÁC NHẬN BẰNG TAY: xfdesktop chạy đúng, property xfconf set đúng,
+# verify khớp — nhưng xfdesktop vẫn không chịu vẽ lại backdrop (rất có thể
+# do cache nội bộ bị stale trong phiên boot). feh set thẳng root pixmap thì
+# ăn ngay lập tức. Nên chuyển hẳn sang dùng feh làm chính, đồng thời tắt
+# "image-show" của xfdesktop để nó không tự vẽ đè lên feh — nhưng VẪN GIỮ
+# xfdesktop chạy (không kill) để không mất icon Home/Trash/File System.
+PROPS_SHOW=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'image-show$')
+while read -r P; do
+  [ -z "$P" ] && continue
+  xfconf-query -c xfce4-desktop -p "$P" -n -t bool -s false 2>>"$LOG" \
+    || xfconf-query -c xfce4-desktop -p "$P" -s false 2>>"$LOG"
+  echo "Tắt $P (để xfdesktop không tự vẽ đè lên feh)"
+done <<< "$PROPS_SHOW"
 
-  while read -r PROP; do
-    [ -z "$PROP" ] && continue
-    STYLE="${PROP%last-image}image-style"
-    xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
-      || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
-    xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
-      || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
-    echo "Set $PROP -> $WALL"
-  done <<< "$PROPS"
+# vẫn cập nhật last-image cho đồng bộ (Background settings dialog hiển thị
+# đúng ảnh đang chọn), dù phần vẽ thật sự do feh đảm nhiệm
+PROPS_IMG=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
+while read -r P; do
+  [ -z "$P" ] && continue
+  xfconf-query -c xfce4-desktop -p "$P" -n -t string -s "$WALL" 2>>"$LOG" \
+    || xfconf-query -c xfce4-desktop -p "$P" -s "$WALL" 2>>"$LOG"
+done <<< "$PROPS_IMG"
+
+set_bg() {
+  feh --bg-fill "$WALL" >>"$LOG" 2>&1
+  echo "feh --bg-fill $WALL (lần $1)"
 }
 
-apply_wallpaper
-
-echo "--- verify sau khi set ---"
-CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
-if [ -n "$CHECK" ]; then
-  VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
-  echo "verify: $CHECK = $VAL"
-fi
-
-# --reload không đủ để ép xfdesktop vẽ lại backdrop trong môi trường này
-# (đã xác nhận qua log: property set đúng, verify khớp, nhưng ảnh nền vẫn
-# không đổi cho tới khi restart hẳn tiến trình). Nên LUÔN kill + khởi động
-# lại xfdesktop, không phụ thuộc kết quả verify nữa.
-echo "Restart xfdesktop để ép vẽ lại backdrop..."
-killall xfdesktop 2>>"$LOG"
-sleep 1
-DISPLAY="${DISPLAY:-:0}" nohup xfdesktop >>"$LOG" 2>&1 &
+set_bg 1
+# đặt lại thêm vài lần trong lúc session mới khởi động, phòng trường hợp
+# xfdesktop hoặc thứ gì khác vẽ đè ngay sau login (chỉ trong ~15s đầu)
+( sleep 3;  set_bg 2
+  sleep 3;  set_bg 3
+  sleep 5;  set_bg 4 ) &
 disown
-sleep 2
 
-echo "=== xong ==="
+echo "=== xong (đợt đầu) ==="
 SCRIPT
 sudo chmod +x "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh"
 
