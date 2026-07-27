@@ -35,11 +35,14 @@ sed -i \
   "$PROFILE_DIR/profiledef.sh"
 
 echo "===== Bổ sung gói vào packages.x86_64 (DE + tuỳ chọn người dùng) ====="
-# packages.x86_64 của releng đã có sẵn base/linux/mkinitcpio-archiso/
-# networkmanager/... — chỉ append thêm, không ghi đè.
+# packages.x86_64 của releng đã có sẵn base/linux/mkinitcpio-archiso/... —
+# nhưng KHÔNG có networkmanager (releng mặc định dùng iwd/systemd-networkd),
+# nên phải thêm tường minh, không được giả định gói này đã có sẵn.
 {
   echo ""
   echo "# ===== Hyggshi OS: DE + tuỳ chọn ($DE, browser=$INCLUDE_BROWSER, office=$INCLUDE_OFFICE) ====="
+  echo networkmanager
+
   case "$DE" in
     kde)
       printf '%s\n' plasma-desktop sddm konsole dolphin
@@ -191,14 +194,19 @@ ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 useradd -m -s /bin/bash -G wheel "$OS_USERNAME" || true
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
 
-systemctl enable NetworkManager
+# LƯU Ý: dùng "|| echo ..." thay vì để lỗi thẳng — script này chạy dưới
+# set -e, và đã có 1 lần networkmanager.service không tồn tại (thiếu gói
+# trong packages.x86_64) làm chết TOÀN BỘ customize_airootfs.sh giữa chừng,
+# kể cả các bước rebrand os-release phía dưới chưa kịp chạy. Không để 1 gói
+# thiếu/service enable lỗi kéo sập cả script.
+systemctl enable NetworkManager || echo "CẢNH BÁO: NetworkManager.service không tồn tại — kiểm tra packages.x86_64"
 
 CUSTOMEOF
 
 case "$DE" in
   kde)
     cat <<CUSTOMEOF >> "$CUSTOMIZE"
-systemctl enable sddm
+systemctl enable sddm || echo "CẢNH BÁO: sddm.service không tồn tại — kiểm tra packages.x86_64"
 mkdir -p /etc/sddm.conf.d
 cat <<SDDMEOF > /etc/sddm.conf.d/hyggshi-autologin.conf
 [Autologin]
@@ -209,7 +217,7 @@ CUSTOMEOF
     ;;
   lxqt)
     cat <<CUSTOMEOF >> "$CUSTOMIZE"
-systemctl enable sddm
+systemctl enable sddm || echo "CẢNH BÁO: sddm.service không tồn tại — kiểm tra packages.x86_64"
 mkdir -p /etc/sddm.conf.d
 cat <<SDDMEOF > /etc/sddm.conf.d/hyggshi-autologin.conf
 [Autologin]
@@ -220,7 +228,7 @@ CUSTOMEOF
     ;;
   *)
     cat <<CUSTOMEOF >> "$CUSTOMIZE"
-systemctl enable lightdm
+systemctl enable lightdm || echo "CẢNH BÁO: lightdm.service không tồn tại — kiểm tra packages.x86_64"
 mkdir -p /etc/lightdm/lightdm.conf.d
 cat <<LIGHTDMEOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
 [Seat:*]
