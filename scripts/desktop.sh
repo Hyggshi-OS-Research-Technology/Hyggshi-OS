@@ -48,28 +48,49 @@ echo "127.0.1.1 $OS_HOSTNAME" >> /etc/hosts
 ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 dpkg-reconfigure -f noninteractive tzdata || true
 
-if [ "$DE" = "kde" ]; then
-  apt-get install -y kde-plasma-desktop sddm
-else
-  apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-    xfce4-whiskermenu-plugin git libgtk-3-bin x11-xserver-utils
+case "$DE" in
+  kde)
+    apt-get install -y kde-plasma-desktop sddm
+    ;;
 
-  # icon theme theo lựa chọn
-  case "$ICON_THEME" in
-    numix)   apt-get install -y numix-icon-theme ;;
-    breeze)  apt-get install -y breeze-icon-theme ;;
-    adwaita) apt-get install -y adwaita-icon-theme ;;
-    *)       apt-get install -y papirus-icon-theme ;;
-  esac
+  lxqt)
+    # sddm dùng chung cơ chế autologin session=lxqt bên dưới, đồng bộ với KDE.
+    # lxqt-config cần cho phần icon/theme setting qua GUI (không bắt buộc lúc
+    # build nhưng nên có để user chỉnh lại sau khi cài).
+    apt-get install -y lxqt sddm lxqt-config lxqt-panel lxqt-session \
+      pcmanfm-qt xterm
 
-  # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
-  # BUG CŨ: clone không có fallback -> nếu GitHub rate-limit/timeout, `set -e`
-  # sẽ abort NGUYÊN build ở bước này (dù DE/package chính đã cài xong).
-  if ! git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
-      /usr/share/themes/Windows-10; then
-    echo "⚠️  Clone theme Windows-10 thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
-  fi
-fi
+    # icon theme theo lựa chọn — LXQt vẫn dùng icon theme GTK/Qt chung như XFCE
+    case "$ICON_THEME" in
+      numix)   apt-get install -y numix-icon-theme ;;
+      breeze)  apt-get install -y breeze-icon-theme ;;
+      adwaita) apt-get install -y adwaita-icon-theme ;;
+      *)       apt-get install -y papirus-icon-theme ;;
+    esac
+    ;;
+
+  *)
+    # mặc định: xfce
+    apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
+      xfce4-whiskermenu-plugin git libgtk-3-bin x11-xserver-utils
+
+    # icon theme theo lựa chọn
+    case "$ICON_THEME" in
+      numix)   apt-get install -y numix-icon-theme ;;
+      breeze)  apt-get install -y breeze-icon-theme ;;
+      adwaita) apt-get install -y adwaita-icon-theme ;;
+      *)       apt-get install -y papirus-icon-theme ;;
+    esac
+
+    # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
+    # BUG CŨ: clone không có fallback -> nếu GitHub rate-limit/timeout, `set -e`
+    # sẽ abort NGUYÊN build ở bước này (dù DE/package chính đã cài xong).
+    if ! git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
+        /usr/share/themes/Windows-10; then
+      echo "⚠️  Clone theme Windows-10 thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
+    fi
+    ;;
+esac
 
 # trình duyệt / office (tùy chọn)
 if [ "$INCLUDE_BROWSER" = "true" ]; then
@@ -114,6 +135,16 @@ if [ "$DE" = "kde" ]; then
 [Autologin]
 User=$OS_USERNAME
 Session=plasma
+EOF
+elif [ "$DE" = "lxqt" ]; then
+  # BUG CŨ: nếu để rơi vào nhánh else (lightdm + Session=xfce) như trước khi
+  # thêm case này, live ISO chọn LXQt sẽ autologin vào 1 session "xfce" chưa
+  # từng được cài (chỉ cài lxqt ở trên) -> đăng nhập xong màn hình đen/lỗi.
+  mkdir -p /etc/sddm.conf.d
+  cat <<EOF > /etc/sddm.conf.d/hyggshi-autologin.conf
+[Autologin]
+User=$OS_USERNAME
+Session=lxqt
 EOF
 else
   mkdir -p /etc/lightdm/lightdm.conf.d
