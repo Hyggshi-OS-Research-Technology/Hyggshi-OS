@@ -27,6 +27,15 @@ echo "===== Prepare boot files (kernel + initrd) ====="
 # /boot có nhiều hơn 1 vmlinuz-*/initrd.img-* (ví dụ update kernel giữa
 # chừng), cp với nhiều nguồn vào 1 đích sẽ lỗi "target is not a directory".
 # Luôn lấy bản mới nhất theo thời gian sửa đổi.
+if ! sudo ls live-build/chroot/boot/vmlinuz-* >/dev/null 2>&1 || \
+   ! sudo ls live-build/chroot/boot/initrd.img-* >/dev/null 2>&1; then
+  echo "LỖI: live-build/chroot/boot/ không có vmlinuz-*/initrd.img-*." >&2
+  echo "Nguyên nhân nằm ở bước cài kernel trong desktop.sh (chạy trước iso.sh)," >&2
+  echo "không phải ở iso.sh này. Kiểm tra lại log của desktop.sh." >&2
+  echo "Nội dung /boot hiện có:" >&2
+  sudo ls -la live-build/chroot/boot >&2 || true
+  exit 1
+fi
 VMLINUZ_FILE=$(sudo ls -t live-build/chroot/boot/vmlinuz-* | head -n1)
 INITRD_FILE=$(sudo ls -t live-build/chroot/boot/initrd.img-* | head -n1)
 sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
