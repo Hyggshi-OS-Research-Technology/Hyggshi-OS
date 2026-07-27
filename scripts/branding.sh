@@ -258,15 +258,31 @@ if [ ! -f "$WALL" ]; then
   exit 0
 fi
 
-# Chờ xfdesktop thật sự chạy (tối đa 15s), tránh race condition lúc login
-for i in $(seq 1 15); do
+# Chờ xfdesktop thật sự chạy (tối đa 20s), tránh race condition lúc login
+for i in $(seq 1 20); do
   if pgrep -x xfdesktop >/dev/null; then
     echo "xfdesktop đã chạy sau ${i}s"
     break
   fi
   sleep 1
 done
-sleep 1
+
+# Chờ THÊM để xfdesktop tự tạo xong cây property /backdrop của nó (lần đầu
+# boot có thể chậm hơn hẳn so với chỉ chờ process xuất hiện — nếu ta đọc
+# property quá sớm, danh sách sẽ RỖNG và script sẽ rơi vào fallback
+# monitor0, trong khi tên monitor thật (vd "Virtual-1", "eDP-1"...) không
+# khớp -> wallpaper không hề đổi trên màn hình dù bước "verify" bên dưới
+# vẫn báo khớp, vì lúc đó nó chỉ đang so khớp với chính property fallback
+# mà script tự tạo ra.
+PROPS=""
+for i in $(seq 1 20); do
+  PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
+  if [ -n "$PROPS" ]; then
+    echo "Tìm thấy property sau ${i}s chờ"
+    break
+  fi
+  sleep 1
+done
 
 apply_wallpaper() {
   # liệt kê MỌI property last-image mà xfdesktop đang thực sự dùng (tên
@@ -274,8 +290,13 @@ apply_wallpaper() {
   # khác như "Virtual-1")
   PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
   if [ -z "$PROPS" ]; then
-    echo "Chưa có property nào, fallback monitor0/workspace0"
+    echo "Chưa có property nào — dò tên monitor thật qua xrandr, cộng thêm fallback monitor0"
+    REAL_MONITORS=$(xrandr --query 2>/dev/null | awk '/ connected/{print $1}')
     PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
+    for m in $REAL_MONITORS; do
+      PROPS="$PROPS
+/backdrop/screen0/monitor${m}/workspace0/last-image"
+    done
   fi
   echo "PROPS tìm được:"
   echo "$PROPS"
@@ -295,15 +316,24 @@ apply_wallpaper
 xfdesktop --reload 2>>"$LOG"
 sleep 1
 
-echo "--- verify sau khi set ---"
+# LUÔN restart hẳn xfdesktop (không chỉ gọi --reload) sau khi set property,
+# vì lần đầu TẠO property mới (-n) xfdesktop đang chạy thường không tự
+# "nhìn thấy" giá trị vừa tạo chỉ bằng --reload — phải khởi động lại tiến
+# trình để nó đọc lại toàn bộ cấu hình từ xfconf.
+killall xfdesktop 2>>"$LOG" || true
+sleep 1
+nohup xfdesktop >>"$LOG" 2>&1 &
+sleep 1
+
+echo "--- verify sau khi set (chỉ để ghi log, không quyết định có restart hay không) ---"
 CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
 if [ -n "$CHECK" ]; then
   VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
   echo "verify: $CHECK = $VAL"
   if [ "$VAL" != "$WALL" ]; then
-    echo "Verify không khớp, retry lần 2 + restart xfdesktop"
+    echo "Verify không khớp, retry lần 2"
     apply_wallpaper
-    killall xfdesktop 2>>"$LOG"
+    killall xfdesktop 2>>"$LOG" || true
     sleep 1
     nohup xfdesktop >>"$LOG" 2>&1 &
   fi

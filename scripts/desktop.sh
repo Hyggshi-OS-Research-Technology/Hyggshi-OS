@@ -5,6 +5,13 @@ set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 export DEBIAN_FRONTEND=noninteractive
 
+if [ "$BASE_DISTRO" = "alpine" ]; then
+  echo "LỖI: desktop.sh này chỉ hỗ trợ apt/dpkg (Debian/Ubuntu/Mint)."
+  echo "Alpine dùng apk + OpenRC nên cần một alpine-desktop.sh riêng (apk add xfce4 lightdm ...)."
+  echo "Nhánh build.sh cho alpine hiện mới chỉ dựng base rootfs, dừng ở đây là đúng."
+  exit 1
+fi
+
 apt-get update
 apt-get install -y linux-image-generic live-boot systemd-sysv \
   plymouth plymouth-themes network-manager sudo locales tzdata \
@@ -20,6 +27,19 @@ if [ "$BASE_DISTRO" = "debian" ]; then
   apt-get install -y calamares-settings-debian || true
 fi
 
+echo "===== Firmware / driver phần cứng (wifi, GPU...) ====="
+# Tên gói khác nhau giữa Debian và Ubuntu/Mint (nền Ubuntu) nên phải tách
+# riêng, y như phần kernel ở trên. Thiếu firmware là lý do phổ biến khiến
+# live USB không bắt được wifi hoặc không lên được giao diện đồ hoạ trên
+# máy thật (dù chạy tốt trên VM vì QEMU/VirtualBox không cần firmware này).
+if [ "$BASE_DISTRO" = "debian" ]; then
+  apt-get install -y firmware-linux-free firmware-misc-nonfree \
+    firmware-realtek firmware-iwlwifi firmware-atheros \
+    os-prober pciutils usbutils || true
+else
+  apt-get install -y linux-firmware os-prober pciutils usbutils || true
+fi
+
 # hostname
 echo "$OS_HOSTNAME" > /etc/hostname
 echo "127.0.1.1 $OS_HOSTNAME" >> /etc/hosts
@@ -32,7 +52,7 @@ if [ "$DE" = "kde" ]; then
   apt-get install -y kde-plasma-desktop sddm
 else
   apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-    xfce4-whiskermenu-plugin git libgtk-3-bin
+    xfce4-whiskermenu-plugin git libgtk-3-bin x11-xserver-utils
 
   # icon theme theo lựa chọn
   case "$ICON_THEME" in
@@ -71,6 +91,29 @@ fi
 # user mặc định cho live session
 useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
+
+echo "===== Autologin cho live session ====="
+# QUAN TRỌNG: nếu không bật autologin, live ISO sẽ dừng ở màn hình đăng
+# nhập LightDM/SDDM. Không ai chạm tới thì KHÔNG session desktop nào được
+# tạo, nghĩa là autostart script set-wallpaper trong branding.sh (chỉ chạy
+# lúc có phiên desktop) không bao giờ được thực thi -> nhìn như "hình nền
+# không tự apply", dù bản thân script set-wallpaper hoàn toàn không có lỗi.
+if [ "$DE" = "kde" ]; then
+  mkdir -p /etc/sddm.conf.d
+  cat <<EOF > /etc/sddm.conf.d/hyggshi-autologin.conf
+[Autologin]
+User=$OS_USERNAME
+Session=plasma
+EOF
+else
+  mkdir -p /etc/lightdm/lightdm.conf.d
+  cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=xfce
+EOF
+fi
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*

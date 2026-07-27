@@ -46,6 +46,21 @@ case "$BASE_DISTRO" in
     SOURCES_TEMPLATE="mint"
     DISTRO_LABEL="Linux Mint ${MINT_VERSION} (${MINT_CODENAME}, nền Ubuntu ${BASE_CODENAME})"
     ;;
+  alpine)
+    # Alpine dùng apk + musl, KHÔNG dùng debootstrap/apt/dpkg. Nhánh này chỉ
+    # build base rootfs bằng apk-tools-static. desktop.sh/branding.sh/iso.sh
+    # hiện tại gọi apt-get/dpkg/calamares/live-boot thẳng nên SẼ LỖI ở các
+    # bước sau nếu chạy nguyên với distro=alpine — cần viết bản
+    # alpine-desktop.sh (apk add xfce4 lightdm ...) và alpine-iso.sh (Alpine
+    # dùng mkinitfs/initramfs riêng, tên kernel/initrd khác linux-image-*/
+    # initrd.img-*) riêng thì mới chạy hết pipeline được. Coi đây là
+    # experimental/base-rootfs-only cho tới khi có 2 script đó.
+    BASE_CODENAME="${ALPINE_VERSION:-v3.20}"
+    MIRROR="https://dl-cdn.alpinelinux.org/alpine"
+    SOURCES_TEMPLATE="alpine"
+    MINT_CODENAME=""
+    DISTRO_LABEL="Alpine Linux ${BASE_CODENAME} (experimental — base rootfs only)"
+    ;;
   *)
     echo "Distro không hợp lệ: $BASE_DISTRO"
     exit 1
@@ -62,10 +77,37 @@ echo "Sẽ build trên: $DISTRO_LABEL"
   echo "DISTRO_LABEL=$DISTRO_LABEL"
 } >> "$GITHUB_ENV"
 
-echo "===== Debootstrap base system ====="
+echo "===== Debootstrap / apk bootstrap base system ====="
 mkdir -p live-build/chroot
-sudo debootstrap --arch=amd64 --variant=minbase \
-  "$BASE_CODENAME" live-build/chroot "$MIRROR"
+
+if [ "$BASE_DISTRO" = "alpine" ]; then
+  echo "===== Bootstrap Alpine bằng apk-tools-static (không có debootstrap cho Alpine) ====="
+  APK_STATIC_PKG=$(curl -fsSL "$MIRROR/${BASE_CODENAME}/main/x86_64/" \
+    | grep -o 'apk-tools-static-[0-9][^"]*\.apk' | sort -V | tail -n1)
+  if [ -z "$APK_STATIC_PKG" ]; then
+    echo "Không tìm được gói apk-tools-static trên $MIRROR/${BASE_CODENAME}/main/x86_64/"
+    exit 1
+  fi
+  curl -fsSL "$MIRROR/${BASE_CODENAME}/main/x86_64/$APK_STATIC_PKG" -o /tmp/apk-tools-static.apk
+  mkdir -p /tmp/apk-static-extract
+  tar -xzf /tmp/apk-tools-static.apk -C /tmp/apk-static-extract
+  sudo /tmp/apk-static-extract/sbin/apk.static \
+    -X "$MIRROR/${BASE_CODENAME}/main" -X "$MIRROR/${BASE_CODENAME}/community" \
+    -U --allow-untrusted --arch x86_64 \
+    --root live-build/chroot --initdb add alpine-base openrc
+
+  sudo mkdir -p live-build/chroot/etc/apk
+  cat <<EOF | sudo tee live-build/chroot/etc/apk/repositories > /dev/null
+$MIRROR/${BASE_CODENAME}/main
+$MIRROR/${BASE_CODENAME}/community
+EOF
+  echo "===== apk bootstrap xong — CHƯA có desktop/branding/iso riêng cho Alpine ====="
+else
+  sudo debootstrap --arch=amd64 --variant=minbase \
+    "$BASE_CODENAME" live-build/chroot "$MIRROR"
+fi
+
+if [ "$BASE_DISTRO" != "alpine" ]; then
 
 echo "===== Mount virtual filesystems for chroot ====="
 sudo mount --bind /dev live-build/chroot/dev
@@ -122,5 +164,7 @@ if [ "$BASE_DISTRO" = "linuxmint" ]; then
   sudo sed -i 's#^deb http://packages.linuxmint.com#deb [signed-by=/usr/share/keyrings/mint-archive-keyring.gpg] http://packages.linuxmint.com#' \
     live-build/chroot/etc/apt/sources.list.d/official-package-repositories.list || true
 fi
+
+fi # end if BASE_DISTRO != alpine
 
 echo "===== build.sh xong ====="
