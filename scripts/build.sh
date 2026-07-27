@@ -156,13 +156,33 @@ sudo cp /etc/resolv.conf live-build/chroot/etc/resolv.conf
 
 if [ "$BASE_DISTRO" = "linuxmint" ]; then
   echo "===== Import Linux Mint APT signing key ====="
-  sudo apt-get install -y gnupg
-  curl -fsSL https://www.linuxmint.com/mint-repository-keyring/mint-archive-keyring.gpg \
-    | sudo tee live-build/chroot/usr/share/keyrings/mint-archive-keyring.gpg > /dev/null || \
-    sudo chroot live-build/chroot apt-key adv --keyserver keyserver.ubuntu.com \
-      --recv-keys 27DE097940FC9D0FDBDCC2404E163382636958F6 || true
+  # BUG CŨ: URL https://www.linuxmint.com/mint-repository-keyring/mint-archive-keyring.gpg
+  # không tồn tại (404) -> curl -f fail -> rơi vào fallback "chroot ... apt-key",
+  # nhưng gnupg/gpgv CHƯA được cài BÊN TRONG chroot (chỉ apt-get install trên HOST),
+  # nên apt-key luôn "command not found", bị nuốt bởi `|| true`. Kết quả: repo Mint
+  # không có key hợp lệ -> `apt-get update` trong desktop.sh chết với NO_PUBKEY và
+  # (vì desktop.sh có `set -e`) làm hỏng toàn bộ build khi chọn distro=linuxmint.
+  #
+  # Fix: cài gnupg/dirmngr NGAY BÊN TRONG chroot (base Ubuntu key đã có sẵn từ
+  # debootstrap nên apt-get này chạy được), rồi dùng đúng fingerprint chính thức
+  # của Linux Mint signing key để tải trực tiếp từ keyserver vào 1 keyring riêng,
+  # tham chiếu qua signed-by (không dùng apt-key/global trust đã deprecated).
+  sudo chroot live-build/chroot apt-get update
+  sudo chroot live-build/chroot apt-get install -y --no-install-recommends gnupg dirmngr
+
+  MINT_KEY_FPR="302F0738F465C1535761F965A6616109451BBBF2"
+  sudo chroot live-build/chroot gpg --no-default-keyring \
+    --keyring /usr/share/keyrings/mint-archive-keyring.gpg \
+    --keyserver keyserver.ubuntu.com --recv-keys "$MINT_KEY_FPR" \
+  || sudo chroot live-build/chroot gpg --no-default-keyring \
+    --keyring /usr/share/keyrings/mint-archive-keyring.gpg \
+    --keyserver hkps://keys.openpgp.org --recv-keys "$MINT_KEY_FPR"
+
   sudo sed -i 's#^deb http://packages.linuxmint.com#deb [signed-by=/usr/share/keyrings/mint-archive-keyring.gpg] http://packages.linuxmint.com#' \
-    live-build/chroot/etc/apt/sources.list.d/official-package-repositories.list || true
+    live-build/chroot/etc/apt/sources.list.d/official-package-repositories.list
+
+  echo "===== Verify: apt update trong chroot phải sạch lỗi NO_PUBKEY ====="
+  sudo chroot live-build/chroot apt-get update
 fi
 
 fi # end if BASE_DISTRO != alpine
