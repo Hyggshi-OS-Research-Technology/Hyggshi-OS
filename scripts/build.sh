@@ -3,9 +3,9 @@
 # Chạy trên HOST (runner), không chạy trong chroot.
 #
 # Phần bootstrap/apt-sources riêng cho từng distro giờ nằm ở
-# scripts/distros/build-<distro>.sh (debian / ubuntu / linuxmint / alpine),
-# file này chỉ còn lo phần dùng chung (cài dependency trên host, dọn ổ đĩa)
-# rồi source đúng script của $BASE_DISTRO.
+# scripts/distros/build-<distro>.sh (debian / ubuntu / linuxmint / alpine /
+# arch), file này chỉ còn lo phần dùng chung (cài dependency trên host, dọn
+# ổ đĩa) rồi source đúng script của $BASE_DISTRO.
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
@@ -28,7 +28,7 @@ DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
 
 if [ ! -f "$DISTRO_SCRIPT" ]; then
   echo "Distro không hợp lệ: $BASE_DISTRO (không tìm thấy $DISTRO_SCRIPT)"
-  echo "Các distro hỗ trợ: debian, ubuntu, linuxmint, alpine"
+  echo "Các distro hỗ trợ: debian, ubuntu, linuxmint, alpine, arch"
   exit 1
 fi
 
