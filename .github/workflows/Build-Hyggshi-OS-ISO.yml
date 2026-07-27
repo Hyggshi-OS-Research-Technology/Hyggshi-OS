@@ -125,6 +125,11 @@ env:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    # Chỉ chạy cho các distro dùng debootstrap/apt (Debian/Ubuntu/Mint).
+    # Alpine và Arch chạy ở 2 job riêng bên dưới, trong container gốc của
+    # chính distro đó — xem ghi chú trong build-alpine.sh / build-arch.sh về
+    # lý do (apk/pacman + keyring có sẵn, không cần giả lập trên Ubuntu).
+    if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' }}
     # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -133,10 +138,9 @@ jobs:
       - name: Chmod +x cho toàn bộ scripts/
         run: chmod +x scripts/*.sh
 
-      # Chỉ export ĐÚNG 1 biến version khớp với $BASE_DISTRO (Arch là rolling
-      # nên không có version, thay vào đó export cờ bật/tắt kernel tuning).
-      # Các biến của distro không được chọn không hề tồn tại trong môi trường
-      # của các step sau — không còn cảnh debian mà vẫn thấy UBUNTU_VERSION.
+      # Chỉ export ĐÚNG 1 biến version khớp với $BASE_DISTRO. Các biến của
+      # distro khác không hề tồn tại trong môi trường của các step sau —
+      # không còn cảnh debian mà vẫn thấy UBUNTU_VERSION.
       - name: Resolve version theo distro đã chọn
         run: |
           case "$BASE_DISTRO" in
@@ -146,12 +150,8 @@ jobs:
               echo "UBUNTU_VERSION=${{ github.event.inputs.ubuntu_version || 'noble' }}" >> "$GITHUB_ENV" ;;
             linuxmint)
               echo "MINT_VERSION=${{ github.event.inputs.mint_version || '22' }}" >> "$GITHUB_ENV" ;;
-            alpine)
-              echo "ALPINE_VERSION=${{ github.event.inputs.alpine_version || 'v3.20' }}" >> "$GITHUB_ENV" ;;
-            arch)
-              echo "ENABLE_KERNEL_TUNING=${{ github.event.inputs.enable_kernel_tuning || 'false' }}" >> "$GITHUB_ENV" ;;
             *)
-              echo "Distro không hợp lệ: $BASE_DISTRO"
+              echo "Distro không hợp lệ cho job build-iso: $BASE_DISTRO"
               exit 1 ;;
           esac
 
@@ -163,15 +163,7 @@ jobs:
         run: bash scripts/build.sh
 
       # === 2) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
-      # BỎ QUA khi distro=alpine hoặc arch: rootfs của cả hai không có
-      # /bin/bash (Alpine chỉ có busybox ash, Arch bootstrap tarball cũng
-      # không chắc có bash) và dùng package manager khác (apk / pacman) nên
-      # `chroot ... env ... /tmp/desktop.sh` (viết cho apt-get/dpkg) sẽ chết
-      # với lỗi khó hiểu kiểu "can't execute '/tmp/desktop.sh': No such file
-      # or directory" (thực ra là thiếu interpreter, không phải thiếu file).
-      # Xem ghi chú trong scripts/distros/build-alpine.sh và build-arch.sh.
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
-        if: ${{ env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
         run: |
           sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
           sudo chmod +x live-build/chroot/tmp/desktop.sh
@@ -190,13 +182,11 @@ jobs:
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
       # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
-      # Bỏ qua cho alpine/arch cùng lý do như bước desktop.sh ở trên.
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
-        if: ${{ env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
         run: bash scripts/branding.sh 2>&1 | tee branding-debug.log
 
       - name: Collect debug info (chỉ khi debug_mode = true)
-        if: ${{ env.DEBUG_MODE == 'true' && env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
+        if: ${{ env.DEBUG_MODE == 'true' }}
         run: |
           CHROOT=live-build/chroot
           {
@@ -261,7 +251,7 @@ jobs:
           cat debug-info.txt
 
       - name: Upload debug artifact (log build + debug-info.txt)
-        if: ${{ env.DEBUG_MODE == 'true' && env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
+        if: ${{ env.DEBUG_MODE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: hyggshi-os-debug
@@ -273,14 +263,10 @@ jobs:
           if-no-files-found: ignore
 
       # === 4) ISO: unmount, squashfs, grub, đóng gói ISO ===
-      # Bỏ qua cho alpine/arch: chưa có desktop/kernel cài qua apt nên không
-      # có gì tương thích với iso.sh (viết cho apt-based distro) để đóng ISO.
       - name: "[iso.sh] Build squashfs + ISO bootable"
-        if: ${{ env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
         run: bash scripts/iso.sh
 
       - name: Upload ISO as build artifact
-        if: ${{ env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
         uses: actions/upload-artifact@v4
         with:
           name: hyggshi-os-iso
@@ -288,30 +274,96 @@ jobs:
           retention-days: 14
 
       - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' && env.BASE_DISTRO != 'alpine' && env.BASE_DISTRO != 'arch' }}
+        if: ${{ github.event.inputs.release_iso == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ISO_FILENAME }}
           tag_name: "hyggshi-os-${{ github.run_number }}"
           name: "Hyggshi OS build #${{ github.run_number }}"
 
-      # === 4-experimental) Alpine/Arch hiện chỉ dừng ở base rootfs (xem
-      # scripts/distros/build-alpine.sh và build-arch.sh) — đóng gói rootfs
-      # thành tarball thay vì cố build ISO, để job kết thúc THÀNH CÔNG và có
-      # artifact xem được, thay vì chạy tiếp vào desktop.sh/iso.sh rồi vỡ
-      # giữa chừng.
-      - name: "[alpine/arch] Đóng gói base rootfs (chưa có desktop/ISO)"
-        if: ${{ env.BASE_DISTRO == 'alpine' || env.BASE_DISTRO == 'arch' }}
+  # ============================================================
+  # Job riêng cho Alpine: chạy TRONG container alpine:latest thay vì giả lập
+  # apk trên ubuntu-latest. Trong container này tiến trình đã là root, apk đã
+  # có sẵn — build-alpine.sh không cần sudo / apk-tools-static nữa.
+  # EXPERIMENTAL: chỉ dựng base rootfs, chưa có desktop/branding/ISO cho
+  # Alpine (xem ghi chú trong scripts/distros/build-alpine.sh).
+  # ============================================================
+  build-alpine:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.distro == 'alpine' }}
+    container:
+      image: ${{ (github.event.inputs.alpine_version == 'v3.19' && 'alpine:3.19') || (github.event.inputs.alpine_version == 'edge' && 'alpine:edge') || 'alpine:3.20' }}
+    steps:
+      - name: Cài build tools (apk add trong container)
         run: |
-          echo "$BASE_DISTRO base rootfs build xong — chưa có desktop/branding/ISO cho $BASE_DISTRO."
-          echo "Đóng gói live-build/chroot thành tarball để kiểm tra."
-          sudo tar -C live-build/chroot -cJf "hyggshi-os-${BASE_DISTRO}-rootfs.tar.xz" .
-          ls -lh "hyggshi-os-${BASE_DISTRO}-rootfs.tar.xz"
+          apk add --no-cache bash coreutils curl xz tar squashfs-tools grub grub-bios xorriso
 
-      - name: Upload Alpine/Arch rootfs artifact
-        if: ${{ env.BASE_DISTRO == 'alpine' || env.BASE_DISTRO == 'arch' }}
+      - name: Checkout repo (scripts, config files, branding...)
+        uses: actions/checkout@v4
+
+      - name: Chmod +x cho scripts/distros/build-alpine.sh
+        run: chmod +x scripts/distros/build-alpine.sh
+
+      - name: "[build-alpine.sh] Chuẩn bị base rootfs (native, trong container alpine)"
+        run: bash scripts/distros/build-alpine.sh
+
+      # Alpine hiện chỉ dừng ở base rootfs (xem build-alpine.sh) — đóng gói
+      # rootfs thành tarball thay vì cố build ISO, để job kết thúc THÀNH
+      # CÔNG và có artifact xem được.
+      - name: Đóng gói base rootfs thành tarball
+        run: |
+          echo "Alpine base rootfs build xong — chưa có desktop/branding/ISO cho Alpine."
+          tar -C live-build/chroot -cJf hyggshi-os-alpine-rootfs.tar.xz .
+          ls -lh hyggshi-os-alpine-rootfs.tar.xz
+
+      - name: Upload Alpine rootfs artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-${{ env.BASE_DISTRO }}-rootfs
-          path: hyggshi-os-${{ env.BASE_DISTRO }}-rootfs.tar.xz
+          name: hyggshi-os-alpine-rootfs
+          path: hyggshi-os-alpine-rootfs.tar.xz
+          retention-days: 14
+
+  # ============================================================
+  # Job riêng cho Arch: chạy TRONG container archlinux:latest thay vì tải
+  # bootstrap tarball tay + tự pacman-key --init/--populate trên ubuntu-latest.
+  # Image archlinux:latest đã có pacman + keyring sẵn.
+  # EXPERIMENTAL: chỉ dựng base rootfs, chưa có desktop/branding/ISO cho Arch
+  # (xem ghi chú trong scripts/distros/build-arch.sh).
+  # ============================================================
+  build-arch:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.distro == 'arch' }}
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Cài build tools (pacman -Sy trong container)
+        run: |
+          pacman -Sy --noconfirm --needed git bash xz squashfs-tools grub xorriso
+
+      - name: Checkout repo (scripts, config files, branding...)
+        uses: actions/checkout@v4
+
+      - name: Chmod +x cho scripts/distros/build-arch.sh
+        run: chmod +x scripts/distros/build-arch.sh
+
+      - name: Export ENABLE_KERNEL_TUNING
+        run: echo "ENABLE_KERNEL_TUNING=${{ github.event.inputs.enable_kernel_tuning || 'false' }}" >> "$GITHUB_ENV"
+
+      - name: "[build-arch.sh] Chuẩn bị base rootfs (native, trong container archlinux)"
+        run: bash scripts/distros/build-arch.sh
+
+      # Arch hiện chỉ dừng ở base rootfs (xem build-arch.sh) — đóng gói
+      # rootfs thành tarball thay vì cố build ISO, để job kết thúc THÀNH
+      # CÔNG và có artifact xem được.
+      - name: Đóng gói base rootfs thành tarball
+        run: |
+          echo "Arch base rootfs build xong — chưa có desktop/branding/ISO cho Arch."
+          tar -C live-build/chroot -cJf hyggshi-os-arch-rootfs.tar.xz .
+          ls -lh hyggshi-os-arch-rootfs.tar.xz
+
+      - name: Upload Arch rootfs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggshi-os-arch-rootfs
+          path: hyggshi-os-arch-rootfs.tar.xz
           retention-days: 14
