@@ -74,6 +74,8 @@ for f in $FOUND_XMLS; do
   echo "Patch: $f"
   sudo sed -i -E \
     -e 's#(<property name="last-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
+    -e 's#(<property name="last-single-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
+    -e 's#(<property name="image-path" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
     -e 's#(<property name="image-style" type="int" value=")[0-9]+(")#\g<1>5\2#g' \
     "$f" 2>/dev/null || true
 done
@@ -205,10 +207,24 @@ cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
   <property name="backdrop" type="empty">
     <property name="screen0" type="empty">
       <property name="monitor0" type="empty">
+        <property name="image-path" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
+        <property name="image-show" type="bool" value="true"/>
+        <property name="image-style" type="int" value="5"/>
+        <property name="color-style" type="int" value="0"/>
+        <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
+        <property name="last-single-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
         <property name="workspace0" type="empty">
           <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
           <property name="image-style" type="int" value="5"/>
         </property>
+      </property>
+      <property name="monitor1" type="empty">
+        <property name="image-path" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
+        <property name="image-show" type="bool" value="true"/>
+        <property name="image-style" type="int" value="5"/>
+        <property name="color-style" type="int" value="0"/>
+        <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
+        <property name="last-single-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
       </property>
     </property>
   </property>
@@ -266,8 +282,8 @@ apply_wallpaper() {
   # khác như "Virtual-1")
   PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
   if [ -z "$PROPS" ]; then
-    echo "Chưa có property nào, fallback monitor0/workspace0"
-    PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
+    echo "Chưa có property nào, fallback monitor0 (schema không có workspace)"
+    PROPS="/backdrop/screen0/monitor0/last-image"
   fi
   echo "PROPS tìm được:"
   echo "$PROPS"
