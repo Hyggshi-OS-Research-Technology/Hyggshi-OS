@@ -20,6 +20,39 @@ apt-get install -y linux-image-amd64 live-boot systemd-sysv \
   plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release calamares
 
+# BUG CŨ: dòng apt-get install ở trên đôi khi trả về exit code 0 ("thành
+# công") nhưng KHÔNG thực sự để lại /boot/vmlinuz-*  và /boot/initrd.img-*
+# (ví dụ do postinst của gói kernel lỗi ngầm trong chroot, hoặc bị package
+# khác purge/động tới sau đó). Vì desktop.sh set -e không bắt được trường
+# hợp "exit 0 nhưng thiếu file", lỗi chỉ lộ ra rất trễ ở iso.sh (khi
+# `sudo ls -t .../vmlinuz-*` trả rỗng) với thông báo cryptic
+# "cp: cannot stat ''" — lúc đó DE/toàn bộ rootfs đã cài xong, tốn hết thời
+# gian build mới biết. Kiểm tra ngay tại đây, fail sớm kèm thông tin debug
+# đầy đủ, để biết chính xác nguyên nhân (mất mạng giữa chừng, hết dung
+# lượng đĩa, tên gói kernel sai cho distro/version này...).
+echo "===== Kiểm tra kernel image đã thực sự có trong /boot ====="
+if ! ls /boot/vmlinuz-* >/dev/null 2>&1 || ! ls /boot/initrd.img-* >/dev/null 2>&1; then
+  echo "LỖI: apt-get install kernel báo 'thành công' nhưng /boot không có" >&2
+  echo "vmlinuz-*/initrd.img-* — ISO sẽ không boot được nếu tiếp tục." >&2
+  echo "--- Debug info ---" >&2
+  echo "Dung lượng đĩa còn lại:" >&2
+  df -h / >&2
+  echo "Các gói linux-image* đã cài (dpkg):" >&2
+  dpkg -l 'linux-image*' 2>&1 >&2 || true
+  echo "Nội dung /boot:" >&2
+  ls -la /boot >&2 || true
+  exit 1
+fi
+echo "OK: tìm thấy $(ls /boot/vmlinuz-* | head -n1) và $(ls /boot/initrd.img-* | head -n1)"
+
+# Khóa gói kernel thật sự (linux-image-X.Y.Z-generic, thường bị apt đánh
+# dấu "auto-installed" vì chỉ là dependency của metapackage
+# linux-image-generic) thành "manual". Nếu không, `apt-get autoremove` gọi
+# sau đó (khi INCLUDE_OFFICE=false) có thể coi nó là rác và gỡ mất, gây lại
+# đúng lỗi thiếu vmlinuz/initrd ở bước iso.sh dù bước kiểm tra trên đã pass.
+apt-mark manual $(dpkg -l 'linux-image-*-generic' 'linux-image-*-amd64' 2>/dev/null \
+  | awk '/^ii/{print $2}') 2>/dev/null || true
+
 # calamares-settings-debian chỉ có trên Debian — cài trên Ubuntu/Mint sẽ
 # lỗi "Unable to locate package" và (vì nằm chung 1 lệnh apt-get) làm hỏng
 # luôn cả việc cài kernel/DE ở trên. Tách riêng và chỉ cài khi BASE_DISTRO=debian.
