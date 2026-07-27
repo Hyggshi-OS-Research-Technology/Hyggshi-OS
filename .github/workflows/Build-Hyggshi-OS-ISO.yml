@@ -129,6 +129,7 @@ jobs:
           sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
           sudo chmod +x live-build/chroot/tmp/desktop.sh
           sudo chroot live-build/chroot env \
+            BASE_DISTRO="$BASE_DISTRO" \
             DE="$DE" \
             DEBUG_MODE="$DEBUG_MODE" \
             ICON_THEME="$ICON_THEME" \
