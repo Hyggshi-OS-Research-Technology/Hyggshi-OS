@@ -25,7 +25,7 @@ if [ "$DE" = "kde" ]; then
   apt-get install -y kde-plasma-desktop sddm
 else
   apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-    xfce4-whiskermenu-plugin git libgtk-3-bin
+    xfce4-whiskermenu-plugin git libgtk-3-bin feh
 
   # icon theme theo lựa chọn
   case "$ICON_THEME" in
