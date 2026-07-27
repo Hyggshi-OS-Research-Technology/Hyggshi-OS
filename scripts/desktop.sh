@@ -63,8 +63,12 @@ else
   esac
 
   # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
-  git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
-    /usr/share/themes/Windows-10
+  # BUG CŨ: clone không có fallback -> nếu GitHub rate-limit/timeout, `set -e`
+  # sẽ abort NGUYÊN build ở bước này (dù DE/package chính đã cài xong).
+  if ! git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
+      /usr/share/themes/Windows-10; then
+    echo "⚠️  Clone theme Windows-10 thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
+  fi
 fi
 
 # trình duyệt / office (tùy chọn)
@@ -90,7 +94,13 @@ fi
 
 # user mặc định cho live session
 useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
+# BUG CŨ: khi DEBUG_MODE=true (set -x ở đầu file), lệnh chpasswd bên dưới
+# sẽ bị xtrace in thẳng "OS_USERNAME:OS_PASSWORD" ra install-debug.log —
+# log này được upload làm artifact (retention 14 ngày) -> lộ mật khẩu
+# plaintext. Tắt xtrace tạm thời quanh đúng 1 dòng nhạy cảm này.
+{ set +x; } 2>/dev/null
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
+[ "$DEBUG_MODE" = "true" ] && set -x
 
 echo "===== Autologin cho live session ====="
 # QUAN TRỌNG: nếu không bật autologin, live ISO sẽ dừng ở màn hình đăng
