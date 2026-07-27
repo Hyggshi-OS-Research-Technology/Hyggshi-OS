@@ -167,7 +167,14 @@ if [ "$BASE_DISTRO" = "linuxmint" ]; then
   # debootstrap nên apt-get này chạy được), rồi dùng đúng fingerprint chính thức
   # của Linux Mint signing key để tải trực tiếp từ keyserver vào 1 keyring riêng,
   # tham chiếu qua signed-by (không dùng apt-key/global trust đã deprecated).
-  sudo chroot live-build/chroot apt-get update
+  # LƯU Ý: apt-get update ở đây CHỈ để có gnupg/dirmngr cài từ repo Ubuntu
+  # base (đã có key sẵn từ debootstrap). Lúc này repo Mint trong
+  # sources.list.d ĐÃ được thêm nhưng CHƯA có key -> apt update sẽ luôn báo
+  # lỗi NO_PUBKEY/"is not signed" cho riêng repo Mint (exit code 100) dù các
+  # repo Ubuntu vẫn tải thành công. Vì set -e ở đầu file, nếu không có
+  # `|| true` ở đây thì toàn bộ build sẽ chết ngay tại đây, không bao giờ
+  # chạy tới đoạn import key bên dưới -> đây chính là lỗi build.
+  sudo chroot live-build/chroot apt-get update || true
   sudo chroot live-build/chroot apt-get install -y --no-install-recommends gnupg dirmngr
 
   MINT_KEY_FPR="302F0738F465C1535761F965A6616109451BBBF2"
