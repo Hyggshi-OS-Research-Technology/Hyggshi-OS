@@ -45,13 +45,29 @@ if ! ls /boot/vmlinuz-* >/dev/null 2>&1 || ! ls /boot/initrd.img-* >/dev/null 2>
 fi
 echo "OK: tìm thấy $(ls /boot/vmlinuz-* | head -n1) và $(ls /boot/initrd.img-* | head -n1)"
 
-# Khóa gói kernel thật sự (linux-image-X.Y.Z-generic, thường bị apt đánh
-# dấu "auto-installed" vì chỉ là dependency của metapackage
-# linux-image-generic) thành "manual". Nếu không, `apt-get autoremove` gọi
-# sau đó (khi INCLUDE_OFFICE=false) có thể coi nó là rác và gỡ mất, gây lại
-# đúng lỗi thiếu vmlinuz/initrd ở bước iso.sh dù bước kiểm tra trên đã pass.
-apt-mark manual $(dpkg -l 'linux-image-*-generic' 'linux-image-*-amd64' 2>/dev/null \
-  | awk '/^ii/{print $2}') 2>/dev/null || true
+# Khóa gói kernel thật sự (linux-image-X.Y.Z-generic, linux-modules-*,
+# thường bị apt đánh dấu "auto-installed" vì chỉ là dependency của
+# metapackage linux-image-generic) để KHÔNG BAO GIỜ bị autoremove động tới.
+#
+# BUG CŨ: bản trước dùng `dpkg -l 'pattern1' 'pattern2' | awk` — nếu MỘT
+# trong hai pattern không khớp gói nào (vd hệ chỉ có "-generic", không có
+# "-amd64"), `dpkg -l` trả về exit code khác 0 cho toàn bộ lệnh, có thể làm
+# mất luôn phần output của pattern còn lại tuỳ phiên bản dpkg -> apt-mark
+# nhận danh sách rỗng -> KHÔNG bảo vệ được gì -> autoremove xoá mất kernel
+# thật (đúng triệu chứng: /boot rỗng dù build.sh/desktop.sh không báo lỗi).
+# Fix: dùng `dpkg-query -W` (ổn định hơn, không bị lỗi kiểu này) để liệt kê
+# TOÀN BỘ gói liên quan tới kernel đang cài (image/modules/headers), và
+# dùng `apt-mark hold` thay vì chỉ `manual` — hold là mức bảo vệ mạnh nhất,
+# apt sẽ không bao giờ remove/upgrade gói đã hold bất kể lý do gì.
+KERNEL_PKGS=$(dpkg-query -W -f='${Package}\n' 2>/dev/null \
+  | grep -E '^linux-(image|modules|headers)-' || true)
+if [ -n "$KERNEL_PKGS" ]; then
+  echo "Khóa các gói kernel sau khỏi autoremove/upgrade (apt-mark hold):"
+  echo "$KERNEL_PKGS"
+  echo "$KERNEL_PKGS" | xargs apt-mark hold
+else
+  echo "CẢNH BÁO: không tìm thấy gói linux-image-*/linux-modules-*/linux-headers-* nào đã cài — kiểm tra lại bước cài kernel ở trên." >&2
+fi
 
 # calamares-settings-debian chỉ có trên Debian — cài trên Ubuntu/Mint sẽ
 # lỗi "Unable to locate package" và (vì nằm chung 1 lệnh apt-get) làm hỏng
@@ -137,8 +153,10 @@ else
   # theo libreoffice qua "Recommends" dù ta không apt-get install nó trực
   # tiếp. Purge tường minh ở đây để đảm bảo đúng lựa chọn của người dùng.
   echo "INCLUDE_OFFICE=false — kiểm tra và gỡ LibreOffice nếu bị cài kèm theo Recommends"
+  echo "Checkpoint kernel TRƯỚC autoremove: $(ls /boot/vmlinuz-* 2>/dev/null || echo 'KHÔNG CÓ FILE')"
   apt-get purge -y 'libreoffice*' 2>/dev/null || true
   apt-get autoremove -y 2>/dev/null || true
+  echo "Checkpoint kernel SAU autoremove: $(ls /boot/vmlinuz-* 2>/dev/null || echo 'KHÔNG CÓ FILE — autoremove chính là thủ phạm')"
 fi
 
 # gói thêm do người dùng chỉ định
@@ -192,4 +210,5 @@ fi
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
+echo "Checkpoint kernel CUỐI desktop.sh: $(ls /boot/vmlinuz-* 2>/dev/null || echo 'KHÔNG CÓ FILE')"
 echo "===== desktop.sh xong ====="
