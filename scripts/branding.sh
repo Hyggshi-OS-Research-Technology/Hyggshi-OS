@@ -36,8 +36,12 @@ if [ -n "$WALLPAPER_FILE" ]; then
 else
   echo "⚠️  Không lấy được wallpaper — tự tạo wallpaper gradient tạm thời."
   sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
-  convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
-  sudo cp /tmp/wallpaper.png "$CHROOT/usr/share/backgrounds/hyggshi/wallpaper.png"
+  if command -v convert > /dev/null 2>&1; then
+    convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
+    sudo cp /tmp/wallpaper.png "$CHROOT/usr/share/backgrounds/hyggshi/wallpaper.png"
+  else
+    echo "⚠️  imagemagick không cài được — bỏ qua wallpaper, giữ theme mặc định."
+  fi
 fi
 
 echo "===== Ghi đè default wallpaper qua update-alternatives (KHÔNG phụ thuộc"
@@ -74,8 +78,6 @@ for f in $FOUND_XMLS; do
   echo "Patch: $f"
   sudo sed -i -E \
     -e 's#(<property name="last-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
-    -e 's#(<property name="last-single-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
-    -e 's#(<property name="image-path" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
     -e 's#(<property name="image-style" type="int" value=")[0-9]+(")#\g<1>5\2#g' \
     "$f" 2>/dev/null || true
 done
@@ -122,6 +124,9 @@ LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
 if [ -n "$LOGO_FILE" ]; then
   sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+  if ! command -v convert > /dev/null 2>&1; then
+    echo "⚠️  imagemagick không cài được — bỏ qua đổi distributor logo."
+  else
   for size in 16 22 24 32 48 64 128 192 256; do
     DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
     sudo mkdir -p "$DEST"
@@ -130,6 +135,7 @@ if [ -n "$LOGO_FILE" ]; then
   done
   sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
   echo "Đã áp logo custom: $LOGO_FILE"
+  fi
 else
   echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo mặc định của distro gốc."
   echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
@@ -207,24 +213,10 @@ cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
   <property name="backdrop" type="empty">
     <property name="screen0" type="empty">
       <property name="monitor0" type="empty">
-        <property name="image-path" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
-        <property name="image-show" type="bool" value="true"/>
-        <property name="image-style" type="int" value="5"/>
-        <property name="color-style" type="int" value="0"/>
-        <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
-        <property name="last-single-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
         <property name="workspace0" type="empty">
           <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
           <property name="image-style" type="int" value="5"/>
         </property>
-      </property>
-      <property name="monitor1" type="empty">
-        <property name="image-path" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
-        <property name="image-show" type="bool" value="true"/>
-        <property name="image-style" type="int" value="5"/>
-        <property name="color-style" type="int" value="0"/>
-        <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
-        <property name="last-single-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
       </property>
     </property>
   </property>
@@ -276,43 +268,48 @@ for i in $(seq 1 15); do
 done
 sleep 1
 
-# ĐÃ XÁC NHẬN BẰNG TAY: xfdesktop chạy đúng, property xfconf set đúng,
-# verify khớp — nhưng xfdesktop vẫn không chịu vẽ lại backdrop (rất có thể
-# do cache nội bộ bị stale trong phiên boot). feh set thẳng root pixmap thì
-# ăn ngay lập tức. Nên chuyển hẳn sang dùng feh làm chính, đồng thời tắt
-# "image-show" của xfdesktop để nó không tự vẽ đè lên feh — nhưng VẪN GIỮ
-# xfdesktop chạy (không kill) để không mất icon Home/Trash/File System.
-PROPS_SHOW=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'image-show$')
-while read -r P; do
-  [ -z "$P" ] && continue
-  xfconf-query -c xfce4-desktop -p "$P" -n -t bool -s false 2>>"$LOG" \
-    || xfconf-query -c xfce4-desktop -p "$P" -s false 2>>"$LOG"
-  echo "Tắt $P (để xfdesktop không tự vẽ đè lên feh)"
-done <<< "$PROPS_SHOW"
+apply_wallpaper() {
+  # liệt kê MỌI property last-image mà xfdesktop đang thực sự dùng (tên
+  # monitor như "monitor0" không đúng trên mọi máy/VM, QEMU thường đặt tên
+  # khác như "Virtual-1")
+  PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
+  if [ -z "$PROPS" ]; then
+    echo "Chưa có property nào, fallback monitor0/workspace0"
+    PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
+  fi
+  echo "PROPS tìm được:"
+  echo "$PROPS"
 
-# vẫn cập nhật last-image cho đồng bộ (Background settings dialog hiển thị
-# đúng ảnh đang chọn), dù phần vẽ thật sự do feh đảm nhiệm
-PROPS_IMG=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
-while read -r P; do
-  [ -z "$P" ] && continue
-  xfconf-query -c xfce4-desktop -p "$P" -n -t string -s "$WALL" 2>>"$LOG" \
-    || xfconf-query -c xfce4-desktop -p "$P" -s "$WALL" 2>>"$LOG"
-done <<< "$PROPS_IMG"
-
-set_bg() {
-  feh --bg-fill "$WALL" >>"$LOG" 2>&1
-  echo "feh --bg-fill $WALL (lần $1)"
+  while read -r PROP; do
+    [ -z "$PROP" ] && continue
+    STYLE="${PROP%last-image}image-style"
+    xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
+      || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
+    xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
+      || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
+    echo "Set $PROP -> $WALL"
+  done <<< "$PROPS"
 }
 
-set_bg 1
-# đặt lại thêm vài lần trong lúc session mới khởi động, phòng trường hợp
-# xfdesktop hoặc thứ gì khác vẽ đè ngay sau login (chỉ trong ~15s đầu)
-( sleep 3;  set_bg 2
-  sleep 3;  set_bg 3
-  sleep 5;  set_bg 4 ) &
-disown
+apply_wallpaper
+xfdesktop --reload 2>>"$LOG"
+sleep 1
 
-echo "=== xong (đợt đầu) ==="
+echo "--- verify sau khi set ---"
+CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
+if [ -n "$CHECK" ]; then
+  VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
+  echo "verify: $CHECK = $VAL"
+  if [ "$VAL" != "$WALL" ]; then
+    echo "Verify không khớp, retry lần 2 + restart xfdesktop"
+    apply_wallpaper
+    killall xfdesktop 2>>"$LOG"
+    sleep 1
+    nohup xfdesktop >>"$LOG" 2>&1 &
+  fi
+fi
+
+echo "=== xong ==="
 SCRIPT
 sudo chmod +x "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh"
 

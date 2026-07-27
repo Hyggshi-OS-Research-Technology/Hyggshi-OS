@@ -76,10 +76,18 @@ sudo chroot live-build/chroot mount -t sysfs none /sys
 echo "===== Configure APT sources inside chroot ====="
 case "$SOURCES_TEMPLATE" in
   debian)
+    # non-free-firmware chỉ tồn tại từ Debian 12 (bookworm) trở đi.
+    # bullseye (Debian 11) không có component này -> phải bỏ ra, nếu không
+    # apt update sẽ lỗi 404/"Invalid" component ngay từ đầu.
+    if [ "$BASE_CODENAME" = "bullseye" ]; then
+      FIRMWARE_COMPONENT=""
+    else
+      FIRMWARE_COMPONENT="non-free-firmware"
+    fi
     sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
-deb http://deb.debian.org/debian ${BASE_CODENAME} main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian ${BASE_CODENAME}-updates main contrib non-free non-free-firmware
-deb http://security.debian.org/debian-security ${BASE_CODENAME}-security main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian ${BASE_CODENAME} main contrib non-free ${FIRMWARE_COMPONENT}
+deb http://deb.debian.org/debian ${BASE_CODENAME}-updates main contrib non-free ${FIRMWARE_COMPONENT}
+deb http://security.debian.org/debian-security ${BASE_CODENAME}-security main contrib non-free ${FIRMWARE_COMPONENT}
 EOF
     ;;
   ubuntu)
