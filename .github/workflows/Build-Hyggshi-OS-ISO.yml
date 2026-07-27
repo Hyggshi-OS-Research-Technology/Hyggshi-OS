@@ -97,10 +97,13 @@ on:
 env:
   DISTRO_NAME: "Hyggshi OS"
   BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
-  DEBIAN_VERSION: ${{ github.event.inputs.debian_version || 'trixie' }}
-  UBUNTU_VERSION: ${{ github.event.inputs.ubuntu_version || 'noble' }}
-  MINT_VERSION: ${{ github.event.inputs.mint_version || '22' }}
-  ALPINE_VERSION: ${{ github.event.inputs.alpine_version || 'v3.20' }}
+  # LƯU Ý: debian_version/ubuntu_version/mint_version/alpine_version KHÔNG đặt
+  # ở đây. Nếu đặt cứng ở env cấp workflow, GitHub Actions in TOÀN BỘ 4 biến
+  # ra log của MỌI step (kể cả 3 biến không liên quan tới distro đã chọn —
+  # ví dụ chọn debian vẫn thấy UBUNTU_VERSION/MINT_VERSION/ALPINE_VERSION),
+  # gây hiểu lầm là chúng có tác dụng. Thay vào đó, step "Resolve version
+  # theo distro đã chọn" bên dưới chỉ export ĐÚNG 1 biến khớp với
+  # $BASE_DISTRO vào $GITHUB_ENV — 3 biến còn lại không hề được set.
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
   PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
@@ -125,6 +128,25 @@ jobs:
 
       - name: Chmod +x cho toàn bộ scripts/
         run: chmod +x scripts/*.sh
+
+      # Chỉ export ĐÚNG 1 biến version khớp với $BASE_DISTRO. Các biến của
+      # 3 distro còn lại (không được chọn) không hề tồn tại trong môi trường
+      # của các step sau — không còn cảnh debian mà vẫn thấy UBUNTU_VERSION.
+      - name: Resolve version theo distro đã chọn
+        run: |
+          case "$BASE_DISTRO" in
+            debian)
+              echo "DEBIAN_VERSION=${{ github.event.inputs.debian_version || 'trixie' }}" >> "$GITHUB_ENV" ;;
+            ubuntu)
+              echo "UBUNTU_VERSION=${{ github.event.inputs.ubuntu_version || 'noble' }}" >> "$GITHUB_ENV" ;;
+            linuxmint)
+              echo "MINT_VERSION=${{ github.event.inputs.mint_version || '22' }}" >> "$GITHUB_ENV" ;;
+            alpine)
+              echo "ALPINE_VERSION=${{ github.event.inputs.alpine_version || 'v3.20' }}" >> "$GITHUB_ENV" ;;
+            *)
+              echo "Distro không hợp lệ: $BASE_DISTRO"
+              exit 1 ;;
+          esac
 
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
       - name: "[build.sh] Chuẩn bị base rootfs"
