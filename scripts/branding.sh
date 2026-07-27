@@ -300,22 +300,24 @@ apply_wallpaper() {
 }
 
 apply_wallpaper
-xfdesktop --reload 2>>"$LOG"
-sleep 1
 
 echo "--- verify sau khi set ---"
 CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
 if [ -n "$CHECK" ]; then
   VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
   echo "verify: $CHECK = $VAL"
-  if [ "$VAL" != "$WALL" ]; then
-    echo "Verify không khớp, retry lần 2 + restart xfdesktop"
-    apply_wallpaper
-    killall xfdesktop 2>>"$LOG"
-    sleep 1
-    nohup xfdesktop >>"$LOG" 2>&1 &
-  fi
 fi
+
+# --reload không đủ để ép xfdesktop vẽ lại backdrop trong môi trường này
+# (đã xác nhận qua log: property set đúng, verify khớp, nhưng ảnh nền vẫn
+# không đổi cho tới khi restart hẳn tiến trình). Nên LUÔN kill + khởi động
+# lại xfdesktop, không phụ thuộc kết quả verify nữa.
+echo "Restart xfdesktop để ép vẽ lại backdrop..."
+killall xfdesktop 2>>"$LOG"
+sleep 1
+DISPLAY="${DISPLAY:-:0}" nohup xfdesktop >>"$LOG" 2>&1 &
+disown
+sleep 2
 
 echo "=== xong ==="
 SCRIPT
