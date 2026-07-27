@@ -335,6 +335,15 @@ jobs:
     if: ${{ github.event.inputs.distro == 'arch' }}
     container:
       image: archlinux:latest
+      # pacstrap tự mount /proc, /sys, /dev bind vào bên trong target để
+      # chroot vào cài gói — việc mount này cần CAP_SYS_ADMIN, nhưng container
+      # mặc định trên GitHub Actions KHÔNG có capability đó (Docker rút gọn
+      # quyền theo mặc định) -> pacstrap chết với "mount: ... permission
+      # denied" / "ERROR: failed to setup chroot". --privileged cấp lại đủ
+      # quyền để pacstrap tự mount được — đây là cách chạy pacstrap/archiso
+      # trong Docker container chuẩn của Arch, không có cách nào nhẹ hơn vì
+      # bản thân pacstrap cần làm việc đó.
+      options: --privileged
     steps:
       - name: Cài build tools (pacman -Sy trong container)
         run: |
