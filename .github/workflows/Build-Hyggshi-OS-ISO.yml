@@ -324,55 +324,47 @@ jobs:
           retention-days: 14
 
   # ============================================================
-  # Job riêng cho Arch: chạy TRONG container archlinux:latest thay vì tải
-  # bootstrap tarball tay + tự pacman-key --init/--populate trên ubuntu-latest.
-  # Image archlinux:latest đã có pacman + keyring sẵn.
-  # EXPERIMENTAL: chỉ dựng base rootfs, chưa có desktop/branding/ISO cho Arch
-  # (xem ghi chú trong scripts/distros/build-arch.sh).
+  # Job riêng cho Arch: chạy TRONG container archlinux:latest, dùng
+  # mkarchiso (công cụ chính chủ archlinux.org) để build ISO THẬT (bootable),
+  # thay vì chỉ dựng base rootfs như trước. Xem chi tiết trong
+  # scripts/distros/build-arch-iso.sh.
   # ============================================================
   build-arch:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.distro == 'arch' }}
     container:
       image: archlinux:latest
-      # pacstrap tự mount /proc, /sys, /dev bind vào bên trong target để
-      # chroot vào cài gói — việc mount này cần CAP_SYS_ADMIN, nhưng container
-      # mặc định trên GitHub Actions KHÔNG có capability đó (Docker rút gọn
-      # quyền theo mặc định) -> pacstrap chết với "mount: ... permission
+      # mkarchiso (giống pacstrap) tự mount /proc, /sys, /dev bind vào bên
+      # trong target để chroot vào cài gói — việc mount này cần CAP_SYS_ADMIN,
+      # nhưng container mặc định trên GitHub Actions KHÔNG có capability đó
+      # (Docker rút gọn quyền theo mặc định) -> chết với "mount: ... permission
       # denied" / "ERROR: failed to setup chroot". --privileged cấp lại đủ
-      # quyền để pacstrap tự mount được — đây là cách chạy pacstrap/archiso
-      # trong Docker container chuẩn của Arch, không có cách nào nhẹ hơn vì
-      # bản thân pacstrap cần làm việc đó.
+      # quyền để mkarchiso tự mount được.
       options: --privileged
     steps:
-      - name: Cài build tools (pacman -Sy trong container)
-        run: |
-          pacman -Sy --noconfirm --needed git bash xz squashfs-tools grub xorriso
-
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
 
-      - name: Chmod +x cho scripts/distros/build-arch.sh
-        run: chmod +x scripts/distros/build-arch.sh
+      - name: Chmod +x cho scripts/distros/build-arch-iso.sh
+        run: chmod +x scripts/distros/build-arch-iso.sh
 
       - name: Export ENABLE_KERNEL_TUNING
         run: echo "ENABLE_KERNEL_TUNING=${{ github.event.inputs.enable_kernel_tuning || 'false' }}" >> "$GITHUB_ENV"
 
-      - name: "[build-arch.sh] Chuẩn bị base rootfs (native, trong container archlinux)"
-        run: bash scripts/distros/build-arch.sh
+      - name: "[build-arch-iso.sh] Build ISO bằng mkarchiso"
+        run: bash scripts/distros/build-arch-iso.sh
 
-      # Arch hiện chỉ dừng ở base rootfs (xem build-arch.sh) — đóng gói
-      # rootfs thành tarball thay vì cố build ISO, để job kết thúc THÀNH
-      # CÔNG và có artifact xem được.
-      - name: Đóng gói base rootfs thành tarball
-        run: |
-          echo "Arch base rootfs build xong — chưa có desktop/branding/ISO cho Arch."
-          tar -C live-build/chroot -cJf hyggshi-os-arch-rootfs.tar.xz .
-          ls -lh hyggshi-os-arch-rootfs.tar.xz
-
-      - name: Upload Arch rootfs artifact
+      - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-arch-rootfs
-          path: hyggshi-os-arch-rootfs.tar.xz
+          name: hyggshi-os-iso
+          path: ${{ env.ISO_FILENAME }}
           retention-days: 14
+
+      - name: Attach ISO to GitHub Release (optional)
+        if: ${{ github.event.inputs.release_iso == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ISO_FILENAME }}
+          tag_name: "hyggshi-os-${{ github.run_number }}"
+          name: "Hyggshi OS build #${{ github.run_number }}"
