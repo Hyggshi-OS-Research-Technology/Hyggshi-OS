@@ -7,7 +7,7 @@ on:
         description: "Bản phân phối gốc (base distro)"
         required: false
         type: choice
-        options: [debian, ubuntu, linuxmint]
+        options: [debian, ubuntu, linuxmint, alpine]
         default: "debian"
       debian_version:
         description: "Phiên bản Debian (chỉ áp dụng khi distro = debian)"
@@ -27,6 +27,12 @@ on:
         type: choice
         options: ["22", "21.3", "21.2"]
         default: "22"
+      alpine_version:
+        description: "Phiên bản Alpine (chỉ áp dụng khi distro = alpine — EXPERIMENTAL, mới bootstrap base rootfs, chưa có desktop/branding/iso riêng cho Alpine)"
+        required: false
+        type: choice
+        options: ["v3.20", "v3.19", "edge"]
+        default: "v3.20"
       desktop:
         description: "Desktop environment"
         required: false
@@ -94,6 +100,7 @@ env:
   DEBIAN_VERSION: ${{ github.event.inputs.debian_version || 'trixie' }}
   UBUNTU_VERSION: ${{ github.event.inputs.ubuntu_version || 'noble' }}
   MINT_VERSION: ${{ github.event.inputs.mint_version || '22' }}
+  ALPINE_VERSION: ${{ github.event.inputs.alpine_version || 'v3.20' }}
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
   PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
