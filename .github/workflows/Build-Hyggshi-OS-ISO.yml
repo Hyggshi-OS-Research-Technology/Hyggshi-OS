@@ -131,7 +131,15 @@ jobs:
         run: bash scripts/build.sh
 
       # === 2) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
+      # BỎ QUA khi distro=alpine: rootfs Alpine dùng apk/musl, không có
+      # /bin/bash (chỉ có busybox ash) nên `chroot ... env ... /tmp/desktop.sh`
+      # (shebang #!/bin/bash) sẽ chết với lỗi khó hiểu "can't execute
+      # '/tmp/desktop.sh': No such file or directory" (thực ra là thiếu
+      # interpreter, không phải thiếu file) — vì desktop.sh/branding.sh/iso.sh
+      # hiện tại được viết cho apt-based distro. Xem ghi chú trong
+      # scripts/distros/build-alpine.sh.
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
+        if: ${{ env.BASE_DISTRO != 'alpine' }}
         run: |
           sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
           sudo chmod +x live-build/chroot/tmp/desktop.sh
@@ -150,11 +158,13 @@ jobs:
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
       # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
+      # Bỏ qua cho alpine cùng lý do như bước desktop.sh ở trên.
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
+        if: ${{ env.BASE_DISTRO != 'alpine' }}
         run: bash scripts/branding.sh 2>&1 | tee branding-debug.log
 
       - name: Collect debug info (chỉ khi debug_mode = true)
-        if: ${{ env.DEBUG_MODE == 'true' }}
+        if: ${{ env.DEBUG_MODE == 'true' && env.BASE_DISTRO != 'alpine' }}
         run: |
           CHROOT=live-build/chroot
           {
@@ -219,7 +229,7 @@ jobs:
           cat debug-info.txt
 
       - name: Upload debug artifact (log build + debug-info.txt)
-        if: ${{ env.DEBUG_MODE == 'true' }}
+        if: ${{ env.DEBUG_MODE == 'true' && env.BASE_DISTRO != 'alpine' }}
         uses: actions/upload-artifact@v4
         with:
           name: hyggshi-os-debug
@@ -231,10 +241,13 @@ jobs:
           if-no-files-found: ignore
 
       # === 4) ISO: unmount, squashfs, grub, đóng gói ISO ===
+      # Bỏ qua cho alpine: chưa có desktop/kernel nên không có gì để đóng ISO.
       - name: "[iso.sh] Build squashfs + ISO bootable"
+        if: ${{ env.BASE_DISTRO != 'alpine' }}
         run: bash scripts/iso.sh
 
       - name: Upload ISO as build artifact
+        if: ${{ env.BASE_DISTRO != 'alpine' }}
         uses: actions/upload-artifact@v4
         with:
           name: hyggshi-os-iso
@@ -242,9 +255,29 @@ jobs:
           retention-days: 14
 
       - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
+        if: ${{ github.event.inputs.release_iso == 'true' && env.BASE_DISTRO != 'alpine' }}
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ISO_FILENAME }}
           tag_name: "hyggshi-os-${{ github.run_number }}"
           name: "Hyggshi OS build #${{ github.run_number }}"
+
+      # === 4-alpine) Alpine hiện chỉ dừng ở base rootfs (xem
+      # scripts/distros/build-alpine.sh) — đóng gói rootfs thành tarball
+      # thay vì cố build ISO, để job kết thúc THÀNH CÔNG và có artifact xem
+      # được, thay vì chạy tiếp vào desktop.sh/iso.sh rồi vỡ giữa chừng.
+      - name: "[alpine] Đóng gói base rootfs (chưa có desktop/ISO)"
+        if: ${{ env.BASE_DISTRO == 'alpine' }}
+        run: |
+          echo "Alpine base rootfs build xong — chưa có desktop/branding/ISO cho Alpine."
+          echo "Đóng gói live-build/chroot thành tarball để kiểm tra."
+          sudo tar -C live-build/chroot -cJf hyggshi-os-alpine-rootfs.tar.xz .
+          ls -lh hyggshi-os-alpine-rootfs.tar.xz
+
+      - name: Upload Alpine rootfs artifact
+        if: ${{ env.BASE_DISTRO == 'alpine' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggshi-os-alpine-rootfs
+          path: hyggshi-os-alpine-rootfs.tar.xz
+          retention-days: 14
