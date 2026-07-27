@@ -37,7 +37,7 @@ on:
         description: "Desktop environment"
         required: false
         type: choice
-        options: [xfce, kde]
+        options: [xfce, kde, lxqt]
         default: "xfce"
       panel_style:
         description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
