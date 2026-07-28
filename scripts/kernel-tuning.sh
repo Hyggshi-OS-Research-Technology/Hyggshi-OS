@@ -43,8 +43,13 @@ EOF
     lite)
       cat <<EOF
 # Hyggshi OS — Edition: Lite
-vm.swappiness = 20
-vm.vfs_cache_pressure = 75
+# Dùng chung với zram (xem hyggshi_edition_packages_apt) — swap là RAM nén,
+# không phải disk, nên swappiness CAO (80) là đúng: đẩy trang ít dùng vào
+# zram sớm để giải phóng RAM thật cho máy yếu, khác hẳn logic "swappiness
+# thấp = tốt" áp dụng cho swap trên đĩa (developer/server ở trên).
+vm.swappiness = 80
+vm.vfs_cache_pressure = 50
+vm.watermark_scale_factor = 200
 kernel.nmi_watchdog = 0
 EOF
       ;;
@@ -64,7 +69,36 @@ hyggshi_edition_packages_apt() {
   case "$edition" in
     developer) echo "build-essential git curl docker.io htop" ;;
     server)    echo "openssh-server htop" ;;
+    lite)      echo "zram-tools" ;;
     *)         echo "" ;;
+  esac
+}
+
+# /etc/default/zramswap cho edition lite — chỉ có ý nghĩa khi zram-tools đã
+# được cài ở trên. ALGO=lz4 vì máy yếu thường CPU cũng yếu — lz4 nén/giải
+# nén nhanh hơn zstd, đổi lấy tỉ lệ nén thấp hơn một chút (đúng hướng đánh
+# đổi cho "lite"; normal/server mạnh hơn có thể chọn zstd để nén tốt hơn).
+hyggshi_zram_conf() {
+  local edition="${1:-normal}"
+  case "$edition" in
+    lite)
+      cat <<EOF
+ALGO=lz4
+PERCENT=50
+PRIORITY=100
+EOF
+      ;;
+  esac
+}
+
+# Service systemd nên mask cho edition — giảm RAM nền + thời gian boot trên
+# máy yếu. CHỈ áp dụng cho lite: developer/server có thể vẫn cần các service
+# này cho việc khác, "mất tính năng để đổi lấy tốc độ" chỉ đúng mục tiêu lite.
+hyggshi_edition_services_mask() {
+  local edition="${1:-normal}"
+  case "$edition" in
+    lite) printf '%s\n' bluetooth.service ModemManager.service avahi-daemon.service cups.service ;;
+    *)    : ;;
   esac
 }
 

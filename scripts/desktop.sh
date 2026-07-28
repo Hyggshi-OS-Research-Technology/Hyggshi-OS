@@ -275,6 +275,22 @@ if [ "$BASE_DISTRO" = "debian" ]; then
     echo "Gói thêm cho edition '$EDITION': $EDITION_PKGS"
     apt-get install -y $EDITION_PKGS || true
   fi
+
+  # zram (lite): ghi /etc/default/zramswap SAU KHI zram-tools đã cài ở trên,
+  # nếu không package sẽ tự tạo file mặc định rồi đè lên config của mình.
+  ZRAM_CONF=$(hyggshi_zram_conf "$EDITION")
+  if [ -n "$ZRAM_CONF" ]; then
+    echo "Áp dụng zram config cho edition '$EDITION'"
+    echo "$ZRAM_CONF" > /etc/default/zramswap
+  fi
+
+  # Mask service nền không cần cho lite — dùng `systemctl mask` (không phải
+  # disable) để không service nào, kể cả do gói khác kéo vào sau, tự bật lại.
+  # `|| true`: service chưa cài (chưa có unit) không được làm fail cả build.
+  for svc in $(hyggshi_edition_services_mask "$EDITION"); do
+    echo "Mask service '$svc' cho edition '$EDITION'"
+    systemctl mask "$svc" 2>/dev/null || true
+  done
 fi
 
 apt-get clean
