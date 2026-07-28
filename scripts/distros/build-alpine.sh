@@ -1,323 +1,357 @@
 #!/bin/bash
-# build-arch-iso.sh — build ISO Arch Linux thật (bootable) bằng mkarchiso,
-# công cụ chính chủ của archlinux.org (chính là công cụ họ dùng để build ISO
-# live/rescue gốc của Arch). Thay thế hoàn toàn cách tự pacstrap+chroot+mount
-# tay của build-arch.sh cũ — mkarchiso tự lo debootstrap-tương-đương
-# (pacstrap), mkinitcpio với hook archiso, squashfs, bootloader (syslinux +
-# GRUB EFI) và không cần ta tự mount /proc /sys /dev như trước.
+# build-alpine.sh — bootstrap + build ISO Alpine Linux (bootable) bằng
+# `apk --root` (không cần debootstrap/pacstrap/mkarchiso), chạy NATIVE trong
+# container alpine:latest (không cần chroot/qemu vì cùng kiến trúc amd64).
 #
-# CHẠY BÊN TRONG CONTAINER archlinux:latest với --privileged (mkarchiso vẫn
-# cần mount/overlayfs y hệt pacstrap để build airootfs).
+# BẢN CŨ: do lỗi copy-paste, file này từng chứa nguyên logic của
+# build-arch-iso.sh (pacman/mkarchiso) — không chạy được trên container
+# alpine vì không có pacman, và job build-alpine trước đây chỉ dừng ở bootstrap
+# rootfs rồi đóng gói tarball (không có DE/calamares/ISO thật cho Alpine).
+# Viết lại hoàn toàn từ đây.
+#
+# THIẾT KẾ:
+#   - Cài package thẳng vào $ROOTFS bằng `apk add --root` — apk (khác apt/
+#     debootstrap) không cần chroot để chạy postinst vì hầu hết gói Alpine
+#     không có script cài đặt phức tạp phụ thuộc "đang chạy trong hệ thống
+#     đích". Nhờ vậy KHÔNG cần mount --bind /dev /proc /sys + chroot như
+#     build-debian.sh, cũng không cần container --privileged như build-arch.
+#   - adduser/passwd/rc-update lẽ ra cần chạy "thật" bên trong rootfs đích,
+#     nhưng ở đây ghi thẳng vào /etc/passwd,/etc/shadow,/etc/group và tạo
+#     symlink runlevel thủ công (đó chính xác là những gì các lệnh đó làm
+#     bên dưới) — tránh phải chroot, giữ job đơn giản, không cần --privileged.
+#   - LIVE-BOOT: Alpine không có gói kiểu "live-boot" (Debian) hay archiso
+#     (Arch) đóng gói sẵn cơ chế "boot 1 squashfs làm root + overlay tmpfs".
+#     Ở đây tự dựng 1 initramfs tối giản bằng busybox-static + overlayfs,
+#     mô phỏng cơ chế mà live-boot làm cho Debian. Phần init tự viết này
+#     CHƯA test trên phần cứng/VM thật — coi là EXPERIMENTAL (xem cuối file).
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
 # ============================================================
-# FIX: fallback default cho các biến bắt buộc — nếu workflow/caller quên
-# export hoặc gõ sai tên biến, script vẫn build ra ISO hợp lệ thay vì để
-# rỗng lọt vào os-release, hostname, username... (đây chính là nguyên nhân
-# bug "PRETTY_NAME=Hyggshi OS 1.0 (dựa trên )" — DISTRO_LABEL bị rỗng).
-# Cú pháp : "${VAR:=default}" chỉ gán khi VAR đang unset hoặc rỗng, không
-# đè lên giá trị đã được truyền vào từ workflow.
+# FIX: fallback default cho các biến bắt buộc, giống các script build-*.sh
+# khác trong repo — không để rỗng lọt vào os-release/hostname/username...
 # ============================================================
 : "${DISTRO_NAME:=Hyggshi OS}"
-: "${DISTRO_LABEL:=Arch Linux}"
+: "${ALPINE_VERSION:=v3.20}"
 : "${OS_HOSTNAME:=hyggshi-os}"
 : "${OS_TIMEZONE:=Asia/Ho_Chi_Minh}"
 : "${OS_USERNAME:=hyggshi}"
 : "${OS_PASSWORD:=hyggshi}"
 : "${DE:=xfce}"
 : "${ICON_THEME:=papirus}"
-: "${PANEL_STYLE:=default}"
 : "${INCLUDE_BROWSER:=false}"
 : "${INCLUDE_OFFICE:=false}"
-: "${ENABLE_KERNEL_TUNING:=false}"
+: "${EDITION:=normal}"
 : "${ISO_FILENAME:=hyggshi-os.iso}"
+: "${WALLPAPER_URL:=}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/../kernel-tuning.sh"
+
+DISTRO_LABEL="Alpine Linux ${ALPINE_VERSION}"
 echo "===== Biến build đang dùng ====="
-echo "DISTRO_NAME=$DISTRO_NAME"
-echo "DISTRO_LABEL=$DISTRO_LABEL"
-echo "OS_HOSTNAME=$OS_HOSTNAME"
-echo "DE=$DE"
-echo "ISO_FILENAME=$ISO_FILENAME"
+echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
+echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
 
-echo "===== Cài archiso ====="
-pacman -Sy --noconfirm --needed archiso
+ROOTFS="live-build/chroot"
+rm -rf live-build alpine-initrd
+mkdir -p "$ROOTFS/etc/apk"
 
-PROFILE_DIR="arch-iso-profile"
-WORK_DIR="arch-iso-work"
-OUT_DIR="arch-iso-out"
-rm -rf "$PROFILE_DIR" "$WORK_DIR" "$OUT_DIR"
+case "$ALPINE_VERSION" in
+  edge) REPO_TAG="edge" ;;
+  *)    REPO_TAG="$ALPINE_VERSION" ;;
+esac
+MIRROR="https://dl-cdn.alpinelinux.org/alpine"
+MAIN_REPO="$MIRROR/$REPO_TAG/main"
+COMMUNITY_REPO="$MIRROR/$REPO_TAG/community"
 
-echo "===== Copy profile 'releng' gốc của archiso làm nền ====="
-# releng là profile chính chủ Arch dùng để build ISO live/rescue của họ —
-# đã giải quyết sẵn bootloader/mkinitcpio-archiso/squashfs, ta chỉ cần
-# customize thêm DE + branding lên trên.
-cp -r /usr/share/archiso/configs/releng/ "$PROFILE_DIR"
+cat <<EOF > "$ROOTFS/etc/apk/repositories"
+$MAIN_REPO
+$COMMUNITY_REPO
+EOF
 
-echo "===== Tuỳ chỉnh profiledef.sh (tên/nhãn ISO) ====="
-sed -i \
-  -e "s/^iso_name=.*/iso_name=\"hyggshi-os\"/" \
-  -e "s/^iso_label=.*/iso_label=\"HYGGSHIOS_\$(date +%Y%m)\"/" \
-  -e "s#^iso_publisher=.*#iso_publisher=\"Hyggshi OS Research \& Technology <https://github.com/Hyggshi-OS-Research-Technology>\"#" \
-  -e "s/^iso_application=.*/iso_application=\"$DISTRO_NAME Live\"/" \
-  -e "s/^install_dir=.*/install_dir=\"hyggshi\"/" \
-  "$PROFILE_DIR/profiledef.sh"
+# apk_target — helper cài gói vào $ROOTFS, tránh lặp lại 4 tham số ở mọi
+# lệnh cài gói bên dưới.
+apk_target() {
+  apk add --root "$ROOTFS" --initdb -U \
+    --repository "$MAIN_REPO" --repository "$COMMUNITY_REPO" \
+    --allow-untrusted "$@"
+}
 
-echo "===== Bổ sung gói vào packages.x86_64 (DE + tuỳ chọn người dùng) ====="
-# packages.x86_64 của releng đã có sẵn base/linux/mkinitcpio-archiso/... —
-# nhưng KHÔNG có networkmanager (releng mặc định dùng iwd/systemd-networkd),
-# nên phải thêm tường minh, không được giả định gói này đã có sẵn.
-{
-  echo ""
-  echo "# ===== Hyggshi OS: DE + tuỳ chọn ($DE, browser=$INCLUDE_BROWSER, office=$INCLUDE_OFFICE) ====="
-  echo networkmanager
+echo "===== apk --initdb: bootstrap base rootfs (native, không cần chroot) ====="
+apk_target alpine-base linux-lts linux-firmware-none \
+  openrc alpine-conf busybox-suid busybox-static shadow sudo doas \
+  networkmanager wpa_supplicant tzdata eudev udev-init-scripts kmod \
+  squashfs-tools
 
-  case "$DE" in
-    kde)
-      printf '%s\n' plasma-desktop sddm konsole dolphin
-      ;;
-    lxqt)
-      printf '%s\n' lxqt sddm pcmanfm-qt xterm
-      ;;
-    *)
-      printf '%s\n' xfce4 xfce4-goodies lightdm lightdm-gtk-greeter
-      ;;
-  esac
+echo "===== Kiểm tra kernel image đã thực sự có trong /boot và /lib/modules ====="
+KVER=$(basename "$(ls -d "$ROOTFS"/lib/modules/*/ 2>/dev/null | head -n1)")
+if [ -z "$KVER" ] || ! ls "$ROOTFS"/boot/vmlinuz-lts >/dev/null 2>&1; then
+  echo "LỖI: apk add linux-lts báo 'thành công' nhưng không thấy /boot/vmlinuz-lts hoặc /lib/modules/<ver> trong rootfs." >&2
+  echo "Nội dung /boot:" >&2
+  ls -la "$ROOTFS/boot" >&2 || true
+  exit 1
+fi
+echo "OK: kernel $KVER — $(ls "$ROOTFS"/boot/vmlinuz-lts)"
 
-  case "$ICON_THEME" in
-    numix)   echo numix-icon-theme ;;
-    breeze)  echo breeze-icons ;;
-    adwaita) echo adwaita-icon-theme ;;
-    *)       echo papirus-icon-theme ;;
-  esac
+# calamares — MỌI base phải có installer. Gói này chỉ có ở community repo và
+# có thể không build sẵn cho mọi phiên bản Alpine — không để lỗi ở đây làm
+# hỏng luôn cả build (giống cách desktop.sh xử lý calamares-settings-debian).
+echo "===== Cài calamares (installer) ====="
+apk_target calamares || echo "CẢNH BÁO: gói calamares không có sẵn cho $ALPINE_VERSION/community — bỏ qua, ISO sẽ không có installer."
 
-  [ "$INCLUDE_BROWSER" = "true" ] && echo firefox
-  [ "$INCLUDE_OFFICE" = "true" ] && echo libreoffice-fresh
+echo "===== Desktop environment: $DE (1 trong 6: xfce/kde/lxqt/gnome/mate/cinnamon) ====="
+DISPLAY_MANAGER="lightdm"
+case "$DE" in
+  kde)
+    apk_target plasma-desktop sddm konsole dolphin
+    DISPLAY_MANAGER="sddm"
+    ;;
+  lxqt)
+    apk_target lxqt sddm pcmanfm-qt xterm
+    DISPLAY_MANAGER="sddm"
+    ;;
+  gnome)
+    apk_target gnome gdm gnome-terminal nautilus || \
+      echo "CẢNH BÁO: 1 số gói gnome có thể không có/đổi tên trên $ALPINE_VERSION — kiểm tra lại."
+    DISPLAY_MANAGER="gdm"
+    ;;
+  mate)
+    apk_target mate mate-extra lightdm lightdm-gtk-greeter
+    DISPLAY_MANAGER="lightdm"
+    ;;
+  cinnamon)
+    apk_target cinnamon lightdm lightdm-gtk-greeter || \
+      echo "CẢNH BÁO: cinnamon có thể chưa đóng gói đầy đủ trên Alpine — kiểm tra lại."
+    DISPLAY_MANAGER="lightdm"
+    ;;
+  *)
+    apk_target xfce4 xfce4-terminal lightdm lightdm-gtk-greeter
+    DISPLAY_MANAGER="lightdm"
+    ;;
+esac
 
-  # gói thêm do người dùng chỉ định, mỗi gói 1 dòng (packages.x86_64 là
-  # danh sách 1-gói-1-dòng, không phải chuỗi cách nhau bằng dấu cách như apt)
-  if [ -n "$EXTRA_PACKAGES" ]; then
-    for pkg in $EXTRA_PACKAGES; do echo "$pkg"; done
+case "$ICON_THEME" in
+  numix)   apk_target numix-icon-theme    || true ;;
+  breeze)  apk_target breeze-icons        || true ;;
+  adwaita) apk_target adwaita-icon-theme  || true ;;
+  *)       apk_target papirus-icon-theme  || true ;;
+esac
+
+[ "$INCLUDE_BROWSER" = "true" ] && { apk_target firefox     || echo "CẢNH BÁO: cài firefox thất bại — bỏ qua."; }
+[ "$INCLUDE_OFFICE" = "true" ]  && { apk_target libreoffice  || echo "CẢNH BÁO: cài libreoffice thất bại — bỏ qua."; }
+
+echo "===== Edition=$EDITION (kernel sysctl tuning + gói thêm — xem kernel-tuning.sh) ====="
+mkdir -p "$ROOTFS/etc/sysctl.d"
+hyggshi_sysctl_conf "$EDITION" > "$ROOTFS/etc/sysctl.d/99-hyggshi-tuning.conf"
+EDITION_PKGS=$(hyggshi_edition_packages_apk "$EDITION")
+if [ -n "$EDITION_PKGS" ]; then
+  echo "Gói thêm cho edition '$EDITION': $EDITION_PKGS"
+  apk_target $EDITION_PKGS || true
+fi
+
+echo "===== hostname / timezone ====="
+echo "$OS_HOSTNAME" > "$ROOTFS/etc/hostname"
+echo "127.0.1.1 $OS_HOSTNAME" >> "$ROOTFS/etc/hosts"
+ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" "$ROOTFS/etc/localtime"
+echo "$OS_TIMEZONE" > "$ROOTFS/etc/timezone"
+
+echo "===== Tạo user mặc định cho live session (ghi thẳng passwd/shadow/group, không chroot) ====="
+# LƯU Ý: không dùng `adduser`/`chpasswd` vì các lệnh đó thao tác trên
+# /etc/passwd của HOST container, không hỗ trợ --root trỏ sang rootfs đích
+# — phải tự ghi đúng định dạng dòng passwd/shadow/group. Mật khẩu băm bằng
+# `openssl passwd -6` chạy trên HOST (không đụng tới rootfs đích), an toàn.
+UID_NEW=1000
+GID_NEW=1000
+grep -q "^$OS_USERNAME:" "$ROOTFS/etc/passwd" 2>/dev/null || \
+  echo "$OS_USERNAME:x:$UID_NEW:$GID_NEW:$OS_USERNAME:/home/$OS_USERNAME:/bin/ash" >> "$ROOTFS/etc/passwd"
+grep -q "^$OS_USERNAME:" "$ROOTFS/etc/group" 2>/dev/null || \
+  echo "$OS_USERNAME:x:$GID_NEW:" >> "$ROOTFS/etc/group"
+sed -i "s/^wheel:x:10:.*/wheel:x:10:$OS_USERNAME/" "$ROOTFS/etc/group" 2>/dev/null || true
+
+PASS_HASH=$(openssl passwd -6 "$OS_PASSWORD" 2>/dev/null || true)
+if [ -n "$PASS_HASH" ]; then
+  # xoá dòng shadow cũ của user này (nếu có, từ lần build trước) trước khi ghi lại
+  sed -i "/^$OS_USERNAME:/d" "$ROOTFS/etc/shadow" 2>/dev/null || true
+  echo "$OS_USERNAME:$PASS_HASH:19000:0:99999:7:::" >> "$ROOTFS/etc/shadow"
+else
+  echo "CẢNH BÁO: không tạo được password hash (thiếu 'openssl' trên host runner) — user sẽ không có mật khẩu; chỉ vào được qua autologin." >&2
+fi
+mkdir -p "$ROOTFS/home/$OS_USERNAME"
+chown -R "$UID_NEW:$GID_NEW" "$ROOTFS/home/$OS_USERNAME" 2>/dev/null || true
+
+echo "===== Bật service ở default/boot runlevel (symlink thủ công, tương đương rc-update add) ====="
+mkdir -p "$ROOTFS/etc/runlevels/default" "$ROOTFS/etc/runlevels/boot" "$ROOTFS/etc/runlevels/sysinit"
+enable_service() {
+  local svc="$1" level="${2:-default}"
+  if [ -e "$ROOTFS/etc/init.d/$svc" ]; then
+    ln -sf "/etc/init.d/$svc" "$ROOTFS/etc/runlevels/$level/$svc"
+  else
+    echo "CẢNH BÁO: không thấy /etc/init.d/$svc trong rootfs — bỏ qua enable, kiểm tra lại tên gói/service." >&2
   fi
-} >> "$PROFILE_DIR/packages.x86_64"
+}
+enable_service devfs sysinit
+enable_service dmesg sysinit
+enable_service hwdrivers sysinit
+enable_service hostname boot
+enable_service networking boot
+enable_service networkmanager default
+enable_service "$DISPLAY_MANAGER" default
 
-AIROOTFS="$PROFILE_DIR/airootfs"
+echo "===== Autologin cho live session ====="
+case "$DE" in
+  kde|lxqt)
+    mkdir -p "$ROOTFS/etc/sddm.conf.d"
+    cat <<EOF > "$ROOTFS/etc/sddm.conf.d/hyggshi-autologin.conf"
+[Autologin]
+User=$OS_USERNAME
+Session=$([ "$DE" = "kde" ] && echo plasma || echo lxqt)
+EOF
+    ;;
+  gnome)
+    mkdir -p "$ROOTFS/etc/gdm"
+    cat <<EOF > "$ROOTFS/etc/gdm/custom.conf"
+[daemon]
+AutomaticLoginEnable = true
+AutomaticLogin = $OS_USERNAME
+EOF
+    ;;
+  *)
+    mkdir -p "$ROOTFS/etc/lightdm/lightdm.conf.d"
+    cat <<EOF > "$ROOTFS/etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf"
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=$DE
+EOF
+    ;;
+esac
 
-echo "===== Branding: wallpaper ====="
-mkdir -p "$AIROOTFS/usr/share/backgrounds/hyggshi"
+echo "===== Branding: wallpaper + rebrand os-release ====="
+mkdir -p "$ROOTFS/usr/share/backgrounds/hyggshi"
 WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
-if [ -z "$WALLPAPER_FILE" ]; then
-  echo "Không thấy wallpaper trong repo local, tải trực tiếp từ GitHub..."
+if [ -z "$WALLPAPER_FILE" ] && [ -n "$WALLPAPER_URL" ]; then
   if curl -fsSL "$WALLPAPER_URL" -o /tmp/wallpaper-remote.png 2>/dev/null && [ -s /tmp/wallpaper-remote.png ]; then
     WALLPAPER_FILE=/tmp/wallpaper-remote.png
   fi
 fi
 if [ -n "$WALLPAPER_FILE" ]; then
-  cp "$WALLPAPER_FILE" "$AIROOTFS/usr/share/backgrounds/hyggshi/wallpaper.png"
-  echo "Đã dùng wallpaper: $WALLPAPER_FILE"
+  cp "$WALLPAPER_FILE" "$ROOTFS/usr/share/backgrounds/hyggshi/wallpaper.png"
 else
   echo "⚠️  Không lấy được wallpaper — bỏ qua, giữ nền mặc định của DE."
 fi
 
-if [ "$DE" = "xfce" ]; then
-  echo "===== XFCE panel style + icon theme + wallpaper (skel profile) ====="
-  SKEL="$AIROOTFS/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml"
-  mkdir -p "$SKEL"
-
-  case "$ICON_THEME" in
-    numix)   ICON_NAME="Numix" ;;
-    breeze)  ICON_NAME="Breeze" ;;
-    adwaita) ICON_NAME="Adwaita" ;;
-    *)       ICON_NAME="Papirus" ;;
-  esac
-
-  if [ "$PANEL_STYLE" = "windows10" ]; then
-  cat <<XML > "$SKEL/xfce4-panel.xml"
-<?xml version="1.0" encoding="UTF-8"?>
-<channel name="xfce4-panel" version="1.0">
-  <property name="configver" type="int" value="2"/>
-  <property name="panels" type="array">
-    <value type="int" value="1"/>
-    <property name="panel-1" type="empty">
-      <property name="position" type="string" value="p=8;x=0;y=0"/>
-      <property name="length" type="uint" value="100"/>
-      <property name="length-adjust" type="bool" value="true"/>
-      <property name="position-locked" type="bool" value="true"/>
-      <property name="size" type="uint" value="34"/>
-      <property name="mode" type="uint" value="0"/>
-      <property name="autohide-behavior" type="uint" value="0"/>
-      <property name="plugin-ids" type="array">
-        <value type="int" value="1"/>
-        <value type="int" value="2"/>
-        <value type="int" value="3"/>
-        <value type="int" value="4"/>
-        <value type="int" value="5"/>
-      </property>
-    </property>
-  </property>
-  <property name="plugins" type="empty">
-    <property name="plugin-1" type="string" value="whiskermenu">
-      <property name="button-title" type="string" value=""/>
-      <property name="button-icon" type="string" value="start-here"/>
-      <property name="show-button-title" type="bool" value="false"/>
-    </property>
-    <property name="plugin-2" type="string" value="tasklist">
-      <property name="grouping" type="uint" value="1"/>
-      <property name="show-labels" type="bool" value="false"/>
-      <property name="show-handle" type="bool" value="false"/>
-    </property>
-    <property name="plugin-3" type="string" value="separator">
-      <property name="expand" type="bool" value="true"/>
-      <property name="style" type="uint" value="0"/>
-    </property>
-    <property name="plugin-4" type="string" value="systray"/>
-    <property name="plugin-5" type="string" value="clock">
-      <property name="digital-format" type="string" value="%H:%M  %d/%m/%Y"/>
-      <property name="digital-layout" type="uint" value="2"/>
-    </property>
-  </property>
-</channel>
-XML
-  fi
-
-  cat <<XML > "$SKEL/xfce4-desktop.xml"
-<?xml version="1.0" encoding="UTF-8"?>
-<channel name="xfce4-desktop" version="1.0">
-  <property name="backdrop" type="empty">
-    <property name="screen0" type="empty">
-      <property name="monitor0" type="empty">
-        <property name="workspace0" type="empty">
-          <property name="last-image" type="string" value="/usr/share/backgrounds/hyggshi/wallpaper.png"/>
-          <property name="image-style" type="int" value="5"/>
-        </property>
-      </property>
-    </property>
-  </property>
-</channel>
-XML
-
-  cat <<XML > "$SKEL/xsettings.xml"
-<?xml version="1.0" encoding="UTF-8"?>
-<channel name="xsettings" version="1.0">
-  <property name="Net" type="empty">
-    <property name="IconThemeName" type="string" value="$ICON_NAME"/>
-  </property>
-</channel>
-XML
-fi
-
-echo "===== customize_airootfs.sh (chạy TỰ ĐỘNG bên trong chroot lúc mkarchiso build) ====="
-# archiso tự thực thi airootfs/root/customize_airootfs.sh bên trong chroot
-# của airootfs trong lúc build rồi tự xoá file này khỏi ISO cuối cùng — nên
-# KHÔNG cần ta tự mount /proc /sys /dev + chroot tay như build-arch.sh cũ.
-mkdir -p "$AIROOTFS/root"
-CUSTOMIZE="$AIROOTFS/root/customize_airootfs.sh"
-cat <<CUSTOMEOF > "$CUSTOMIZE"
-#!/usr/bin/env bash
-set -e -u
-
-echo "$OS_HOSTNAME" > /etc/hostname
-ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
-
-useradd -m -s /bin/bash -G wheel "$OS_USERNAME" || true
-echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
-
-# LƯU Ý: dùng "|| echo ..." thay vì để lỗi thẳng — script này chạy dưới
-# set -e, và đã có 1 lần networkmanager.service không tồn tại (thiếu gói
-# trong packages.x86_64) làm chết TOÀN BỘ customize_airootfs.sh giữa chừng,
-# kể cả các bước rebrand os-release phía dưới chưa kịp chạy. Không để 1 gói
-# thiếu/service enable lỗi kéo sập cả script.
-systemctl enable NetworkManager || echo "CẢNH BÁO: NetworkManager.service không tồn tại — kiểm tra packages.x86_64"
-
-CUSTOMEOF
-
-case "$DE" in
-  kde)
-    cat <<CUSTOMEOF >> "$CUSTOMIZE"
-systemctl enable sddm || echo "CẢNH BÁO: sddm.service không tồn tại — kiểm tra packages.x86_64"
-mkdir -p /etc/sddm.conf.d
-cat <<SDDMEOF > /etc/sddm.conf.d/hyggshi-autologin.conf
-[Autologin]
-User=$OS_USERNAME
-Session=plasma
-SDDMEOF
-CUSTOMEOF
-    ;;
-  lxqt)
-    cat <<CUSTOMEOF >> "$CUSTOMIZE"
-systemctl enable sddm || echo "CẢNH BÁO: sddm.service không tồn tại — kiểm tra packages.x86_64"
-mkdir -p /etc/sddm.conf.d
-cat <<SDDMEOF > /etc/sddm.conf.d/hyggshi-autologin.conf
-[Autologin]
-User=$OS_USERNAME
-Session=lxqt
-SDDMEOF
-CUSTOMEOF
-    ;;
-  *)
-    cat <<CUSTOMEOF >> "$CUSTOMIZE"
-systemctl enable lightdm || echo "CẢNH BÁO: lightdm.service không tồn tại — kiểm tra packages.x86_64"
-mkdir -p /etc/lightdm/lightdm.conf.d
-cat <<LIGHTDMEOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
-[Seat:*]
-autologin-user=$OS_USERNAME
-autologin-user-timeout=0
-autologin-session=xfce
-LIGHTDMEOF
-CUSTOMEOF
-    ;;
-esac
-
-cat <<CUSTOMEOF >> "$CUSTOMIZE"
-
-# Rebrand os-release
-rm -f /etc/os-release
-cat <<OSEOF > /etc/os-release
+rm -f "$ROOTFS/etc/os-release"
+cat <<EOF > "$ROOTFS/etc/os-release"
 PRETTY_NAME="$DISTRO_NAME 1.0 (dựa trên $DISTRO_LABEL)"
 NAME="$DISTRO_NAME"
 VERSION_ID="1.0"
 VERSION="1.0 ($DISTRO_LABEL)"
 ID=hyggshios
-ID_LIKE=arch
+ID_LIKE=alpine
 HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
 SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
 BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
-OSEOF
-CUSTOMEOF
-
-chmod +x "$CUSTOMIZE"
-
-# ============================================================
-# Tuỳ chỉnh thông số kernel (sysctl) — TÙY CHỌN, chỉ áp dụng khi
-# ENABLE_KERNEL_TUNING=true. Ghi thẳng vào overlay (không cần chạy lệnh gì
-# trong customize_airootfs.sh) vì đây chỉ là 1 file cấu hình tĩnh, áp dụng
-# lúc boot qua systemd-sysctl. Runtime kernel parameter, KHÔNG phải
-# compile-time kernel config (CONFIG_PREEMPT, CONFIG_HZ, CONFIG_BTRFS_FS...)
-# — muốn đổi loại đó phải tự build kernel riêng, sysctl không làm được.
-# ============================================================
-if [ "$ENABLE_KERNEL_TUNING" = "true" ]; then
-  echo "===== Ghi /etc/sysctl.d/99-hyggshi-tuning.conf (tuỳ chỉnh thông số kernel) ====="
-  mkdir -p "$AIROOTFS/etc/sysctl.d"
-  cat <<EOF > "$AIROOTFS/etc/sysctl.d/99-hyggshi-tuning.conf"
-vm.swappiness = 10
-vm.vfs_cache_pressure = 50
-fs.inotify.max_user_watches = 524288
-kernel.nmi_watchdog = 0
 EOF
+printf "%s \\n \\l\n\n" "$DISTRO_NAME" > "$ROOTFS/etc/issue"
+echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" > "$ROOTFS/etc/motd"
+
+echo "===== Đóng gói rootfs thành squashfs ====="
+mkdir -p live-build/image/live
+mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -e boot
+
+cp "$ROOTFS/boot/vmlinuz-lts" live-build/image/live/vmlinuz
+
+# ============================================================
+# EXPERIMENTAL: initramfs tự dựng (busybox-static + overlayfs) để boot
+# squashfs ở trên làm live root — Alpine không có sẵn cơ chế kiểu
+# "live-boot" (Debian)/archiso (Arch) cho việc này. CHƯA test trên phần
+# cứng/VM thật. Nếu boot lỗi, đây là nơi đầu tiên cần soi log (thêm
+# "debug" vào kernel cmdline để rớt vào shell cứu hộ nếu cần — busybox sh
+# sẽ chạy được vì đã có trong initramfs).
+# ============================================================
+echo "===== Build initramfs tối giản (busybox + overlayfs, EXPERIMENTAL) ====="
+INITRD_DIR="alpine-initrd"
+mkdir -p "$INITRD_DIR"/bin "$INITRD_DIR"/dev "$INITRD_DIR"/proc "$INITRD_DIR"/sys \
+  "$INITRD_DIR"/mnt/cdrom "$INITRD_DIR"/mnt/squash "$INITRD_DIR"/mnt/overlay \
+  "$INITRD_DIR"/newroot "$INITRD_DIR"/lib/modules
+
+cp "$ROOTFS/bin/busybox.static" "$INITRD_DIR/bin/busybox" 2>/dev/null || \
+  cp "$ROOTFS/bin/busybox" "$INITRD_DIR/bin/busybox"
+( cd "$INITRD_DIR" && ./bin/busybox --install -s bin )
+
+# Gom module (squashfs/overlay/isofs/loop) + phụ thuộc bằng modprobe --show-depends
+# (không cần boot đúng kernel đó, modprobe hỗ trợ -d rootdir -S kver để "khô chạy").
+for mod in loop isofs squashfs overlay; do
+  DEPS=$(modprobe -d "$ROOTFS" -S "$KVER" --show-depends "$mod" 2>/dev/null | awk '{print $2}')
+  for dep in $DEPS; do
+    rel="${dep#/}"
+    mkdir -p "$INITRD_DIR/$(dirname "$rel")"
+    cp "$ROOTFS/$rel" "$INITRD_DIR/$rel" 2>/dev/null || \
+      echo "CẢNH BÁO: không copy được module $rel vào initramfs — kiểm tra lại (boot có thể thiếu module này)."
+  done
+done
+
+cat <<'INITEOF' > "$INITRD_DIR/init"
+#!/bin/busybox sh
+/bin/busybox mount -t proc none /proc
+/bin/busybox mount -t sysfs none /sys
+/bin/busybox mount -t devtmpfs none /dev 2>/dev/null || /bin/busybox mount -t tmpfs none /dev
+
+for m in loop isofs squashfs overlay; do
+  for f in $(/bin/busybox find /lib/modules -name "${m}.ko*" 2>/dev/null); do
+    /bin/busybox insmod "$f" 2>/dev/null
+  done
+done
+
+# Tìm thiết bị CD-ROM/USB chứa /live/filesystem.squashfs
+for dev in /dev/sr0 /dev/sr1 /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/vda1 /dev/vdb1; do
+  [ -b "$dev" ] || continue
+  /bin/busybox mount -o ro "$dev" /mnt/cdrom 2>/dev/null || continue
+  [ -f /mnt/cdrom/live/filesystem.squashfs ] && break
+  /bin/busybox umount /mnt/cdrom 2>/dev/null
+done
+
+if [ ! -f /mnt/cdrom/live/filesystem.squashfs ]; then
+  echo "LỖI: không tìm thấy /live/filesystem.squashfs trên bất kỳ thiết bị nào." >/dev/console
+  exec /bin/busybox sh
 fi
 
-echo "===== mkarchiso build (có thể mất vài phút) ====="
-mkarchiso -v -w "$WORK_DIR" -o "$OUT_DIR" "$PROFILE_DIR"
+/bin/busybox mount -t squashfs -o loop,ro /mnt/cdrom/live/filesystem.squashfs /mnt/squash
+/bin/busybox mount -t tmpfs tmpfs /mnt/overlay
+/bin/busybox mkdir -p /mnt/overlay/upper /mnt/overlay/work
+/bin/busybox mount -t overlay overlay \
+  -o lowerdir=/mnt/squash,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work /newroot
 
-echo "===== Đổi tên file ISO output thành \$ISO_FILENAME ====="
-BUILT_ISO=$(find "$OUT_DIR" -maxdepth 1 -name "*.iso" | head -n1)
-if [ -z "$BUILT_ISO" ]; then
-  echo "LỖI: mkarchiso chạy xong (exit 0) nhưng không tìm thấy file .iso nào trong $OUT_DIR" >&2
-  ls -la "$OUT_DIR" >&2 || true
-  exit 1
-fi
-cp "$BUILT_ISO" "$ISO_FILENAME"
+/bin/busybox mount --move /proc /newroot/proc
+/bin/busybox mount --move /sys /newroot/sys
+/bin/busybox mount --move /dev /newroot/dev
+
+exec /bin/busybox switch_root /newroot /sbin/init
+INITEOF
+chmod +x "$INITRD_DIR/init"
+
+( cd "$INITRD_DIR" && find . | cpio -o -H newc 2>/dev/null | gzip -9 ) > live-build/image/live/initrd
+
+echo "===== Build bootable ISO with grub ====="
+KERNEL_CMDLINE_EXTRA=$(hyggshi_kernel_cmdline_extra "$EDITION")
+mkdir -p live-build/image/boot/grub
+cat <<EOF > live-build/image/boot/grub/grub.cfg
+set timeout=10
+set default=0
+menuentry "$DISTRO_NAME Live" {
+  linux /live/vmlinuz $KERNEL_CMDLINE_EXTRA
+  initrd /live/initrd
+}
+EOF
+
+grub-mkrescue -o "$ISO_FILENAME" live-build/image --compress=xz -- -volid "HYGGSHI_OS"
 ls -lh "$ISO_FILENAME"
 
-echo "===== build-arch-iso.sh xong ====="
+echo "===== build-alpine.sh xong ====="
+echo "LƯU Ý: phần initramfs live-boot (busybox+overlayfs) là tự viết, CHƯA"
+echo "được kiểm chứng trên phần cứng/VM thật — nếu ISO không boot được vào"
+echo "desktop, thêm 'debug' vào kernel cmdline (grub.cfg ở trên) để rớt vào"
+echo "busybox sh cứu hộ và kiểm tra log trước khi báo lỗi."

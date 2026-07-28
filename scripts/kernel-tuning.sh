@@ -78,6 +78,16 @@ hyggshi_edition_packages_pacman() {
   esac
 }
 
+# Gói apk thêm theo edition (Alpine) — cách nhau bằng dấu cách.
+hyggshi_edition_packages_apk() {
+  local edition="${1:-normal}"
+  case "$edition" in
+    developer) echo "build-base git curl docker htop" ;;
+    server)    echo "openssh htop" ;;
+    *)         echo "" ;;
+  esac
+}
+
 # Kernel boot cmdline (GRUB) thêm theo edition — kernel parameter thật sự,
 # khác sysctl runtime ở trên.
 hyggshi_kernel_cmdline_extra() {
