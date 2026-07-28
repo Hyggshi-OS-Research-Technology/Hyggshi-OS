@@ -3,6 +3,10 @@ name: Build Hyggshi OS ISO
 on:
   workflow_dispatch:
     inputs:
+      distro_name:
+        description: "Tên hiển thị của bản phân phối (đổi tên base linux — ghi vào os-release/hostname/GRUB/ISO label...)"
+        required: false
+        default: "Hyggshi OS"
       distro:
         description: "Bản phân phối gốc (base distro)"
         required: false
@@ -33,15 +37,17 @@ on:
         type: choice
         options: ["v3.20", "v3.19", "edge"]
         default: "v3.20"
-      enable_kernel_tuning:
-        description: "Chỉnh thông số kernel qua sysctl (chỉ áp dụng khi distro = arch — EXPERIMENTAL, xem build-arch.sh)"
-        type: boolean
-        default: false
-      desktop:
-        description: "Desktop environment"
+      edition:
+        description: "Edition (chỉnh thông số kernel — chỉ áp dụng khi distro = debian hoặc arch)"
         required: false
         type: choice
-        options: [xfce, kde, lxqt]
+        options: [normal, developer, server, lite]
+        default: "normal"
+      desktop:
+        description: "Desktop environment (6 lựa chọn)"
+        required: false
+        type: choice
+        options: [xfce, kde, lxqt, gnome, mate, cinnamon]
         default: "xfce"
       panel_style:
         description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
@@ -99,8 +105,9 @@ on:
       - "iso-config/**"
 
 env:
-  DISTRO_NAME: "Hyggshi OS"
+  DISTRO_NAME: ${{ github.event.inputs.distro_name || 'Hyggshi OS' }}
   BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
+  EDITION: ${{ github.event.inputs.edition || 'normal' }}
   # LƯU Ý: debian_version/ubuntu_version/mint_version/alpine_version KHÔNG đặt
   # ở đây. Nếu đặt cứng ở env cấp workflow, GitHub Actions in TOÀN BỘ 4 biến
   # ra log của MỌI step (kể cả 3 biến không liên quan tới distro đã chọn —
@@ -166,10 +173,12 @@ jobs:
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
         run: |
           sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
+          sudo cp scripts/kernel-tuning.sh live-build/chroot/tmp/kernel-tuning.sh
           sudo chmod +x live-build/chroot/tmp/desktop.sh
           sudo chroot live-build/chroot env \
             BASE_DISTRO="$BASE_DISTRO" \
             DE="$DE" \
+            EDITION="$EDITION" \
             DEBUG_MODE="$DEBUG_MODE" \
             ICON_THEME="$ICON_THEME" \
             OS_USERNAME="$OS_USERNAME" \
@@ -191,6 +200,7 @@ jobs:
           CHROOT=live-build/chroot
           {
             echo "===== Inputs / env ====="
+            echo "DISTRO_NAME=$DISTRO_NAME | EDITION=$EDITION"
             echo "BASE_DISTRO=$BASE_DISTRO | BASE_CODENAME=$BASE_CODENAME | DISTRO_LABEL=$DISTRO_LABEL"
             echo "DE=$DE | PANEL_STYLE=$PANEL_STYLE | ICON_THEME=$ICON_THEME"
             echo "OS_USERNAME=$OS_USERNAME | OS_HOSTNAME=$OS_HOSTNAME | OS_TIMEZONE=$OS_TIMEZONE"
@@ -347,9 +357,6 @@ jobs:
 
       - name: Chmod +x cho scripts/distros/build-arch-iso.sh
         run: chmod +x scripts/distros/build-arch-iso.sh
-
-      - name: Export ENABLE_KERNEL_TUNING
-        run: echo "ENABLE_KERNEL_TUNING=${{ github.event.inputs.enable_kernel_tuning || 'false' }}" >> "$GITHUB_ENV"
 
       - name: "[build-arch-iso.sh] Build ISO bằng mkarchiso"
         run: bash scripts/distros/build-arch-iso.sh
