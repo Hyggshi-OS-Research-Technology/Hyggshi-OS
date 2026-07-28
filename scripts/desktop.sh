@@ -1,9 +1,17 @@
 #!/bin/bash
-# desktop.sh — cài package cơ bản, DE (xfce/kde), user, hostname/timezone.
+# desktop.sh — cài package cơ bản, DE (xfce/kde/lxqt/gnome/mate/cinnamon),
+# user, hostname/timezone, Edition (kernel tuning, chỉ Debian).
 # Chạy BÊN TRONG chroot (được gọi qua `chroot ... env ... /tmp/desktop.sh`).
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 export DEBIAN_FRONTEND=noninteractive
+
+# kernel-tuning.sh (profile Edition) được yml copy vào /tmp cùng lúc với
+# desktop.sh, vì script này chạy BÊN TRONG chroot — chỉ /tmp là tồn tại,
+# không có đường dẫn gốc scripts/ của repo trên host.
+# shellcheck source=/dev/null
+source /tmp/kernel-tuning.sh
+: "${EDITION:=normal}"
 
 if [ "$BASE_DISTRO" = "alpine" ]; then
   echo "LỖI: desktop.sh này chỉ hỗ trợ apt/dpkg (Debian/Ubuntu/Mint)."
@@ -118,6 +126,21 @@ case "$DE" in
     esac
     ;;
 
+  gnome)
+    # gnome-session cần cho phiên GNOME thật (không chỉ gnome-shell trần);
+    # gdm3 là display manager mặc định của GNOME (autologin cấu hình riêng bên dưới).
+    apt-get install -y gnome-session gnome-shell gdm3 gnome-terminal \
+      nautilus gnome-tweaks
+    ;;
+
+  mate)
+    apt-get install -y mate-desktop-environment lightdm lightdm-gtk-greeter
+    ;;
+
+  cinnamon)
+    apt-get install -y cinnamon-desktop-environment lightdm lightdm-gtk-greeter
+    ;;
+
   *)
     # mặc định: xfce
     apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
@@ -197,6 +220,36 @@ elif [ "$DE" = "lxqt" ]; then
 User=$OS_USERNAME
 Session=lxqt
 EOF
+elif [ "$DE" = "gnome" ]; then
+  # GNOME dùng gdm3, không phải lightdm/sddm — cấu hình autologin riêng theo
+  # đúng cú pháp custom.conf của gdm3, khác hẳn 2 nhánh trên.
+  mkdir -p /etc/gdm3
+  if [ -f /etc/gdm3/custom.conf ]; then
+    sed -i '/^\[daemon\]/,/^\[/ s/^#\?AutomaticLoginEnable *=.*/AutomaticLoginEnable = true/' /etc/gdm3/custom.conf
+    sed -i "/^\[daemon\]/,/^\[/ s/^#\?AutomaticLogin *=.*/AutomaticLogin = $OS_USERNAME/" /etc/gdm3/custom.conf
+  else
+    cat <<EOF > /etc/gdm3/custom.conf
+[daemon]
+AutomaticLoginEnable = true
+AutomaticLogin = $OS_USERNAME
+EOF
+  fi
+elif [ "$DE" = "mate" ]; then
+  mkdir -p /etc/lightdm/lightdm.conf.d
+  cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=mate
+EOF
+elif [ "$DE" = "cinnamon" ]; then
+  mkdir -p /etc/lightdm/lightdm.conf.d
+  cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=cinnamon
+EOF
 else
   mkdir -p /etc/lightdm/lightdm.conf.d
   cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
@@ -205,6 +258,23 @@ autologin-user=$OS_USERNAME
 autologin-user-timeout=0
 autologin-session=xfce
 EOF
+fi
+
+# ============================================================
+# Edition (kernel tuning) — CHỈ áp dụng cho Debian, theo đúng yêu cầu
+# ("arch và debian thêm tuỳ chọn chỉnh thông số kernel"). Ubuntu/Mint chạy
+# chung script này nhưng không áp dụng, để không đổi hành vi đã ổn định.
+# ============================================================
+if [ "$BASE_DISTRO" = "debian" ]; then
+  echo "===== Áp dụng Edition=$EDITION (kernel sysctl tuning) ====="
+  mkdir -p /etc/sysctl.d
+  hyggshi_sysctl_conf "$EDITION" > /etc/sysctl.d/99-hyggshi-tuning.conf
+
+  EDITION_PKGS=$(hyggshi_edition_packages_apt "$EDITION")
+  if [ -n "$EDITION_PKGS" ]; then
+    echo "Gói thêm cho edition '$EDITION': $EDITION_PKGS"
+    apt-get install -y $EDITION_PKGS || true
+  fi
 fi
 
 apt-get clean

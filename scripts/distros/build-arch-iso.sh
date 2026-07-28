@@ -10,6 +10,10 @@
 # cần mount/overlayfs y hệt pacstrap để build airootfs).
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
+: "${EDITION:=normal}"
+
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../kernel-tuning.sh"
 
 echo "===== Cài archiso ====="
 pacman -Sy --noconfirm --needed archiso
@@ -40,8 +44,12 @@ echo "===== Bổ sung gói vào packages.x86_64 (DE + tuỳ chọn người dùn
 # nên phải thêm tường minh, không được giả định gói này đã có sẵn.
 {
   echo ""
-  echo "# ===== Hyggshi OS: DE + tuỳ chọn ($DE, browser=$INCLUDE_BROWSER, office=$INCLUDE_OFFICE) ====="
+  echo "# ===== Hyggshi OS: DE + tuỳ chọn ($DE, edition=$EDITION, browser=$INCLUDE_BROWSER, office=$INCLUDE_OFFICE) ====="
   echo networkmanager
+
+  # calamares — MỌI base phải có installer, kể cả live ISO Arch (giống
+  # Debian/Ubuntu/Mint đã có calamares qua desktop.sh).
+  printf '%s\n' calamares
 
   case "$DE" in
     kde)
@@ -50,10 +58,22 @@ echo "===== Bổ sung gói vào packages.x86_64 (DE + tuỳ chọn người dùn
     lxqt)
       printf '%s\n' lxqt sddm pcmanfm-qt xterm
       ;;
+    gnome)
+      printf '%s\n' gnome gnome-tweaks gdm
+      ;;
+    mate)
+      printf '%s\n' mate mate-extra lightdm lightdm-gtk-greeter
+      ;;
+    cinnamon)
+      printf '%s\n' cinnamon lightdm lightdm-gtk-greeter
+      ;;
     *)
       printf '%s\n' xfce4 xfce4-goodies lightdm lightdm-gtk-greeter
       ;;
   esac
+
+  # gói thêm theo Edition (developer/server) — xem kernel-tuning.sh
+  hyggshi_edition_packages_pacman "$EDITION"
 
   case "$ICON_THEME" in
     numix)   echo numix-icon-theme ;;
@@ -226,6 +246,41 @@ Session=lxqt
 SDDMEOF
 CUSTOMEOF
     ;;
+  gnome)
+    cat <<CUSTOMEOF >> "$CUSTOMIZE"
+systemctl enable gdm || echo "CẢNH BÁO: gdm.service không tồn tại — kiểm tra packages.x86_64"
+mkdir -p /etc/gdm
+cat <<GDMEOF > /etc/gdm/custom.conf
+[daemon]
+AutomaticLoginEnable = true
+AutomaticLogin = $OS_USERNAME
+GDMEOF
+CUSTOMEOF
+    ;;
+  mate)
+    cat <<CUSTOMEOF >> "$CUSTOMIZE"
+systemctl enable lightdm || echo "CẢNH BÁO: lightdm.service không tồn tại — kiểm tra packages.x86_64"
+mkdir -p /etc/lightdm/lightdm.conf.d
+cat <<LIGHTDMEOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=mate
+LIGHTDMEOF
+CUSTOMEOF
+    ;;
+  cinnamon)
+    cat <<CUSTOMEOF >> "$CUSTOMIZE"
+systemctl enable lightdm || echo "CẢNH BÁO: lightdm.service không tồn tại — kiểm tra packages.x86_64"
+mkdir -p /etc/lightdm/lightdm.conf.d
+cat <<LIGHTDMEOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=cinnamon
+LIGHTDMEOF
+CUSTOMEOF
+    ;;
   *)
     cat <<CUSTOMEOF >> "$CUSTOMIZE"
 systemctl enable lightdm || echo "CẢNH BÁO: lightdm.service không tồn tại — kiểm tra packages.x86_64"
@@ -260,23 +315,17 @@ CUSTOMEOF
 chmod +x "$CUSTOMIZE"
 
 # ============================================================
-# Tuỳ chỉnh thông số kernel (sysctl) — TÙY CHỌN, chỉ áp dụng khi
-# ENABLE_KERNEL_TUNING=true. Ghi thẳng vào overlay (không cần chạy lệnh gì
-# trong customize_airootfs.sh) vì đây chỉ là 1 file cấu hình tĩnh, áp dụng
-# lúc boot qua systemd-sysctl. Runtime kernel parameter, KHÔNG phải
-# compile-time kernel config (CONFIG_PREEMPT, CONFIG_HZ, CONFIG_BTRFS_FS...)
-# — muốn đổi loại đó phải tự build kernel riêng, sysctl không làm được.
+# Edition (kernel tuning qua sysctl) — normal | developer | server | lite.
+# Ghi thẳng vào overlay (không cần chạy lệnh gì trong customize_airootfs.sh)
+# vì đây chỉ là 1 file cấu hình tĩnh, áp dụng lúc boot qua systemd-sysctl.
+# Runtime kernel parameter, KHÔNG phải compile-time kernel config
+# (CONFIG_PREEMPT, CONFIG_HZ, CONFIG_BTRFS_FS...) — muốn đổi loại đó phải tự
+# build kernel riêng, sysctl không làm được. Hàm dùng chung với Debian, xem
+# scripts/kernel-tuning.sh.
 # ============================================================
-if [ "$ENABLE_KERNEL_TUNING" = "true" ]; then
-  echo "===== Ghi /etc/sysctl.d/99-hyggshi-tuning.conf (tuỳ chỉnh thông số kernel) ====="
-  mkdir -p "$AIROOTFS/etc/sysctl.d"
-  cat <<EOF > "$AIROOTFS/etc/sysctl.d/99-hyggshi-tuning.conf"
-vm.swappiness = 10
-vm.vfs_cache_pressure = 50
-fs.inotify.max_user_watches = 524288
-kernel.nmi_watchdog = 0
-EOF
-fi
+echo "===== Ghi /etc/sysctl.d/99-hyggshi-tuning.conf theo Edition=$EDITION ====="
+mkdir -p "$AIROOTFS/etc/sysctl.d"
+hyggshi_sysctl_conf "$EDITION" > "$AIROOTFS/etc/sysctl.d/99-hyggshi-tuning.conf"
 
 echo "===== mkarchiso build (có thể mất vài phút) ====="
 mkarchiso -v -w "$WORK_DIR" -o "$OUT_DIR" "$PROFILE_DIR"

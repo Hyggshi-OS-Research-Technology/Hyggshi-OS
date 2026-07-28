@@ -42,12 +42,22 @@ sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
 sudo cp "$INITRD_FILE" live-build/image/live/initrd
 
 echo "===== Build bootable ISO with grub ====="
+# Kernel cmdline thêm theo Edition — CHỈ áp dụng cho Debian (đúng phạm vi
+# yêu cầu "arch và debian thêm tuỳ chọn chỉnh thông số kernel"); Ubuntu/Mint
+# giữ nguyên "quiet splash" mặc định như trước.
+KERNEL_CMDLINE_EXTRA="quiet splash"
+if [ "$BASE_DISTRO" = "debian" ]; then
+  # shellcheck source=/dev/null
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kernel-tuning.sh"
+  KERNEL_CMDLINE_EXTRA=$(hyggshi_kernel_cmdline_extra "${EDITION:-normal}")
+fi
+
 mkdir -p live-build/image/boot/grub
 cat <<EOF > live-build/image/boot/grub/grub.cfg
 set timeout=10
 set default=0
 menuentry "$DISTRO_NAME Live" {
-  linux /live/vmlinuz boot=live quiet splash
+  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA
   initrd /live/initrd
 }
 EOF
