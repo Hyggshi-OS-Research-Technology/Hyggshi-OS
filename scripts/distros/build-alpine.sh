@@ -280,7 +280,12 @@ mkdir -p "$INITRD_DIR"/bin "$INITRD_DIR"/dev "$INITRD_DIR"/proc "$INITRD_DIR"/sy
 
 cp "$ROOTFS/bin/busybox.static" "$INITRD_DIR/bin/busybox" 2>/dev/null || \
   cp "$ROOTFS/bin/busybox" "$INITRD_DIR/bin/busybox"
-( cd "$INITRD_DIR" && ./bin/busybox --install -s bin )
+chmod +x "$INITRD_DIR/bin/busybox"
+# FIX: `./bin/busybox --install` bị busybox từ chối với lỗi "is not an
+# absolute path" — nó đòi hỏi cả binary lẫn thư mục đích đều là đường dẫn
+# tuyệt đối, không chấp nhận đường dẫn tương đối dù đã `cd` đúng chỗ.
+INITRD_ABS="$(cd "$INITRD_DIR" && pwd)"
+"$INITRD_ABS/bin/busybox" --install -s "$INITRD_ABS/bin"
 
 # Gom module (squashfs/overlay/isofs/loop) + phụ thuộc bằng modprobe --show-depends
 # (không cần boot đúng kernel đó, modprobe hỗ trợ -d rootdir -S kver để "khô chạy").
