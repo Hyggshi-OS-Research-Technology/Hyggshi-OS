@@ -95,9 +95,9 @@ if [ -z "$KVER" ] || ! ls "$ROOTFS"/boot/vmlinuz-lts >/dev/null 2>&1; then
 fi
 echo "OK: kernel $KVER — $(ls "$ROOTFS"/boot/vmlinuz-lts)"
 
-# calamares — MỌI base phải có installer. Gói này chỉ có ở community repo và
-# có thể không build sẵn cho mọi phiên bản Alpine — không để lỗi ở đây làm
-# hỏng luôn cả build (giống cách desktop.sh xử lý calamares-settings-debian).
+# calamares (installer) — gói này thường không có sẵn trong repo Alpine
+# (không được build sẵn cho mọi phiên bản). Không để lỗi ở đây làm hỏng
+# cả build — nếu thiếu thì ISO sẽ boot live được nhưng không có graphical installer.
 echo "===== Cài calamares (installer) ====="
 apk_target calamares || echo "CẢNH BÁO: gói calamares không có sẵn cho $ALPINE_VERSION/community — bỏ qua, ISO sẽ không có installer."
 
