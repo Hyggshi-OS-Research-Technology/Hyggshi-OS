@@ -255,7 +255,19 @@ EOF
 echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" > "$ROOTFS/etc/motd"
 
 echo "===== dracut: generate initramfs live (dmsquash-live) ====="
-chroot "$ROOTFS" dracut -v --force --add "dmsquash-live pollcdrom" \
+# BUG: gói "dracut" trên Fedora tự cài sẵn /usr/lib/dracut/dracut.conf.d/
+# 99-hostonly.conf với nội dung "[[ $hostonly ]] || hostonly=yes" — nghĩa là
+# MẶC ĐỊNH hostonly=yes trên mọi hệ Fedora, kể cả rootfs vừa dựng bằng
+# --installroot ở trên. module-setup.sh của chính "90dmsquash-live" (dracut
+# upstream) có check(): "[[ $hostonly ]] && return 1" — cố tình LOẠI BỎ
+# module này khi hostonly đang bật (comment gốc: "a live host-only image
+# doesn't really make a lot of sense"). Đây chính là nguyên nhân thật của
+# "dracut[E]: Module 'dmsquash-live' cannot be installed." — không phải do
+# thiếu dmsetup/device-mapper (đã cài đủ ở trên). Phải truyền --no-hostonly
+# tường minh để dracut build một initramfs live tổng quát (không khoá theo
+# phần cứng của container build), đúng như hướng dẫn build livecd chính
+# thức của Fedora.
+chroot "$ROOTFS" dracut -v --force --no-hostonly --add "dmsquash-live pollcdrom" \
   "/boot/initramfs-live-$KVER.img" "$KVER"
 
 echo "===== Unmount /proc /sys /dev /run trước khi đóng gói squashfs ====="
