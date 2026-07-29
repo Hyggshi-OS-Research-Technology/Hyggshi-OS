@@ -423,8 +423,12 @@ jobs:
     steps:
       - name: "Cài build tools trên HOST (container fedora — build-fedora.sh chỉ cài vào --installroot, không tự cài công cụ cho chính host)"
         run: |
+          # LƯU Ý: grub2-mkrescue KHÔNG nằm trong gói "grub2-tools" — trên Fedora
+          # nó được đóng gói riêng trong "grub2-tools-extra" (khác Debian, nơi
+          # grub-mkrescue nằm ngay trong grub-common/grub-pc-bin). Thiếu gói này
+          # gây lỗi "grub2-mkrescue: command not found" ở bước build ISO cuối.
           dnf install -y --setopt=install_weak_deps=False \
-            squashfs-tools grub2-tools grub2-pc-modules grub2-efi-x64-modules \
+            squashfs-tools grub2-tools grub2-tools-extra grub2-pc-modules grub2-efi-x64-modules \
             xorriso mtools rsync util-linux
 
       - name: Checkout repo (scripts, config files, branding...)
