@@ -47,9 +47,11 @@ echo "===== Bổ sung gói vào packages.x86_64 (DE + tuỳ chọn người dùn
   echo "# ===== Hyggshi OS: DE + tuỳ chọn ($DE, edition=$EDITION, browser=$INCLUDE_BROWSER, office=$INCLUDE_OFFICE) ====="
   echo networkmanager
 
-  # calamares — MỌI base phải có installer, kể cả live ISO Arch (giống
-  # Debian/Ubuntu/Mint đã có calamares qua desktop.sh).
-  printf '%s\n' calamares
+  # calamares — KHÔNG có sẵn trong repo chính thức của Arch Linux (chỉ có
+  # trên AUR). mkarchiso chỉ dùng repo chính thức nên không thể cài trực
+  # tiếp. Nếu cần installer trên Arch, phải tự build calamares từ AUR
+  # hoặc dùng công cụ cài đặt khác (arch-install-scripts).
+  # printf '%s\n' calamares
 
   case "$DE" in
     kde)
