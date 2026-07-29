@@ -55,8 +55,15 @@ rpm --root "$ROOTFS" --initdb
 # non-interactive trong CI (giống tinh thần --allow-untrusted của
 # build-alpine.sh) — đánh đổi hợp lý cho ISO build tự động, không phải cho
 # hệ thống production cần verify chữ ký gói.
+#
+# --use-host-config: dnf5 (mặc định trên container fedora:41) đổi hành vi so
+# với dnf4 — với --installroot vào 1 thư mục MỚI TINH (chưa có
+# /etc/yum.repos.d riêng), nó không tự lấy repo của host nữa, báo thẳng
+# "No matching repositories for *, *" thay vì fallback êm như dnf4. Phải
+# truyền cờ này tường minh để dùng repo đã cấu hình sẵn của container host
+# (image fedora:41 gốc) làm nguồn cài cho $ROOTFS.
 DNF_TARGET() {
-  dnf -y --releasever="$FEDORA_VERSION" --installroot="$ROOTFS" \
+  dnf -y --use-host-config --releasever="$FEDORA_VERSION" --installroot="$ROOTFS" \
     --setopt=install_weak_deps=False --nogpgcheck "$@"
 }
 
