@@ -30,6 +30,25 @@ apt-get install -y linux-image-amd64 live-boot systemd-sysv \
   plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release
 
+echo "===== Cài GRUB + công cụ cho Calamares (partition/bootloader module) ====="
+# BUG: khác với build-fedora.sh (gói "grub2-pc grub2-efi-x64 shim-x64" được
+# cài THẲNG vào --installroot trước khi cài calamares), desktop.sh trước đây
+# KHÔNG cài bất kỳ gói grub nào vào trong chroot này. grub-pc-bin/
+# grub-efi-amd64-bin/grub-common ở build.sh chỉ cài trên HOST (runner) để
+# grub-mkrescue đóng gói ISO — đó là GRUB của riêng ISO live, khác hoàn toàn
+# với GRUB cần có SẴN bên trong squashfs/chroot này (chroot này chính là
+# rootfs được Calamares unpack ra đĩa rồi chroot vào để chạy grub-install/
+# update-grub cho hệ thống ĐÃ CÀI). Thiếu gói ở đây khiến bootloader module
+# của Calamares fail vì "grub-install: command not found" ngay trong target
+# vừa cài — đúng triệu chứng "install/partition/bootloader step fails".
+# Cài cả grub-pc lẫn grub-efi-amd64 (coexist được, không xung đột) để
+# Calamares tự chọn đúng target (i386-pc hay x86_64-efi) tuỳ máy thật boot
+# BIOS hay UEFI. efibootmgr cần cho nhánh UEFI ghi boot entry vào NVRAM;
+# parted/dosfstools cần cho module partition (tạo/format phân vùng ESP/root).
+apt-get install -y grub-pc grub-efi-amd64 grub-common efibootmgr \
+  parted dosfstools || \
+  echo "CẢNH BÁO: cài GRUB/parted/efibootmgr vào chroot thất bại — Calamares bootloader/partition module sẽ lỗi khi cài đặt thật."
+
 echo "===== Cài Calamares (installer) — optional, không làm fail cả build ====="
 # calamares-settings-debian cung cấp cấu hình module cài đặt (partition, unpackfs,
 # bootloader...) cho mọi distro Debian-based. Thử cài cả hai; nếu settings không
