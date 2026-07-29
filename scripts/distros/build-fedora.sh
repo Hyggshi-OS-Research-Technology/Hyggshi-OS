@@ -308,13 +308,24 @@ echo "===== Build bootable ISO with grub (dmsquash-live cmdline) ====="
 # "Job dev-mapper-live\x2drw.device/start running" cho tới khi hit timeout
 # 50min (root_delay/rd.retry mặc định của dracut), không hề crash hay báo
 # lỗi rõ ràng nào khác.
+#
+# BUG 2: rootfs dựng bằng "dnf --installroot" KHÔNG cài selinux-policy/
+# selinux-policy-targeted (chỉ cài các gói tối thiểu ở trên), nhưng kernel
+# Fedora vẫn bật SELinux mặc định lúc boot. Không có policy nào được nạp,
+# mọi lệnh setxattr(security.selinux, ...) của systemd lên /dev đều bị
+# kernel từ chối ("Unable to fix SELinux security context ... Permission
+# denied") — dồn lại tới mức PID 1 không tạo nổi /dev cần thiết, dẫn tới
+# "Failed to allocate manager object: Permission denied" và
+# "Freezing execution." (boot chết cứng). Cách đúng đắn là cài
+# selinux-policy-targeted + relabel, nhưng cho ISO live/test thế này, tắt
+# hẳn SELinux bằng "selinux=0" ở kernel cmdline là đủ và đơn giản hơn nhiều.
 KERNEL_CMDLINE_EXTRA=$(hyggshi_kernel_cmdline_extra "$EDITION")
 mkdir -p live-build/image/boot/grub
 cat <<EOF > live-build/image/boot/grub/grub.cfg
 set timeout=10
 set default=0
 menuentry "$DISTRO_NAME Live" {
-  linux /live/vmlinuz root=live:CDLABEL=HYGGSHI_OS rd.live.image rd.live.dir=live rd.live.squashimg=filesystem.squashfs $KERNEL_CMDLINE_EXTRA
+  linux /live/vmlinuz root=live:CDLABEL=HYGGSHI_OS rd.live.image rd.live.dir=live rd.live.squashimg=filesystem.squashfs selinux=0 $KERNEL_CMDLINE_EXTRA
   initrd /live/initrd
 }
 EOF
