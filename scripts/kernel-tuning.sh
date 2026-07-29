@@ -122,6 +122,17 @@ hyggshi_edition_packages_apk() {
   esac
 }
 
+# Gói dnf thêm theo edition (Fedora) — cách nhau bằng dấu cách.
+hyggshi_edition_packages_dnf() {
+  local edition="${1:-normal}"
+  case "$edition" in
+    developer) echo "@development-tools git curl docker htop" ;;
+    server)    echo "openssh-server htop" ;;
+    lite)      echo "zram-generator" ;;
+    *)         echo "" ;;
+  esac
+}
+
 # Kernel boot cmdline (GRUB) thêm theo edition — kernel parameter thật sự,
 # khác sysctl runtime ở trên.
 hyggshi_kernel_cmdline_extra() {
