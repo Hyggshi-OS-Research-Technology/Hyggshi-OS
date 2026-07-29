@@ -68,13 +68,18 @@ DNF_TARGET() {
 }
 
 echo "===== dnf --installroot: bootstrap base rootfs + kernel + dracut-live ====="
-# util-linux: bắt buộc phải có TRƯỚC khi chạy dracut — module dmsquash-live tự
-# kiểm tra cần "logger" hoặc "/dev/log" để log lúc live-boot, thiếu gói này
-# dracut từ chối cài module luôn ("Module 'dmsquash-live' cannot be
-# installed"), không phải lỗi ở bước dracut mà ở danh sách gói bootstrap này.
+# util-linux: cần cho dracut nói chung (logger — xem cảnh báo bên dưới).
+# device-mapper: cung cấp dmsetup — dmsquash-live-root.sh (chạy lúc live-boot
+# thật) gọi thẳng "dmsetup create live-rw", và module-setup.sh của
+# dmsquash-live tự kiểm tra dmsetup có mặt trong rootfs TRƯỚC khi cho phép
+# cài module — thiếu gói này là lý do thật sự đằng sau "Module 'dmsquash-live'
+# cannot be installed." (dòng cảnh báo "/dev/log or logger" ngay phía trên nó
+# trong log CHỈ là warning vô hại của chính dracut-logger, không phải nguyên
+# nhân — xem dracut-logger.c, đã xác nhận qua nhiều báo lỗi tương tự trên
+# GitHub/Bugzilla dùng dmsquash-live).
 DNF_TARGET install glibc-minimal-langpack systemd systemd-udev passwd sudo \
-  util-linux NetworkManager kernel kernel-core dracut dracut-live grub2-pc \
-  grub2-efi-x64 shim-x64 squashfs-tools
+  util-linux device-mapper NetworkManager kernel kernel-core dracut dracut-live \
+  grub2-pc grub2-efi-x64 shim-x64 squashfs-tools
 
 echo "===== Kiểm tra kernel image đã thực sự có trong /boot và /lib/modules ====="
 KVER=$(basename "$(ls -d "$ROOTFS"/lib/modules/*/ 2>/dev/null | head -n1)")
@@ -246,7 +251,7 @@ EOF
 echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" > "$ROOTFS/etc/motd"
 
 echo "===== dracut: generate initramfs live (dmsquash-live) ====="
-chroot "$ROOTFS" dracut --force --add "dmsquash-live pollcdrom" \
+chroot "$ROOTFS" dracut -v --force --add "dmsquash-live pollcdrom" \
   "/boot/initramfs-live-$KVER.img" "$KVER"
 
 echo "===== Unmount /proc /sys /dev /run trước khi đóng gói squashfs ====="
