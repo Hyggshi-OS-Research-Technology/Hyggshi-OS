@@ -31,7 +31,15 @@ sudo apt-get install -y \
 mkdir -p live-build/chroot
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
+# LƯU Ý: file của arch tên là build-arch-iso.sh (không phải build-arch.sh
+# như quy ước debian/ubuntu/linuxmint/alpine/fedora), vì nó dùng mkarchiso
+# thay vì pacstrap+chroot tay. Map riêng ở đây để build.sh/local-build.sh
+# không báo nhầm "Distro không hợp lệ" khi BASE_DISTRO=arch.
+if [ "$BASE_DISTRO" = "arch" ]; then
+  DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-arch-iso.sh"
+else
+  DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
+fi
 
 if [ ! -f "$DISTRO_SCRIPT" ]; then
   echo "Distro không hợp lệ: $BASE_DISTRO (không tìm thấy $DISTRO_SCRIPT)"
