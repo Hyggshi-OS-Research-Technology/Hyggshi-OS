@@ -9,6 +9,13 @@
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
+# GitHub Actions provides GITHUB_ENV automatically. Keep the same contract
+# for local/Docker builds so distro scripts can persist resolved variables.
+: "${GITHUB_ENV:=live-build/build.env}"
+export GITHUB_ENV
+mkdir -p "$(dirname "$GITHUB_ENV")"
+: > "$GITHUB_ENV"
+
 echo "===== Free up disk space ====="
 sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
 sudo apt-get clean

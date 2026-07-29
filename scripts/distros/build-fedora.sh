@@ -187,7 +187,11 @@ chroot "$ROOTFS" ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 
 echo "===== Tạo user mặc định cho live session (chroot thật, có /proc nên useradd/chpasswd chạy bình thường) ====="
 chroot "$ROOTFS" useradd -m -G wheel -s /bin/bash "$OS_USERNAME" || true
-chroot "$ROOTFS" bash -c "echo '$OS_USERNAME:$OS_PASSWORD' | chpasswd"
+# Pass credentials through stdin instead of interpolating them into a shell
+# command. This accepts punctuation in a password without executing it.
+{ set +x; } 2>/dev/null
+printf '%s:%s\n' "$OS_USERNAME" "$OS_PASSWORD" | chroot "$ROOTFS" chpasswd
+[ "$DEBUG_MODE" = "true" ] && set -x
 
 echo "===== Bật service khởi động cùng hệ thống ====="
 chroot "$ROOTFS" systemctl enable NetworkManager "$DISPLAY_MANAGER" || true
@@ -262,7 +266,13 @@ echo "===== Đóng gói rootfs thành squashfs ====="
 mkdir -p live-build/image/live
 mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -e boot
 
-cp "$ROOTFS"/boot/vmlinuz-* live-build/image/live/vmlinuz
+VMLINUX_FILE=$(find "$ROOTFS/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%T@ %p\n' \
+  | sort -nr | head -n1 | cut -d' ' -f2-)
+if [ -z "$VMLINUX_FILE" ]; then
+  echo "LỖI: không tìm thấy kernel vmlinuz trong $ROOTFS/boot." >&2
+  exit 1
+fi
+cp "$VMLINUX_FILE" live-build/image/live/vmlinuz
 cp "$ROOTFS/boot/initramfs-live-$KVER.img" live-build/image/live/initrd
 
 echo "===== Build bootable ISO with grub (dmsquash-live cmdline) ====="

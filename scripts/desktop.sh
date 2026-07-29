@@ -184,7 +184,8 @@ fi
 
 # gói thêm do người dùng chỉ định
 if [ -n "$EXTRA_PACKAGES" ]; then
-  apt-get install -y $EXTRA_PACKAGES || true
+  read -r -a EXTRA_PACKAGE_LIST <<< "$EXTRA_PACKAGES"
+  apt-get install -y "${EXTRA_PACKAGE_LIST[@]}" || true
 fi
 
 # user mặc định cho live session
