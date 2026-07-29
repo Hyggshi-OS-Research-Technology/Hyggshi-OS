@@ -120,8 +120,21 @@ printf "%s \\n \\l\n\n" "$DISTRO_NAME" | sudo tee "$CHROOT/etc/issue" > /dev/nul
 echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
 echo "===== Distributor logo ====="
+# 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
 LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+
+# 2. Nếu không có, tải trực tiếp từ link người dùng dán vào ($LOGO_URL, xem workflow input "logo_url")
+if [ -z "$LOGO_FILE" ] && [ -n "$LOGO_URL" ]; then
+  echo "Không thấy logo trong repo local, tải trực tiếp từ \$LOGO_URL..."
+  if curl -fsSL "$LOGO_URL" -o /tmp/logo-remote.png && [ -s /tmp/logo-remote.png ]; then
+    LOGO_FILE=/tmp/logo-remote.png
+    echo "Tải thành công: $LOGO_URL"
+  else
+    echo "Tải thất bại từ \$LOGO_URL"
+  fi
+fi
+
 if [ -n "$LOGO_FILE" ]; then
   sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
   if ! command -v convert > /dev/null 2>&1; then
@@ -139,6 +152,126 @@ if [ -n "$LOGO_FILE" ]; then
 else
   echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo mặc định của distro gốc."
   echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
+fi
+
+echo "===== Plymouth boot splash (logo + chữ loading) ====="
+# Theme riêng "hyggshi-boot" dùng module "script" của Plymouth — logo tự
+# dán qua link (PLYMOUTH_LOGO_URL), không phụ thuộc theme có sẵn trong
+# plymouth-themes. Chạy TRƯỚC bất kỳ desktop environment nào lúc boot nên
+# áp dụng chung cho mọi DE, không đặt trong nhánh "if DE=xfce" bên dưới.
+
+# 1. Ưu tiên file riêng cho Plymouth trong repo (đặt tên plymouth-logo.*)
+PLYMOUTH_LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "plymouth-logo.*" \
+  \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+
+# 2. Nếu không có, tải từ link người dùng dán riêng cho Plymouth
+#    ($PLYMOUTH_LOGO_URL, xem workflow input "plymouth_logo_url")
+if [ -z "$PLYMOUTH_LOGO_FILE" ] && [ -n "$PLYMOUTH_LOGO_URL" ]; then
+  echo "Không thấy plymouth-logo trong repo local, tải từ \$PLYMOUTH_LOGO_URL..."
+  if curl -fsSL "$PLYMOUTH_LOGO_URL" -o /tmp/plymouth-logo-remote.png && [ -s /tmp/plymouth-logo-remote.png ]; then
+    PLYMOUTH_LOGO_FILE=/tmp/plymouth-logo-remote.png
+    echo "Tải thành công: $PLYMOUTH_LOGO_URL"
+  fi
+fi
+
+# 3. Nếu vẫn không có gì riêng cho Plymouth, dùng lại đúng logo distributor
+#    ở trên (đã tải/tìm sẵn trong $LOGO_FILE) thay vì bỏ trắng màn hình chờ.
+if [ -z "$PLYMOUTH_LOGO_FILE" ] && [ -n "$LOGO_FILE" ]; then
+  PLYMOUTH_LOGO_FILE="$LOGO_FILE"
+  echo "Dùng chung logo distributor cho Plymouth: $LOGO_FILE"
+fi
+
+if [ -z "$PLYMOUTH_LOGO_FILE" ]; then
+  echo "⚠️  Không có logo nào cho Plymouth (thiếu file local, PLYMOUTH_LOGO_URL và LOGO_URL đều trống/tải lỗi) — bỏ qua, giữ Plymouth theme mặc định của distro gốc."
+else
+  THEME_DIR="$CHROOT/usr/share/plymouth/themes/hyggshi-boot"
+  sudo mkdir -p "$THEME_DIR"
+  # Bỏ dấu " khỏi DISTRO_NAME trước khi chèn vào file .plymouth (ini) và
+  # .script (chuỗi kiểu C) — nếu không, 1 dấu " trong distro_name (input
+  # người dùng tự đặt) sẽ làm hỏng cú pháp cả 2 file này.
+  DISTRO_NAME_SAFE="${DISTRO_NAME//\"/}"
+
+  sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+  if command -v convert > /dev/null 2>&1; then
+    convert "$PLYMOUTH_LOGO_FILE" -resize 256x256 /tmp/plymouth-logo.png
+  else
+    cp "$PLYMOUTH_LOGO_FILE" /tmp/plymouth-logo.png
+  fi
+  sudo cp /tmp/plymouth-logo.png "$THEME_DIR/logo.png"
+
+  cat <<PLYMOUTHEOF | sudo tee "$THEME_DIR/hyggshi-boot.plymouth" > /dev/null
+[Plymouth Theme]
+Name=Hyggshi Boot
+Description=$DISTRO_NAME_SAFE boot splash (logo + loading text)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/hyggshi-boot
+ScriptFile=/usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.script
+PLYMOUTHEOF
+
+  # Ngôn ngữ script riêng của Plymouth (cú pháp kiểu C, xem
+  # freedesktop.org/wiki/Software/Plymouth/Scripts). Logo tĩnh ở giữa màn
+  # hình + dòng chữ "<DISTRO_NAME> đang khởi động..." có dấu chấm chạy
+  # (0-3 dấu chấm lặp lại) làm hiệu ứng loading, cập nhật qua
+  # Plymouth.SetRefreshFunction (gọi ~50 lần/giây).
+  cat <<SCRIPTEOF | sudo tee "$THEME_DIR/hyggshi-boot.script" > /dev/null
+Window.SetBackgroundTopColor(0.05, 0.07, 0.12);
+Window.SetBackgroundBottomColor(0.02, 0.03, 0.05);
+
+window_width = Window.GetWidth();
+window_height = Window.GetHeight();
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo_x = window_width / 2 - logo.image.GetWidth() / 2;
+logo_y = window_height / 2 - logo.image.GetHeight() / 2 - 40;
+logo.sprite.SetX(logo_x);
+logo.sprite.SetY(logo_y);
+logo.sprite.SetZ(10);
+
+message_sprite = Sprite();
+message_sprite.SetZ(10);
+message_y = logo_y + logo.image.GetHeight() + 30;
+
+dot_count = 0;
+
+fun refresh_callback() {
+  dot_count++;
+  if (dot_count > 24) {
+    dot_count = 0;
+  }
+  n_dots = dot_count / 8 + 1;
+  dots = "";
+  i = 0;
+  while (i < n_dots) {
+    dots = dots + ".";
+    i++;
+  }
+  msg_text = "$DISTRO_NAME_SAFE đang khởi động" + dots;
+  message_image = Image.Text(msg_text, 0.85, 0.85, 0.9, 1, "Sans 12");
+  message_sprite.SetImage(message_image);
+  message_sprite.SetX(window_width / 2 - message_image.GetWidth() / 2);
+  message_sprite.SetY(message_y);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+SCRIPTEOF
+
+  echo "===== Đặt 'hyggshi-boot' làm Plymouth theme mặc định (-R tự rebuild initramfs) ====="
+  # BẮT BUỘC rebuild initramfs mỗi khi đổi theme Plymouth, nếu không initrd
+  # cũ (không có theme mới) vẫn được iso.sh lấy vào ISO — cờ -R của
+  # plymouth-set-default-theme tự làm việc này (gọi update-initramfs -u).
+  if sudo chroot "$CHROOT" bash -c 'command -v plymouth-set-default-theme' > /dev/null 2>&1; then
+    if sudo chroot "$CHROOT" plymouth-set-default-theme -R hyggshi-boot 2>&1; then
+      echo "OK: đã đặt Plymouth theme 'hyggshi-boot' làm mặc định."
+    else
+      echo "⚠️  plymouth-set-default-theme -R lỗi — thử lại không rebuild rồi tự update-initramfs."
+      sudo chroot "$CHROOT" plymouth-set-default-theme hyggshi-boot || true
+      sudo chroot "$CHROOT" update-initramfs -u || true
+    fi
+  else
+    echo "⚠️  Không tìm thấy plymouth-set-default-theme trong chroot — bỏ qua, giữ Plymouth theme mặc định."
+  fi
 fi
 
 if [ "$DE" != "xfce" ]; then
