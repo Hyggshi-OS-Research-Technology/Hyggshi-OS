@@ -264,7 +264,16 @@ trap - EXIT
 
 echo "===== Đóng gói rootfs thành squashfs ====="
 mkdir -p live-build/image/live
-mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -e boot
+# BUG (giống hệt bug đã fix ở iso.sh cho nhánh Debian): KHÔNG được loại trừ
+# /boot khỏi squashfs bằng "-e boot". ISO live vẫn boot được nếu loại trừ (vì
+# GRUB nạp /live/vmlinuz + /live/initrd trực tiếp từ ISO, không qua squashfs)
+# — NHƯNG sau khi Calamares cài đặt (unpackfs chép squashfs này vào đĩa) thì
+# /boot của hệ thống ĐÃ CÀI sẽ trống rỗng (không có vmlinuz-*/initramfs-*),
+# khiến bootloader module của Calamares fail với kiểu lỗi "grub2-pc has no
+# installation candidate" / thiếu file khi chạy grub2-mkconfig trong target.
+# Giữ nguyên /boot trong squashfs để hệ thống sau khi cài có đủ file cho
+# grub2-install/grub2-mkconfig.
+mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz
 
 VMLINUX_FILE=$(find "$ROOTFS/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%T@ %p\n' \
   | sort -nr | head -n1 | cut -d' ' -f2-)
