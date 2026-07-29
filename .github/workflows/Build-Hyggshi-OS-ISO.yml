@@ -11,7 +11,7 @@ on:
         description: "Bản phân phối gốc (base distro)"
         required: false
         type: choice
-        options: [debian, ubuntu, linuxmint, alpine, arch]
+        options: [debian, ubuntu, linuxmint, alpine, arch, fedora]
         default: "debian"
       debian_version:
         description: "Phiên bản Debian (chỉ áp dụng khi distro = debian)"
@@ -37,8 +37,14 @@ on:
         type: choice
         options: ["v3.20", "v3.19", "edge"]
         default: "v3.20"
+      fedora_version:
+        description: "Phiên bản Fedora (chỉ áp dụng khi distro = fedora — EXPERIMENTAL, dùng dnf --installroot + dracut dmsquash-live, chưa test trên phần cứng/VM thật)"
+        required: false
+        type: choice
+        options: ["41", "40", "rawhide"]
+        default: "41"
       edition:
-        description: "Edition (chỉnh thông số kernel — chỉ áp dụng khi distro = debian hoặc arch)"
+        description: "Edition (chỉnh thông số kernel — chỉ áp dụng khi distro = debian, arch hoặc fedora)"
         required: false
         type: choice
         options: [normal, developer, server, lite]
@@ -136,7 +142,7 @@ jobs:
     # Alpine và Arch chạy ở 2 job riêng bên dưới, trong container gốc của
     # chính distro đó — xem ghi chú trong build-alpine.sh / build-arch.sh về
     # lý do (apk/pacman + keyring có sẵn, không cần giả lập trên Ubuntu).
-    if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' }}
+    if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -360,6 +366,51 @@ jobs:
 
       - name: "[build-arch-iso.sh] Build ISO bằng mkarchiso"
         run: bash scripts/distros/build-arch-iso.sh
+
+      - name: Upload ISO as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyggshi-os-iso
+          path: ${{ env.ISO_FILENAME }}
+          retention-days: 14
+
+      - name: Attach ISO to GitHub Release (optional)
+        if: ${{ github.event.inputs.release_iso == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ISO_FILENAME }}
+          tag_name: "hyggshi-os-${{ github.run_number }}"
+          name: "Hyggshi OS build #${{ github.run_number }}"
+
+  # ============================================================
+  # Job riêng cho Fedora: chạy TRONG container fedora:$FEDORA_VERSION
+  # (--privileged, giống build-arch — build-fedora.sh cần mount --bind
+  # /dev /proc /sys /run để chroot chạy đúng rpm %post scriptlet của
+  # systemd/glibc/kernel + dracut). Dùng dnf --installroot + dracut
+  # dmsquash-live (đúng công nghệ Fedora Live/Workstation ISO thật) — xem
+  # chi tiết + cảnh báo EXPERIMENTAL trong scripts/distros/build-fedora.sh.
+  # ============================================================
+  build-fedora:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.distro == 'fedora' }}
+    container:
+      image: ${{ (github.event.inputs.fedora_version == '40' && 'fedora:40') || (github.event.inputs.fedora_version == 'rawhide' && 'fedora:rawhide') || 'fedora:41' }}
+      options: --privileged
+    steps:
+      - name: "Cài build tools trên HOST (container fedora — build-fedora.sh chỉ cài vào --installroot, không tự cài công cụ cho chính host)"
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            squashfs-tools grub2-tools grub2-pc-modules grub2-efi-x64-modules \
+            xorriso mtools rsync util-linux
+
+      - name: Checkout repo (scripts, config files, branding...)
+        uses: actions/checkout@v4
+
+      - name: Chmod +x cho scripts/distros/build-fedora.sh
+        run: chmod +x scripts/distros/build-fedora.sh
+
+      - name: "[build-fedora.sh] Bootstrap dnf --installroot + build ISO (dracut dmsquash-live)"
+        run: bash scripts/distros/build-fedora.sh
 
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
