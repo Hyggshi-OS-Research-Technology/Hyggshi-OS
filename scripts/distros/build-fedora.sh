@@ -41,9 +41,12 @@ echo "===== Biến build đang dùng ====="
 echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
 echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
 
-ROOTFS="live-build/chroot"
 rm -rf live-build
-mkdir -p "$ROOTFS"
+mkdir -p live-build/chroot
+# --installroot yêu cầu đường dẫn TUYỆT ĐỐI (dnf báo lỗi "Only absolute paths
+# allowed" nếu truyền đường dẫn tương đối) — resolve bằng $(pwd) trước khi
+# gán, không thể để "live-build/chroot" tương đối như các script apt/apk khác.
+ROOTFS="$(pwd)/live-build/chroot"
 
 echo "===== rpm --initdb: khởi tạo RPM DB trống trong rootfs đích ====="
 rpm --root "$ROOTFS" --initdb
