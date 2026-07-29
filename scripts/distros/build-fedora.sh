@@ -297,13 +297,24 @@ cp "$VMLINUX_FILE" live-build/image/live/vmlinuz
 cp "$ROOTFS/boot/initramfs-live-$KVER.img" live-build/image/live/initrd
 
 echo "===== Build bootable ISO with grub (dmsquash-live cmdline) ====="
+# BUG: dracut's dmsquash-live-root.sh mặc định chỉ tìm squashfs tại
+# "/LiveOS/squashfs.img" trên thiết bị boot (rd.live.dir mặc định "LiveOS",
+# rd.live.squashimg mặc định "squashfs.img") — xem module-setup.sh của
+# 90dmsquash-live upstream. Build này lại đóng gói squashfs ở
+# "/live/filesystem.squashfs" (theo convention live-boot của Debian, không
+# phải Fedora). Thiếu 2 tham số rd.live.dir/rd.live.squashimg bên dưới,
+# dracut không bao giờ tìm thấy ảnh squashfs thật, cứ lặp lại chờ (initqueue
+# poll) tới khi hết timeout — biểu hiện là hệ thống "đứng hình" ở
+# "Job dev-mapper-live\x2drw.device/start running" cho tới khi hit timeout
+# 50min (root_delay/rd.retry mặc định của dracut), không hề crash hay báo
+# lỗi rõ ràng nào khác.
 KERNEL_CMDLINE_EXTRA=$(hyggshi_kernel_cmdline_extra "$EDITION")
 mkdir -p live-build/image/boot/grub
 cat <<EOF > live-build/image/boot/grub/grub.cfg
 set timeout=10
 set default=0
 menuentry "$DISTRO_NAME Live" {
-  linux /live/vmlinuz root=live:CDLABEL=HYGGSHI_OS rd.live.image $KERNEL_CMDLINE_EXTRA
+  linux /live/vmlinuz root=live:CDLABEL=HYGGSHI_OS rd.live.image rd.live.dir=live rd.live.squashimg=filesystem.squashfs $KERNEL_CMDLINE_EXTRA
   initrd /live/initrd
 }
 EOF
