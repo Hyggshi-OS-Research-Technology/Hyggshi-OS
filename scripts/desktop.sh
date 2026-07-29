@@ -82,6 +82,64 @@ fi
 # luôn cả việc cài kernel/DE ở trên. Tách riêng và chỉ cài khi BASE_DISTRO=debian.
 if [ "$BASE_DISTRO" = "debian" ]; then
   apt-get install -y calamares-settings-debian || true
+
+  # ---- FIX: "Cài đặt thất bại" ở bước cuối (grub-pc) trên Debian trixie+ ----
+  # calamares-settings-debian ship sẵn helper
+  # /usr/share/calamares/helpers/calamares-bootloader-config, script này
+  # hardcode `apt-get install grub-pc` cho máy BIOS/legacy. Từ Debian
+  # trixie trở đi, gói grub-pc đã bị obsolete trong apt metadata (apt báo
+  # "has no installation candidate" / "replaced by grub-common"), nên lệnh
+  # này LUÔN fail -> /etc/default/grub không được tạo -> update-grub lỗi
+  # "No such file or directory" -> Calamares báo lỗi 127 và huỷ cài đặt.
+  # Ghi đè lại helper để cài grub-pc-bin + grub-common (còn tồn tại) rồi tự
+  # chạy grub-install vào đúng ổ đĩa, thay vì trông chờ postinst của
+  # grub-pc (postinst đó chính là thứ không còn tồn tại nữa).
+  HELPER=/usr/share/calamares/helpers/calamares-bootloader-config
+  if [ -f "$HELPER" ]; then
+    echo "===== Patch $HELPER (grub-pc -> grub-pc-bin, tự chạy grub-install) ====="
+    cat > "$HELPER" <<'HELPEREOF'
+#!/bin/bash
+
+CHROOT=$(mount | grep proc | grep calamares | awk '{print $3}' | sed -e "s#/proc##g")
+
+# Install luks utilities if needed.
+if [ "$(mount | grep $CHROOT" " | cut -c -16)" = "/dev/mapper/luks" ]; then
+    echo "UMASK=0077" > $CHROOT/etc/initramfs-tools/conf.d/initramfs-permissions
+    chroot $CHROOT apt-get -y install cryptsetup-initramfs cryptsetup keyutils
+fi
+
+echo "Running bootloader-config..."
+
+if [ -d /sys/firmware/efi/efivars ]; then
+    echo " * Installing grub-efi (uefi)..."
+    DEBIAN_FRONTEND=noninteractive chroot $CHROOT apt-get -y install grub-efi-amd64
+else
+    echo " * install grub... (bios)"
+    # grub-pc bi obsolete tren Debian trixie+, dung grub-pc-bin + grub-common
+    # thay the, roi tu chay grub-install vao dung o dia (khong con postinst
+    # cua grub-pc de lam viec nay ho nua).
+    DEBIAN_FRONTEND=noninteractive chroot $CHROOT apt-get -y install grub-pc-bin grub-common os-prober
+
+    DISK_PART=$(findmnt -n -o SOURCE "$CHROOT" 2>/dev/null)
+    DISK=""
+    if [ -n "$DISK_PART" ]; then
+        DISK_NAME=$(lsblk -no pkname "$DISK_PART" 2>/dev/null | head -n1)
+        [ -n "$DISK_NAME" ] && DISK="/dev/$DISK_NAME"
+    fi
+    [ -z "$DISK" ] && DISK="$DISK_PART"
+
+    echo " * grub-install target disk: $DISK"
+    chroot $CHROOT grub-install --target=i386-pc "$DISK"
+fi
+
+# Re-enable os-prober:
+sed -i "s/#GRUB_DISABLE_OS_PROBER=false/# OS_PROBER re-enabled by Debian Calamares installation:\nGRUB_DISABLE_OS_PROBER=false/g" $CHROOT/etc/default/grub
+chroot $CHROOT /usr/sbin/update-grub
+HELPEREOF
+    chmod +x "$HELPER"
+  else
+    echo "CẢNH BÁO: không tìm thấy $HELPER (gói calamares-settings-debian có thể đã đổi đường dẫn helper) — bỏ qua patch grub-pc." >&2
+  fi
 fi
 
 echo "===== Firmware / driver phần cứng (wifi, GPU...) ====="
