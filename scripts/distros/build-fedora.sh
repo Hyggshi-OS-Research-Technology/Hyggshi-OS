@@ -108,9 +108,9 @@ cleanup_mounts() {
 }
 trap cleanup_mounts EXIT
 
-# calamares — MỌI base phải có installer, giống Debian/Alpine. Có thể không
-# có sẵn trong repo Fedora chính thức tuỳ version — không để lỗi ở đây làm
-# hỏng cả build.
+# calamares (installer) — thường không có sẵn trong repo Fedora chính thức.
+# Không để lỗi ở đây làm hỏng cả build — nếu thiếu thì ISO boot live được
+# nhưng không có graphical installer.
 echo "===== Cài calamares (installer) ====="
 DNF_TARGET install calamares || echo "CẢNH BÁO: gói calamares không có sẵn cho Fedora $FEDORA_VERSION — bỏ qua, ISO sẽ không có installer."
 
