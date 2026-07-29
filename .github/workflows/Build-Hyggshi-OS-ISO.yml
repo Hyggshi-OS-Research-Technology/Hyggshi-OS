@@ -31,6 +31,18 @@ on:
         type: choice
         options: ["22", "21.3", "21.2"]
         default: "22"
+      wallpaper_url:
+        description: "Link ảnh wallpaper (dán trực tiếp URL .png/.jpg, vd link raw GitHub) — để trống dùng ảnh mặc định trong repo"
+        required: false
+        default: "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true"
+      logo_url:
+        description: "Link ảnh distributor logo (dán trực tiếp URL .png/.jpg) — dùng cho icon hệ thống, để trống dùng ảnh mặc định trong repo"
+        required: false
+        default: "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true"
+      plymouth_logo_url:
+        description: "Link ảnh logo cho màn hình chờ boot Plymouth (dán trực tiếp URL .png/.jpg) — để trống sẽ dùng lại logo_url ở trên"
+        required: false
+        default: "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true"
       alpine_version:
         description: "Phiên bản Alpine (chỉ áp dụng khi distro = alpine — EXPERIMENTAL, mới bootstrap base rootfs, chưa có desktop/branding/iso riêng cho Alpine)"
         required: false
@@ -133,7 +145,13 @@ env:
   INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
-  WALLPAPER_URL: "https://raw.githubusercontent.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/main/iso-config/branding/Wallpaper.png"
+  # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
+  # file cùng tên trong iso-config/branding/ (xem WALLPAPER_FILE/LOGO_FILE/
+  # PLYMOUTH_LOGO_FILE trong branding.sh). PLYMOUTH_LOGO_URL để trống sẽ
+  # fallback dùng LOGO_URL (branding.sh tự xử lý).
+  WALLPAPER_URL: ${{ github.event.inputs.wallpaper_url || 'https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true' }}
+  LOGO_URL: ${{ github.event.inputs.logo_url || 'https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true' }}
+  PLYMOUTH_LOGO_URL: ${{ github.event.inputs.plymouth_logo_url || '' }}
 
 jobs:
   build-iso:
