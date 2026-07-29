@@ -12,13 +12,13 @@ sudo umount live-build/chroot/dev || true
 
 echo "===== Build squashfs from chroot ====="
 mkdir -p live-build/image/live
-# LƯU Ý: KHÔNG loại trừ /boot (-e boot) khỏi squashfs. Nếu loại trừ, hệ
-# thống live boot vẫn chạy được (vì /live/vmlinuz và /live/initrd được GRUB
-# nạp trực tiếp từ ISO, không qua squashfs) — nhưng sau khi Calamares cài
-# đặt (chép squashfs vào đĩa) thì /boot của hệ thống ĐÃ CÀI sẽ trống rỗng
-# (không có vmlinuz/initrd/System.map/config, cũng không có sẵn để
-# grub-install/update-grub chạy trong target), khiến máy sau khi cài xong
-# không boot được. Đây chính là lỗi Calamares hay gặp trước đây.
+# QUAN TRỌNG: KHÔNG loại trừ /boot khỏi squashfs. Nếu loại trừ (-e boot),
+# hệ thống live boot vẫn chạy được (vì /live/vmlinuz và /live/initrd được
+# GRUB nạp trực tiếp từ ISO, không qua squashfs) — NHƯNG sau khi Calamares
+# cài đặt (chép squashfs vào đĩa) thì /boot của hệ thống ĐÃ CÀI sẽ trống
+# rỗng (không có vmlinuz/initrd/System.map/config, cũng không có sẵn để
+# grub-install/update-grub chạy trong target). Kết quả: lỗi "grub-pc has
+# no installation candidate" + "update-grub: No such file or directory".
 sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
   -comp xz
 
