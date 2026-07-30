@@ -41,13 +41,43 @@ echo "===== Cài GRUB + công cụ cho Calamares (partition/bootloader module) =
 # update-grub cho hệ thống ĐÃ CÀI). Thiếu gói ở đây khiến bootloader module
 # của Calamares fail vì "grub-install: command not found" ngay trong target
 # vừa cài — đúng triệu chứng "install/partition/bootloader step fails".
-# Cài cả grub-pc lẫn grub-efi-amd64 (coexist được, không xung đột) để
-# Calamares tự chọn đúng target (i386-pc hay x86_64-efi) tuỳ máy thật boot
-# BIOS hay UEFI. efibootmgr cần cho nhánh UEFI ghi boot entry vào NVRAM;
-# parted/dosfstools cần cho module partition (tạo/format phân vùng ESP/root).
-apt-get install -y grub-pc grub-efi-amd64 grub-common efibootmgr \
-  parted dosfstools || \
-  echo "CẢNH BÁO: cài GRUB/parted/efibootmgr vào chroot thất bại — Calamares bootloader/partition module sẽ lỗi khi cài đặt thật."
+# FIX (đúng nguyên nhân lỗi "grub-pc has no installation candidate" /
+# "Package grub-pc is not available... following packages replace it:
+# grub-common" thấy trong Calamares khi cài đặt thật):
+#
+# 1) apt-get install nhận NHIỀU gói trong 1 lệnh là MỘT giao dịch: nếu chỉ
+#    một gói "no installation candidate" (vd "grub-pc" — gói meta hay bị
+#    transition tạm thời trên Debian testing/sid, đúng như log lỗi), CẢ
+#    LỆNH thất bại và KHÔNG gói nào trong danh sách được cài — kể cả
+#    grub-common/efibootmgr/parted/dosfstools vốn dĩ cài bình thường được.
+#    Trước đây lỗi này chỉ in CẢNH BÁO rồi build tiếp tục "thành công",
+#    đóng gói ISO thiếu sạch cả 6 gói này, nên Calamares luôn fail ở bước
+#    bootloader/partition khi cài đặt thật. Fix: cài TỪNG gói một để 1 gói
+#    lỗi không kéo các gói còn lại theo.
+# 2) "grub-pc"/"grub-efi-amd64" là gói META dùng debconf để hỏi ổ đĩa và tự
+#    chạy grub-install (thiết kế cho debian-installer tương tác) — không
+#    cần trong chroot này vì Calamares tự quản lý việc gọi grub-install qua
+#    module bootloader riêng của nó. Cái thực sự cần là gói BINARY chứa
+#    grub-install: grub-pc-bin (target i386-pc) + grub-efi-amd64-bin (target
+#    x86_64-efi) — đúng cặp gói build.sh đã dùng cho HOST khi grub-mkrescue
+#    đóng ISO (xem grep grub trong build.sh) nên đổi sang đây cho nhất quán,
+#    đồng thời tránh phụ thuộc vào gói meta "grub-pc" hay bị lỗi tạm thời.
+# efibootmgr cần cho nhánh UEFI ghi boot entry vào NVRAM; parted/dosfstools
+# cần cho module partition (tạo/format phân vùng ESP/root).
+GRUB_INSTALL_FAILED=0
+for pkg in grub-pc-bin grub-efi-amd64-bin grub-common efibootmgr parted dosfstools; do
+  if ! apt-get install -y "$pkg"; then
+    echo "LỖI: cài gói '$pkg' thất bại (xem log apt ở trên để biết lý do — hết mạng, gói bị transition tạm thời, v.v.)." >&2
+    GRUB_INSTALL_FAILED=1
+  fi
+done
+if [ "$GRUB_INSTALL_FAILED" = "1" ]; then
+  echo "LỖI NGHIÊM TRỌNG: thiếu ít nhất 1 gói GRUB/partition ở trên." >&2
+  echo "Calamares bootloader/partition module CHẮC CHẮN sẽ lỗi khi cài đặt" >&2
+  echo "thật nếu tiếp tục đóng ISO với chroot thiếu gói này. Dừng build ở" >&2
+  echo "đây (thay vì chỉ cảnh báo rồi đóng ISO hỏng) để phát hiện sớm." >&2
+  exit 1
+fi
 
 echo "===== Cài Calamares (installer) — optional, không làm fail cả build ====="
 # calamares-settings-debian cung cấp cấu hình module cài đặt (partition, unpackfs,
