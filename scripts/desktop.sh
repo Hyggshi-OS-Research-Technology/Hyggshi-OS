@@ -85,23 +85,37 @@ else
     echo "CẢNH BÁO: calamares không có trong PATH — installer sẽ không khả dụng."
 fi
 
-echo "===== Ghi đè removelivepackages.conf để khớp gói THỰC SỰ có trong chroot ====="
-# BUG: calamares-settings-debian cài sẵn /etc/calamares/modules/removelivepackages.conf
-# với 1 danh sách CỐ ĐỊNH (live-boot, live-boot-doc, live-config, live-config-doc,
-# live-config-systemd, live-tools, live-task-localisation, live-task-recommended,
-# calamares-settings-debian...) — giả định build bằng live-build (debian-live) đầy
-# đủ. Build này KHÔNG dùng live-build, desktop.sh chỉ cài "live-boot" ở trên nên
-# phần lớn gói trong danh sách mặc định KHÔNG tồn tại trong chroot.
+echo "===== Ghi đè packages.conf (Calamares) để khớp gói THỰC SỰ có trong chroot ====="
+# BUG (đã sửa SAI ở lần trước — file đúng KHÔNG PHẢI removelivepackages.conf,
+# file đó không tồn tại và Calamares không đọc nó): module thật sự chạy job
+# gỡ gói live-* ở bước Finish tên là "packages", đọc config tại
+# /etc/calamares/modules/packages.conf (nguồn gốc:
+# calamares-settings-debian, xem calamares/modules/packages.conf trong repo
+# đó). Nội dung mặc định:
+#   backend: apt
+#   operations:
+#     - remove:
+#         - live-boot
+#         - live-boot-doc
+#         - live-config
+#         - live-config-doc
+#         - live-config-systemd
+#         - live-tools
+#         - live-task-localisation
+#         - live-task-recommended
+#         - calamares-settings-debian
+# Danh sách này giả định build bằng live-build (debian-live) đầy đủ. Build
+# này KHÔNG dùng live-build, desktop.sh chỉ cài "live-boot" ở trên nên phần
+# lớn gói trong danh sách mặc định KHÔNG tồn tại trong chroot.
 #
-# Ở bước Finish, Calamares chạy `apt-get -q -y --purge remove <TOÀN BỘ danh sách>`
-# trong 1 GIAO DỊCH DUY NHẤT — chỉ cần 1 gói "Unable to locate package" là CẢ
-# LỆNH trả về exit code 100, dù các gói còn lại lẽ ra purge bình thường được.
-# Đây chính xác là lỗi "Package Manager error" / "Installation Failed" ở bước
-# Finish (returned error code 100).
+# Ở bước Finish, Calamares chạy `apt-get -q -y --purge remove <TOÀN BỘ danh
+# sách>` trong 1 GIAO DỊCH DUY NHẤT — chỉ cần 1 gói "Unable to locate
+# package" là CẢ LỆNH trả về exit code 100. Đây chính xác là lỗi "Package
+# Manager error" / "Installation Failed" ở bước Finish.
 #
-# Fix: dò đúng gói nào đang THỰC SỰ cài trong chroot (dpkg-query -W), chỉ ghi
-# các gói đó vào remove: — danh sách rỗng thì file rỗng cũng không sao, module
-# sẽ không có gì để purge thay vì lỗi.
+# Fix: dò đúng gói nào đang THỰC SỰ cài trong chroot (dpkg-query -W), chỉ
+# ghi các gói đó vào operations[0].remove — giữ nguyên "backend: apt" và
+# cấu trúc "operations:" để module packages vẫn nhận diện đúng job.
 mkdir -p /etc/calamares/modules
 CANDIDATE_LIVE_PKGS="live-boot live-boot-doc live-config live-config-doc live-config-systemd live-tools live-task-localisation live-task-recommended calamares calamares-settings-debian"
 INSTALLED_LIVE_PKGS=""
@@ -112,18 +126,21 @@ for p in $CANDIDATE_LIVE_PKGS; do
 done
 
 {
-  echo "---"
-  echo "# Hyggshi OS: tự sinh tại build time (xem comment trong desktop.sh)."
-  echo "# Chỉ liệt kê gói THỰC SỰ có trong rootfs này — tránh lỗi 'Package"
-  echo "# Manager error' / exit code 100 ở bước Finish do apt-get remove"
-  echo "# nhằm gói không tồn tại."
-  echo "remove:"
-  for p in $INSTALLED_LIVE_PKGS; do
-    echo "  - $p"
-  done
-} > /etc/calamares/modules/removelivepackages.conf
+  echo "backend: apt"
+  echo ""
+  echo "operations:"
+  if [ -n "$INSTALLED_LIVE_PKGS" ]; then
+    echo "  - remove:"
+    for p in $INSTALLED_LIVE_PKGS; do
+      echo "      - '$p'"
+    done
+  else
+    echo "  []"
+  fi
+} > /etc/calamares/modules/packages.conf
 
-echo "removelivepackages.conf sẽ purge:${INSTALLED_LIVE_PKGS:-  (không gói nào)}"
+echo "packages.conf (Calamares) sẽ purge:${INSTALLED_LIVE_PKGS:-  (không gói nào — operations rỗng)}"
+cat /etc/calamares/modules/packages.conf
 
 # BUG CŨ: dòng apt-get install ở trên đôi khi trả về exit code 0 ("thành
 # công") nhưng KHÔNG thực sự để lại /boot/vmlinuz-*  và /boot/initrd.img-*
