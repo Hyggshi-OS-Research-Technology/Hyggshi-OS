@@ -296,7 +296,7 @@ if [ -n "$FASTFETCH_LOGO_SRC" ]; then
   "logo": {
     "type": "file",
     "source": "/usr/share/hyggshi/branding/logo.txt",
-    "width": 32
+    "width": 16
   },
   "display": {
     "separator": " "
