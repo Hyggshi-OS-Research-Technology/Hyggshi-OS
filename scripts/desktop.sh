@@ -31,43 +31,34 @@ apt-get install -y linux-image-amd64 live-boot systemd-sysv \
   lsb-release
 
 echo "===== Cài GRUB + công cụ cho Calamares (partition/bootloader module) ====="
-# BUG: khác với build-fedora.sh (gói "grub2-pc grub2-efi-x64 shim-x64" được
-# cài THẲNG vào --installroot trước khi cài calamares), desktop.sh trước đây
-# KHÔNG cài bất kỳ gói grub nào vào trong chroot này. grub-pc-bin/
-# grub-efi-amd64-bin/grub-common ở build.sh chỉ cài trên HOST (runner) để
-# grub-mkrescue đóng gói ISO — đó là GRUB của riêng ISO live, khác hoàn toàn
-# với GRUB cần có SẴN bên trong squashfs/chroot này (chroot này chính là
-# rootfs được Calamares unpack ra đĩa rồi chroot vào để chạy grub-install/
-# update-grub cho hệ thống ĐÃ CÀI). Thiếu gói ở đây khiến bootloader module
-# của Calamares fail vì "grub-install: command not found" ngay trong target
-# vừa cài — đúng triệu chứng "install/partition/bootloader step fails".
-# FIX (đúng nguyên nhân lỗi "grub-pc has no installation candidate" /
-# "Package grub-pc is not available... following packages replace it:
-# grub-common" thấy trong Calamares khi cài đặt thật):
+# Calamares (calamares-settings-debian) mặc định yêu cầu gói "grub-pc" có
+# sẵn trong target để bootloader module chạy update-grub sau khi cài đặt
+# thật (xem lỗi "Package 'grub-pc' has no installation candidate" +
+# "update-grub: No such file or directory" khi thiếu). Vì vậy phải cài
+# thẳng grub-pc vào chroot này (không chỉ grub-pc-bin).
 #
-# 1) apt-get install nhận NHIỀU gói trong 1 lệnh là MỘT giao dịch: nếu chỉ
-#    một gói "no installation candidate" (vd "grub-pc" — gói meta hay bị
-#    transition tạm thời trên Debian testing/sid, đúng như log lỗi), CẢ
-#    LỆNH thất bại và KHÔNG gói nào trong danh sách được cài — kể cả
-#    grub-common/efibootmgr/parted/dosfstools vốn dĩ cài bình thường được.
-#    Trước đây lỗi này chỉ in CẢNH BÁO rồi build tiếp tục "thành công",
-#    đóng gói ISO thiếu sạch cả 6 gói này, nên Calamares luôn fail ở bước
-#    bootloader/partition khi cài đặt thật. Fix: cài TỪNG gói một để 1 gói
-#    lỗi không kéo các gói còn lại theo.
-# 2) "grub-pc"/"grub-efi-amd64" là gói META dùng debconf để hỏi ổ đĩa và tự
-#    chạy grub-install (thiết kế cho debian-installer tương tác) — không
-#    cần trong chroot này vì Calamares tự quản lý việc gọi grub-install qua
-#    module bootloader riêng của nó. Cái thực sự cần là gói BINARY chứa
-#    grub-install: grub-pc-bin (target i386-pc) + grub-efi-amd64-bin (target
-#    x86_64-efi) — đúng cặp gói build.sh đã dùng cho HOST khi grub-mkrescue
-#    đóng ISO (xem grep grub trong build.sh) nên đổi sang đây cho nhất quán,
-#    đồng thời tránh phụ thuộc vào gói meta "grub-pc" hay bị lỗi tạm thời.
+# grub-pc là gói META có bước debconf hỏi "cài GRUB vào (những) ổ đĩa nào"
+# (grub-pc/install_devices). Trong chroot lúc build không có ổ đĩa thật
+# (/dev/sdX) để chọn, nên PHẢI preseed debconf trước khi apt-get install,
+# nếu không: dù đã export DEBIAN_FRONTEND=noninteractive, câu hỏi
+# install_devices vẫn có thể làm postinst lỗi/fail (không phải hang chờ
+# input, mà debconf trả rỗng rồi grub-probe/grub-install trong postinst
+# báo lỗi vì không có device nào được chọn).
+echo "grub-pc grub-pc/install_devices_empty boolean true" | debconf-set-selections
+echo "grub-pc grub-pc/install_devices multiselect" | debconf-set-selections
+echo "grub-pc grub-pc/install_devices_disks_changed multiselect" | debconf-set-selections
+
+# apt-get install nhận NHIỀU gói trong 1 lệnh là MỘT giao dịch: nếu chỉ một
+# gói lỗi, CẢ LỆNH thất bại và KHÔNG gói nào được cài — kể cả các gói còn
+# lại vốn dĩ cài bình thường được. Cài TỪNG gói một để 1 gói lỗi không kéo
+# các gói còn lại theo, và để biết chính xác gói nào fail.
+#
 # efibootmgr cần cho nhánh UEFI ghi boot entry vào NVRAM; parted/dosfstools
 # cần cho module partition (tạo/format phân vùng ESP/root).
 GRUB_INSTALL_FAILED=0
-for pkg in grub-pc-bin grub-efi-amd64-bin grub-common efibootmgr parted dosfstools; do
+for pkg in grub-pc grub-pc-bin grub-efi-amd64-bin grub-common efibootmgr parted dosfstools; do
   if ! apt-get install -y "$pkg"; then
-    echo "LỖI: cài gói '$pkg' thất bại (xem log apt ở trên để biết lý do — hết mạng, gói bị transition tạm thời, v.v.)." >&2
+    echo "LỖI: cài gói '$pkg' thất bại (xem log apt ở trên để biết lý do — hết mạng, gói bị transition tạm thời, debconf chưa preseed đúng, v.v.)." >&2
     GRUB_INSTALL_FAILED=1
   fi
 done
