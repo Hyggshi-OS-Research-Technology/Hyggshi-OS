@@ -295,7 +295,8 @@ if [ -n "$FASTFETCH_LOGO_SRC" ]; then
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
   "logo": {
     "type": "file",
-    "source": "/usr/share/hyggshi/branding/logo.txt"
+    "source": "/usr/share/hyggshi/branding/logo.txt",
+    "width": 32
   },
   "display": {
     "separator": " "
