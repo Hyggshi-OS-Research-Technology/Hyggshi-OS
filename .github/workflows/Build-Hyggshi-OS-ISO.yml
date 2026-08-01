@@ -103,6 +103,14 @@ on:
         description: "Cài sẵn LibreOffice?"
         type: boolean
         default: false
+      autologin:
+        description: "Tự động đăng nhập user live (bỏ qua màn hình LightDM/SDDM/GDM)? Tắt = hiện màn hình đăng nhập, phải gõ user_password ở trên."
+        type: boolean
+        default: true
+      autoscale_display:
+        description: "Tự động dò và chỉnh độ phân giải/scale màn hình (xrandr) mỗi khi đăng nhập desktop?"
+        type: boolean
+        default: true
       extra_packages:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
@@ -143,6 +151,8 @@ env:
   OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
   INCLUDE_BROWSER: ${{ github.event.inputs.include_browser || 'true' }}
   INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
+  AUTOLOGIN: ${{ github.event.inputs.autologin || 'true' }}
+  AUTOSCALE_DISPLAY: ${{ github.event.inputs.autoscale_display || 'true' }}
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
   # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
@@ -213,6 +223,8 @@ jobs:
             INCLUDE_BROWSER="$INCLUDE_BROWSER" \
             INCLUDE_OFFICE="$INCLUDE_OFFICE" \
             EXTRA_PACKAGES="$EXTRA_PACKAGES" \
+            AUTOLOGIN="$AUTOLOGIN" \
+            AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
       # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
@@ -307,14 +319,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hyggshi-os-iso
-          path: ${{ env.ISO_FILENAME }}
+          path: |
+            ${{ env.ISO_FILENAME }}
+            ${{ env.ISO_FILENAME }}.sha256
           retention-days: 14
 
       - name: Attach ISO to GitHub Release (optional)
         if: ${{ github.event.inputs.release_iso == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ISO_FILENAME }}
+          files: |
+            ${{ env.ISO_FILENAME }}
+            ${{ env.ISO_FILENAME }}.sha256
           tag_name: "hyggshi-os-${{ github.run_number }}"
           name: "Hyggshi OS build #${{ github.run_number }}"
 
