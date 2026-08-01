@@ -214,20 +214,9 @@ echo "127.0.1.1 $OS_HOSTNAME" >> /etc/hosts
 ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 dpkg-reconfigure -f noninteractive tzdata || true
 
-# x11-xserver-utils (cung cấp xrandr) cần cho MỌI DE, không chỉ xfce —
-# tính năng "Auto scale màn hình" bên dưới (AUTOSCALE_DISPLAY) gọi xrandr
-# lúc đăng nhập bất kể DE nào đang chạy phiên X11. Trước đây gói này chỉ
-# được cài ở nhánh xfce (mặc định) nên autoscale âm thầm no-op trên
-# kde/lxqt/gnome/mate/cinnamon (xrandr không tồn tại -> script tự thoát,
-# không log lỗi rõ ràng, nhìn như tính năng "biến mất").
-apt-get install -y x11-xserver-utils || true
-
 case "$DE" in
   kde)
     apt-get install -y kde-plasma-desktop sddm
-    # kscreen-doctor cần cho fallback autoscale khi phiên KDE chạy Wayland
-    # (xrandr không hoạt động dưới Wayland dù đã cài x11-xserver-utils).
-    apt-get install -y kscreen || true
     ;;
 
   lxqt)
@@ -405,82 +394,31 @@ LOG="$HOME/.cache/hyggshi-autoscale.log"
 mkdir -p "$HOME/.cache"
 echo "=== hyggshi-autoscale $(date) ===" >> "$LOG"
 
-# Xác định loại phiên (x11/wayland) TRƯỚC khi quyết định đường xử lý —
-# trước đây thiếu bước này nên trên phiên Wayland (GNOME/KDE mặc định
-# gdm3/sddm hiện nay hay dùng Wayland) script chỉ ghi 1 dòng mơ hồ
-# "Không có xrandr, bỏ qua." mà không nói rõ lý do là do Wayland, khiến
-# tính năng trông như im lặng "biến mất" thay vì log rõ nguyên nhân.
-SESSION_TYPE="${XDG_SESSION_TYPE:-}"
-[ -z "$SESSION_TYPE" ] && SESSION_TYPE=$(loginctl show-session "$(loginctl | awk -v u="$USER" '$3==u{print $1; exit}')" -p Type --value 2>/dev/null)
-echo "Phiên hiện tại: SESSION_TYPE=${SESSION_TYPE:-không rõ}" >> "$LOG"
+command -v xrandr >/dev/null 2>&1 || { echo "Không có xrandr, bỏ qua." >> "$LOG"; exit 0; }
 
-if [ "$SESSION_TYPE" = "wayland" ]; then
-  echo "Wayland: xrandr không áp dụng được, thử fallback theo DE." >> "$LOG"
-  if command -v kscreen-doctor >/dev/null 2>&1; then
-    # KDE Plasma Wayland: kscreen-doctor tự dò output và bật mode ưu tiên.
-    kscreen-doctor output.all.mode.preferred >> "$LOG" 2>&1 \
-      || echo "Cảnh báo: kscreen-doctor thất bại." >> "$LOG"
-    echo "Đã gọi kscreen-doctor (KDE Wayland)." >> "$LOG"
-  elif command -v gsettings >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ] && gsettings list-schemas 2>/dev/null | grep -q org.gnome.desktop.interface; then
-    # GNOME Wayland/Mutter tự dò và scale HiDPI theo output rồi, không cần
-    # ép mode; chỉ ghi log xác nhận để không tưởng nhầm là tính năng lỗi.
-    echo "GNOME Wayland: Mutter tự quản lý scale theo output, không cần can thiệp thêm." >> "$LOG"
-  else
-    echo "Không tìm được công cụ phù hợp cho Wayland trên DE này, bỏ qua." >> "$LOG"
-  fi
-  echo "xong." >> "$LOG"
-  exit 0
-fi
-
-command -v xrandr >/dev/null 2>&1 || { echo "Không có xrandr (phiên X11 nhưng thiếu x11-xserver-utils?), bỏ qua." >> "$LOG"; exit 0; }
-
-# apply_scale: 1 lần "dò output + set mode/dpi". Tách hàm riêng vì cần gọi
-# lại nhiều lần bên dưới (không chỉ 1 lần lúc login) — máy ảo QEMU không tự
-# báo cho DE biết khi cửa sổ QEMU bị resize/maximize SAU lúc đăng nhập, nên
-# nếu chỉ chạy 1 lần thì màn hình desktop bị kẹt ở độ phân giải cũ, nhỏ hơn
-# cửa sổ QEMU -> viền đen bao quanh dù script "đã chạy xong".
-apply_scale() {
-  # 1) Với mỗi output đang "connected", bật mode ưu tiên nhất (--auto) của
-  #    chính nó. An toàn hơn nhiều so với đoán 1 mode cứng, vì mỗi màn hình/
-  #    máy ảo báo danh sách mode khác nhau.
-  CONNECTED=$(xrandr --query | awk '/ connected/{print $1}')
-  for OUT in $CONNECTED; do
-    xrandr --output "$OUT" --auto >> "$LOG" 2>&1 \
-      || echo "Cảnh báo: xrandr --auto thất bại cho $OUT" >> "$LOG"
-  done
-
-  # 2) Ước lượng DPI/scale từ độ phân giải thật của output chính (đầu tiên),
-  #    để chữ/icon không bị tí hon trên panel 4K nhưng vẫn giữ 96dpi mặc định
-  #    cho màn hình phổ thông (không ép scale khi không cần).
-  PRIMARY=$(echo "$CONNECTED" | head -n1)
-  if [ -n "$PRIMARY" ]; then
-    HEIGHT=$(xrandr --query | awk -v o="$PRIMARY" '$1==o && / connected/{ \
-      for(i=1;i<=NF;i++){ if ($i ~ /^[0-9]+x[0-9]+\+/) { split($i,a,"x"); split(a[2],b,"+"); print b[1]; exit } } }')
-    if [ -n "$HEIGHT" ] && [ "$HEIGHT" -ge 1440 ] 2>/dev/null; then
-      # Màn hình cao >=1440px (2K/4K) -> nâng DPI lên 144 (tương đương scale 1.5x)
-      xrdb -merge <<< "Xft.dpi: 144" >> "$LOG" 2>&1 || true
-      echo "HiDPI ($PRIMARY, height=$HEIGHT) -> Xft.dpi=144" >> "$LOG"
-    fi
-  fi
-}
-
-apply_scale
-echo "Áp dụng lần đầu xong." >> "$LOG"
-
-# Vòng theo dõi: mỗi 2s so sánh danh sách mode hiện tại (xrandr --query) với
-# lần trước — nếu khác (ví dụ cửa sổ QEMU vừa bị resize/maximize làm lộ ra
-# mode mới), gọi lại apply_scale ngay. Poll nhẹ (1 lệnh xrandr mỗi 2s), đủ
-# rẻ để chạy suốt phiên làm việc thay vì chỉ 1 lần lúc login.
-PREV_STATE=$(xrandr --query 2>/dev/null)
-while sleep 2; do
-  CUR_STATE=$(xrandr --query 2>/dev/null)
-  if [ "$CUR_STATE" != "$PREV_STATE" ]; then
-    echo "Phát hiện thay đổi màn hình (resize cửa sổ?), áp lại scale." >> "$LOG"
-    apply_scale
-    CUR_STATE=$(xrandr --query 2>/dev/null)
-  fi
-  PREV_STATE="$CUR_STATE"
+# 1) Với mỗi output đang "connected", bật mode ưu tiên nhất (--auto) của
+#    chính nó. An toàn hơn nhiều so với đoán 1 mode cứng, vì mỗi màn hình/
+#    máy ảo báo danh sách mode khác nhau.
+CONNECTED=$(xrandr --query | awk '/ connected/{print $1}')
+for OUT in $CONNECTED; do
+  xrandr --output "$OUT" --auto >> "$LOG" 2>&1 \
+    || echo "Cảnh báo: xrandr --auto thất bại cho $OUT" >> "$LOG"
 done
+
+# 2) Ước lượng DPI/scale từ độ phân giải thật của output chính (đầu tiên),
+#    để chữ/icon không bị tí hon trên panel 4K nhưng vẫn giữ 96dpi mặc định
+#    cho màn hình phổ thông (không ép scale khi không cần).
+PRIMARY=$(echo "$CONNECTED" | head -n1)
+if [ -n "$PRIMARY" ]; then
+  HEIGHT=$(xrandr --query | awk -v o="$PRIMARY" '$1==o && / connected/{ \
+    for(i=1;i<=NF;i++){ if ($i ~ /^[0-9]+x[0-9]+\+/) { split($i,a,"x"); split(a[2],b,"+"); print b[1]; exit } } }')
+  if [ -n "$HEIGHT" ] && [ "$HEIGHT" -ge 1440 ] 2>/dev/null; then
+    # Màn hình cao >=1440px (2K/4K) -> nâng DPI lên 144 (tương đương scale 1.5x)
+    xrdb -merge <<< "Xft.dpi: 144" >> "$LOG" 2>&1 || true
+    echo "HiDPI ($PRIMARY, height=$HEIGHT) -> Xft.dpi=144" >> "$LOG"
+  fi
+fi
+echo "xong." >> "$LOG"
 SCRIPT
   chmod +x /usr/local/bin/hyggshi-autoscale.sh
 

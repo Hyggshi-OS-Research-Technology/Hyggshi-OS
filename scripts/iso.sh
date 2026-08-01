@@ -41,6 +41,92 @@ INITRD_FILE=$(sudo ls -t live-build/chroot/boot/initrd.img-* | head -n1)
 sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
 sudo cp "$INITRD_FILE" live-build/image/live/initrd
 
+echo "===== UEFI Secure Boot: cài shim + GRUB đã ký (chain of trust Microsoft/Canonical) ====="
+# VẤN ĐỀ CŨ: grub-mkrescue tự build core.efi CHO CHÍNH NÓ, và core.efi đó
+# KHÔNG hề được ký — firmware bật Secure Boot chặn ngay ở bước nạp
+# BOOTX64.EFI ("not trusted" / rơi vào Secure Boot violation screen).
+#
+# CHUỖI TIN CẬY ĐÚNG (giống hệt Ubuntu/Debian live ISO thật):
+#   firmware (tin sẵn Microsoft 3rd Party UEFI CA)
+#     -> shimx64.efi   (ký bởi Microsoft — gói shim-signed)
+#     -> grubx64.efi   (ký bởi Canonical, shim tin CA của Canonical nhúng sẵn
+#                        bên trong nó — gói grub-efi-amd64-signed, KHÔNG PHẢI
+#                        bản grub-mkrescue tự build)
+#     -> grub.cfg -> kernel/initrd
+# Runner là ubuntu-latest nên dùng shim/grub bản Canonical ký (cùng gốc CA
+# Microsoft mà hầu hết firmware OEM đã tin sẵn).
+sudo apt-get update -qq
+sudo apt-get install -y --no-install-recommends \
+  shim-signed grub-efi-amd64-signed grub-efi-amd64-bin mtools dosfstools \
+  || echo "CẢNH BÁO: apt-get install gói secure-boot thất bại, sẽ fallback bên dưới."
+
+SHIM_BIN=$(sudo find /usr/lib/shim -maxdepth 1 -iname 'shimx64.efi.signed*' 2>/dev/null | sort | tail -n1)
+MM_BIN=$(sudo find /usr/lib/shim -maxdepth 1 -iname 'mmx64.efi*' 2>/dev/null | sort | tail -n1)
+GRUB_SIGNED_BIN=$(sudo find /usr/lib/grub/x86_64-efi-signed -maxdepth 1 -iname 'grubx64.efi.signed*' 2>/dev/null | sort | tail -n1)
+
+if [ -z "$SHIM_BIN" ] || [ -z "$GRUB_SIGNED_BIN" ]; then
+  SECURE_BOOT_OK=false
+  echo "CẢNH BÁO: không tìm thấy shim/grub ĐÃ KÝ trên runner này." >&2
+  echo "  shimx64.efi.signed*: ${SHIM_BIN:-<không thấy>}" >&2
+  echo "  grubx64.efi.signed*: ${GRUB_SIGNED_BIN:-<không thấy>}" >&2
+  echo "-> Fallback: build ISO như CŨ bằng grub-mkrescue (vẫn boot bình" >&2
+  echo "   thường ở máy TẮT Secure Boot, giống hệt hành vi trước bản vá này)." >&2
+else
+  SECURE_BOOT_OK=true
+  echo "OK: shim=$SHIM_BIN"
+  echo "OK: grub(signed)=$GRUB_SIGNED_BIN"
+  echo "OK: mokmanager=${MM_BIN:-<không có, bỏ qua — không bắt buộc để boot>}"
+fi
+
+mkdir -p live-build/image/boot/grub
+
+if [ "$SECURE_BOOT_OK" = "true" ]; then
+  echo "===== Dựng EFI System Partition (FAT) chứa shim + grub đã ký ====="
+  EFI_STAGE=$(mktemp -d)
+  mkdir -p "$EFI_STAGE/EFI/BOOT"
+  # BOOTX64.EFI = shim (KHÔNG phải grub) — đây là file đầu tiên firmware nạp.
+  sudo install -m 0644 "$SHIM_BIN" "$EFI_STAGE/EFI/BOOT/BOOTX64.EFI"
+  sudo install -m 0644 "$GRUB_SIGNED_BIN" "$EFI_STAGE/EFI/BOOT/grubx64.efi"
+  [ -n "$MM_BIN" ] && sudo install -m 0644 "$MM_BIN" "$EFI_STAGE/EFI/BOOT/mmx64.efi"
+  sudo chown -R "$(id -u)":"$(id -g)" "$EFI_STAGE"
+
+  # grubx64.efi bản ký sẵn của Canonical có prefix nhúng cứng lúc build
+  # (thường trỏ /EFI/ubuntu/grub.cfg) mà ta không đổi được vì đã ký. Thay vì
+  # đoán đúng 1 path, đặt SẴN 1 grub.cfg "dẫn hướng" ở TẤT CẢ path hay gặp
+  # trong thực tế — mỗi file chỉ có 2 dòng, tự tìm và nạp lại config thật ở
+  # /boot/grub/grub.cfg (đã sinh phía trên) trên chính ISO đang boot.
+  for REDIRECT_DIR in "$EFI_STAGE/EFI/ubuntu" "$EFI_STAGE/EFI/debian" "$EFI_STAGE/EFI/BOOT"; do
+    mkdir -p "$REDIRECT_DIR"
+    cat <<'REDIR_EOF' > "$REDIRECT_DIR/grub.cfg"
+search --file --no-floppy --set=hyggshi_root /boot/grub/grub.cfg
+configfile ($hyggshi_root)/boot/grub/grub.cfg
+REDIR_EOF
+  done
+
+  # File efi.img này là thứ firmware THỰC SỰ đọc lúc boot UEFI (El Torito
+  # "no emulation" boot image) — không phải cây thư mục ISO9660 phía trên.
+  # 16MiB dư dả cho shim + grub + mokmanager (thường chỉ ~2-3MiB tổng).
+  dd if=/dev/zero of=live-build/image/boot/grub/efi.img bs=1M count=16 status=none
+  mkfs.vfat -n HYGGSHI_ESP live-build/image/boot/grub/efi.img >/dev/null
+  mmd -i live-build/image/boot/grub/efi.img ::EFI ::EFI/BOOT
+  mcopy -i live-build/image/boot/grub/efi.img -s "$EFI_STAGE"/EFI/BOOT/* ::EFI/BOOT/
+  for d in ubuntu debian; do
+    if [ -d "$EFI_STAGE/EFI/$d" ]; then
+      mmd -i live-build/image/boot/grub/efi.img "::EFI/$d" 2>/dev/null || true
+      mcopy -i live-build/image/boot/grub/efi.img "$EFI_STAGE/EFI/$d/grub.cfg" "::EFI/$d/" 2>/dev/null || true
+    fi
+  done
+  rm -rf "$EFI_STAGE"
+
+  # Cũng chép các file .efi này vào cây ISO9660 thường (một số firmware đọc
+  # trực tiếp /EFI/BOOT/ trên volume ISO thay vì el-torito efi.img).
+  mkdir -p live-build/image/EFI/BOOT
+  sudo cp "$SHIM_BIN" live-build/image/EFI/BOOT/BOOTX64.EFI
+  sudo cp "$GRUB_SIGNED_BIN" live-build/image/EFI/BOOT/grubx64.efi
+  [ -n "$MM_BIN" ] && sudo cp "$MM_BIN" live-build/image/EFI/BOOT/mmx64.efi
+  sudo chown -R "$(id -u)":"$(id -g)" live-build/image/EFI
+fi
+
 echo "===== Build bootable ISO with grub ====="
 # Kernel cmdline thêm theo Edition — CHỈ áp dụng cho Debian (đúng phạm vi
 # yêu cầu "arch và debian thêm tuỳ chọn chỉnh thông số kernel"); Ubuntu/Mint
@@ -64,6 +150,38 @@ EOF
 
 sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image \
   --compress=xz -- -volid "HYGGSHI_OS"
+
+if [ "$SECURE_BOOT_OK" = "true" ]; then
+  echo "===== Ghi đè EFI image bằng bản đã build sẵn (shim+grub ký sẵn) ====="
+  # grub-mkrescue ở trên VẪN tự sinh 1 boot/grub/efi.img + /EFI/BOOT/*.efi
+  # RIÊNG của nó (KHÔNG ký) rồi mới đóng gói — nên phải "replay" lại đúng
+  # cấu trúc El Torito/GPT nó vừa tạo (BIOS boot giữ nguyên, không đụng vào)
+  # nhưng thay nội dung phần EFI bằng bộ shim/grub đã ký ở bước trên.
+  # Đây là kỹ thuật chuẩn để "vá" Secure Boot vào 1 ISO grub-mkrescue có sẵn,
+  # KHÔNG phải tự dựng lại toàn bộ ISO bằng tay (rủi ro sai offset El Torito
+  # cao hơn nhiều so với replay từ 1 ISO grub-mkrescue đã build đúng).
+  if xorriso -indev "$ISO_FILENAME" \
+             -outdev "${ISO_FILENAME}.secureboot" \
+             -boot_image any replay \
+             -map live-build/image/boot/grub/efi.img /boot/grub/efi.img \
+             -update_r live-build/image/EFI /EFI \
+             -commit 2> xorriso-secureboot.log; then
+    mv "${ISO_FILENAME}.secureboot" "$ISO_FILENAME"
+    echo "OK: đã ghép shim/grub đã ký vào $ISO_FILENAME."
+  else
+    echo "LỖI: xorriso replay thất bại khi vá Secure Boot — xem xorriso-secureboot.log." >&2
+    echo "GIỮ NGUYÊN ISO gốc (bootable ở máy TẮT Secure Boot, y hệt trước bản vá)." >&2
+    rm -f "${ISO_FILENAME}.secureboot"
+    cat xorriso-secureboot.log >&2 || true
+  fi
+  echo "LƯU Ý QUAN TRỌNG: bước vá Secure Boot này build theo đúng chuẩn kỹ" \
+       "thuật shim+grub ký sẵn của Ubuntu/Debian, nhưng CHƯA được boot-test" \
+       "thật bằng QEMU+OVMF (Secure Boot bật) trong môi trường build này." \
+       "Khuyến nghị: test bằng QEMU+OVMF trước khi tin tưởng trên máy thật" \
+       "(xem mục 'Test tự động sau build' còn thiếu, chưa làm ở bản vá này)."
+else
+  echo "Bỏ qua vá Secure Boot (SECURE_BOOT_OK=false) — ISO chỉ boot được khi TẮT Secure Boot, y hệt hành vi cũ."
+fi
 
 ls -lh "$ISO_FILENAME"
 
