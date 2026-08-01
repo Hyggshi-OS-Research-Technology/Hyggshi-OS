@@ -3,38 +3,108 @@ name: Build Hyggshi OS ISO
 on:
   workflow_dispatch:
     inputs:
+      distro_name:
+        description: "Tên hiển thị của bản phân phối (đổi tên base linux — ghi vào os-release/hostname/GRUB/ISO label...)"
+        required: false
+        default: "Hyggshi OS"
       distro:
         description: "Bản phân phối gốc (base distro)"
         required: false
         type: choice
         options: [debian, ubuntu, linuxmint, alpine, arch, fedora]
         default: "debian"
-      distro_version:
-        description: "Phiên bản của distro đã chọn ở trên (debian: trixie/bookworm/bullseye | ubuntu: noble/mantic/jammy/focal | linuxmint: 22/21.3/21.2 | alpine: v3.20/v3.19/edge | fedora: 41/40/rawhide). Để trống = dùng bản mới nhất khuyên dùng."
-        required: false
-        default: ""
-      desktop:
-        description: "Desktop environment (6 lựa chọn)"
+      debian_version:
+        description: "Phiên bản Debian (chỉ áp dụng khi distro = debian)"
         required: false
         type: choice
-        options: [xfce, kde, lxqt, gnome, mate, cinnamon]
-        default: "xfce"
+        options: [trixie, bookworm, bullseye]
+        default: "trixie"
+      ubuntu_version:
+        description: "Phiên bản Ubuntu (chỉ áp dụng khi distro = ubuntu)"
+        required: false
+        type: choice
+        options: [noble, mantic, jammy, focal]
+        default: "noble"
+      mint_version:
+        description: "Phiên bản Linux Mint (chỉ áp dụng khi distro = linuxmint)"
+        required: false
+        type: choice
+        options: ["22", "21.3", "21.2"]
+        default: "22"
+      wallpaper_url:
+        description: "Link ảnh wallpaper (dán trực tiếp URL .png/.jpg, vd link raw GitHub) — để trống dùng ảnh mặc định trong repo"
+        required: false
+        default: "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true"
+      logo_url:
+        description: "Link ảnh distributor logo (dán trực tiếp URL .png/.jpg) — dùng cho icon hệ thống, để trống dùng ảnh mặc định trong repo"
+        required: false
+        default: "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true"
+      plymouth_logo_url:
+        description: "Link ảnh logo cho màn hình chờ boot Plymouth (dán trực tiếp URL .png/.jpg) — để trống sẽ dùng lại logo_url ở trên"
+        required: false
+        default: "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true"
+      alpine_version:
+        description: "Phiên bản Alpine (chỉ áp dụng khi distro = alpine — EXPERIMENTAL, mới bootstrap base rootfs, chưa có desktop/branding/iso riêng cho Alpine)"
+        required: false
+        type: choice
+        options: ["v3.20", "v3.19", "edge"]
+        default: "v3.20"
+      fedora_version:
+        description: "Phiên bản Fedora (chỉ áp dụng khi distro = fedora — EXPERIMENTAL, dùng dnf --installroot + dracut dmsquash-live, chưa test trên phần cứng/VM thật)"
+        required: false
+        type: choice
+        options: ["41", "40", "rawhide"]
+        default: "41"
       edition:
         description: "Edition (chỉnh thông số kernel — chỉ áp dụng khi distro = debian, arch hoặc fedora)"
         required: false
         type: choice
         options: [normal, developer, server, lite]
         default: "normal"
+      desktop:
+        description: "Desktop environment (6 lựa chọn)"
+        required: false
+        type: choice
+        options: [xfce, kde, lxqt, gnome, mate, cinnamon]
+        default: "xfce"
+      panel_style:
+        description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
+        required: false
+        type: choice
+        options: [windows10, classic]
+        default: "windows10"
+      icon_theme:
+        description: "Bộ icon (chỉ áp dụng cho XFCE)"
+        required: false
+        type: choice
+        options: [papirus, numix, breeze, adwaita]
+        default: "papirus"
       username:
         description: "Username mặc định trong live session"
+        required: false
+        default: "hyggshi"
+      user_password:
+        description: "Mật khẩu user (plaintext, chỉ dùng cho ISO test)"
         required: false
         default: "hyggshi"
       hostname:
         description: "Hostname máy"
         required: false
         default: "hyggshi-os"
+      timezone:
+        description: "Múi giờ (vd Asia/Ho_Chi_Minh, UTC)"
+        required: false
+        default: "Asia/Ho_Chi_Minh"
+      include_browser:
+        description: "Cài sẵn Firefox ESR?"
+        type: boolean
+        default: true
+      include_office:
+        description: "Cài sẵn LibreOffice?"
+        type: boolean
+        default: false
       autologin:
-        description: "Tự động đăng nhập user live (bỏ qua màn hình LightDM/SDDM/GDM)? Tắt = hiện màn hình đăng nhập (mật khẩu đặt trong advanced_options: user_password=...)."
+        description: "Tự động đăng nhập user live (bỏ qua màn hình LightDM/SDDM/GDM)? Tắt = hiện màn hình đăng nhập, phải gõ user_password ở trên."
         type: boolean
         default: true
       autoscale_display:
@@ -45,22 +115,14 @@ on:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
         default: ""
-      advanced_options:
-        description: "Tuỳ chọn nâng cao, MỖI DÒNG 1 cặp key=value (xoá dòng nào không cần đổi thì để nguyên default). Các key hỗ trợ: distro_name, user_password, timezone, wallpaper_url, logo_url, plymouth_logo_url, panel_style, icon_theme, include_browser, include_office, release_iso, debug_mode."
-        required: false
-        default: |
-          distro_name=Hyggshi OS
-          user_password=hyggshi
-          timezone=Asia/Ho_Chi_Minh
-          wallpaper_url=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true
-          logo_url=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true
-          plymouth_logo_url=
-          panel_style=windows10
-          icon_theme=papirus
-          include_browser=true
-          include_office=false
-          release_iso=false
-          debug_mode=false
+      release_iso:
+        description: "Attach ISO to a GitHub Release?"
+        type: boolean
+        default: false
+      debug_mode:
+        description: "Bật debug (log chi tiết + xuất debug-info.txt kèm ISO)"
+        type: boolean
+        default: false
   push:
     branches: [ main ]
     paths:
@@ -69,23 +131,37 @@ on:
       - "iso-config/**"
 
 env:
+  DISTRO_NAME: ${{ github.event.inputs.distro_name || 'Hyggshi OS' }}
   BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
   EDITION: ${{ github.event.inputs.edition || 'normal' }}
+  # LƯU Ý: debian_version/ubuntu_version/mint_version/alpine_version KHÔNG đặt
+  # ở đây. Nếu đặt cứng ở env cấp workflow, GitHub Actions in TOÀN BỘ 4 biến
+  # ra log của MỌI step (kể cả 3 biến không liên quan tới distro đã chọn —
+  # ví dụ chọn debian vẫn thấy UBUNTU_VERSION/MINT_VERSION/ALPINE_VERSION),
+  # gây hiểu lầm là chúng có tác dụng. Thay vào đó, step "Resolve version
+  # theo distro đã chọn" bên dưới chỉ export ĐÚNG 1 biến khớp với
+  # $BASE_DISTRO vào $GITHUB_ENV — 3 biến còn lại không hề được set.
+  ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
+  PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
+  ICON_THEME: ${{ github.event.inputs.icon_theme || 'papirus' }}
   OS_USERNAME: ${{ github.event.inputs.username || 'hyggshi' }}
+  OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
   OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
+  OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
+  INCLUDE_BROWSER: ${{ github.event.inputs.include_browser || 'true' }}
+  INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
   AUTOLOGIN: ${{ github.event.inputs.autologin || 'true' }}
   AUTOSCALE_DISPLAY: ${{ github.event.inputs.autoscale_display || 'true' }}
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
-  ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
-  # LƯU Ý: DISTRO_NAME/PANEL_STYLE/ICON_THEME/OS_PASSWORD/OS_TIMEZONE/
-  # WALLPAPER_URL/LOGO_URL/PLYMOUTH_LOGO_URL/INCLUDE_BROWSER/INCLUDE_OFFICE/
-  # RELEASE_ISO/DEBUG_MODE KHÔNG đặt cứng ở đây nữa — 12 input đó đã dồn vào
-  # 1 ô "advanced_options" (key=value mỗi dòng) để không vượt quá giới hạn
-  # CỨNG của GitHub Actions: tối đa 10 input cho workflow_dispatch (input
-  # thứ 11 trở đi sẽ KHÔNG hiện trên form "Run workflow", có lúc GitHub còn
-  # từ chối cả file luôn). Mỗi job dưới đây có step "Parse advanced_options"
-  # riêng để tự parse + export các biến này vào $GITHUB_ENV của job đó.
+  DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+  # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
+  # file cùng tên trong iso-config/branding/ (xem WALLPAPER_FILE/LOGO_FILE/
+  # PLYMOUTH_LOGO_FILE trong branding.sh). PLYMOUTH_LOGO_URL để trống sẽ
+  # fallback dùng LOGO_URL (branding.sh tự xử lý).
+  WALLPAPER_URL: ${{ github.event.inputs.wallpaper_url || 'https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true' }}
+  LOGO_URL: ${{ github.event.inputs.logo_url || 'https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true' }}
+  PLYMOUTH_LOGO_URL: ${{ github.event.inputs.plymouth_logo_url || '' }}
 
 jobs:
   build-iso:
@@ -103,65 +179,18 @@ jobs:
       - name: Chmod +x cho toàn bộ scripts/
         run: find scripts -type f -name '*.sh' -exec chmod +x {} +
 
-      # advanced_options gộp 12 input cũ (đã bỏ khỏi workflow_dispatch vì
-      # GitHub giới hạn CỨNG tối đa 10 input) thành 1 ô nhiều dòng "key=value".
-      # Step này parse ra rồi export từng biến vào $GITHUB_ENV — dùng
-      # associative array làm "whitelist + default" nên 1 dòng sai chính tả
-      # trong advanced_options chỉ bị bỏ qua (giữ default), không phá cả build.
-      - name: Parse advanced_options
-        run: |
-          set -e
-          ADV="${{ github.event.inputs.advanced_options }}"
-          declare -A V=(
-            [distro_name]="Hyggshi OS"
-            [user_password]="hyggshi"
-            [timezone]="Asia/Ho_Chi_Minh"
-            [wallpaper_url]="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true"
-            [logo_url]="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true"
-            [plymouth_logo_url]=""
-            [panel_style]="windows10"
-            [icon_theme]="papirus"
-            [include_browser]="true"
-            [include_office]="false"
-            [release_iso]="false"
-            [debug_mode]="false"
-          )
-          while IFS='=' read -r k v; do
-            k="$(echo "$k" | xargs)"
-            [ -z "$k" ] && continue
-            case "$k" in \#*) continue ;; esac
-            if [ -n "${V[$k]+_}" ]; then V[$k]="$v"; fi
-          done <<< "$ADV"
-          {
-            echo "DISTRO_NAME=${V[distro_name]}"
-            echo "OS_PASSWORD=${V[user_password]}"
-            echo "OS_TIMEZONE=${V[timezone]}"
-            echo "WALLPAPER_URL=${V[wallpaper_url]}"
-            echo "LOGO_URL=${V[logo_url]}"
-            echo "PLYMOUTH_LOGO_URL=${V[plymouth_logo_url]}"
-            echo "PANEL_STYLE=${V[panel_style]}"
-            echo "ICON_THEME=${V[icon_theme]}"
-            echo "INCLUDE_BROWSER=${V[include_browser]}"
-            echo "INCLUDE_OFFICE=${V[include_office]}"
-            echo "RELEASE_ISO=${V[release_iso]}"
-            echo "DEBUG_MODE=${V[debug_mode]}"
-          } >> "$GITHUB_ENV"
-
-      # Chỉ export ĐÚNG 1 biến version khớp với $BASE_DISTRO, lấy giá trị từ
-      # input distro_version DUY NHẤT (thay cho 5 input debian_version/
-      # ubuntu_version/mint_version/alpine_version/fedora_version cũ, đã gộp
-      # lại để không vượt giới hạn 10 input). Để trống distro_version = dùng
-      # bản mặc định khuyên dùng của từng distro.
+      # Chỉ export ĐÚNG 1 biến version khớp với $BASE_DISTRO. Các biến của
+      # distro khác không hề tồn tại trong môi trường của các step sau —
+      # không còn cảnh debian mà vẫn thấy UBUNTU_VERSION.
       - name: Resolve version theo distro đã chọn
         run: |
-          RAW_VERSION="${{ github.event.inputs.distro_version }}"
           case "$BASE_DISTRO" in
             debian)
-              echo "DEBIAN_VERSION=${RAW_VERSION:-trixie}" >> "$GITHUB_ENV" ;;
+              echo "DEBIAN_VERSION=${{ github.event.inputs.debian_version || 'trixie' }}" >> "$GITHUB_ENV" ;;
             ubuntu)
-              echo "UBUNTU_VERSION=${RAW_VERSION:-noble}" >> "$GITHUB_ENV" ;;
+              echo "UBUNTU_VERSION=${{ github.event.inputs.ubuntu_version || 'noble' }}" >> "$GITHUB_ENV" ;;
             linuxmint)
-              echo "MINT_VERSION=${RAW_VERSION:-22}" >> "$GITHUB_ENV" ;;
+              echo "MINT_VERSION=${{ github.event.inputs.mint_version || '22' }}" >> "$GITHUB_ENV" ;;
             *)
               echo "Distro không hợp lệ cho job build-iso: $BASE_DISTRO"
               exit 1 ;;
@@ -296,7 +325,7 @@ jobs:
           retention-days: 14
 
       - name: Attach ISO to GitHub Release (optional)
-        if: ${{ env.RELEASE_ISO == 'true' }}
+        if: ${{ github.event.inputs.release_iso == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -316,7 +345,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.distro == 'alpine' }}
     container:
-      image: ${{ (github.event.inputs.distro_version == 'v3.19' && 'alpine:3.19') || (github.event.inputs.distro_version == 'edge' && 'alpine:edge') || 'alpine:3.20' }}
+      image: ${{ (github.event.inputs.alpine_version == 'v3.19' && 'alpine:3.19') || (github.event.inputs.alpine_version == 'edge' && 'alpine:edge') || 'alpine:3.20' }}
     steps:
       - name: Cài build tools (apk add trong container)
         run: |
@@ -326,7 +355,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Resolve Alpine version
-        run: echo "ALPINE_VERSION=${{ github.event.inputs.distro_version || 'v3.20' }}" >> "$GITHUB_ENV"
+        run: echo "ALPINE_VERSION=${{ github.event.inputs.alpine_version || 'v3.20' }}" >> "$GITHUB_ENV"
 
       - name: Chmod +x cho scripts/distros/build-alpine.sh
         run: chmod +x scripts/distros/build-alpine.sh
@@ -375,14 +404,6 @@ jobs:
       - name: Chmod +x cho scripts/distros/build-arch-iso.sh
         run: chmod +x scripts/distros/build-arch-iso.sh
 
-      # release_iso nằm trong advanced_options (gộp input, xem ghi chú ở
-      # job build-iso phía trên) — job này chỉ cần đúng 1 dòng đó nên parse
-      # tối giản bằng grep, không cần cả associative array như job build-iso.
-      - name: Parse release_iso từ advanced_options
-        run: |
-          VAL=$(printf '%s\n' "${{ github.event.inputs.advanced_options }}" | grep -m1 '^release_iso=' | cut -d= -f2-)
-          echo "RELEASE_ISO=${VAL:-false}" >> "$GITHUB_ENV"
-
       - name: "[build-arch-iso.sh] Build ISO bằng mkarchiso"
         run: bash scripts/distros/build-arch-iso.sh
 
@@ -394,7 +415,7 @@ jobs:
           retention-days: 14
 
       - name: Attach ISO to GitHub Release (optional)
-        if: ${{ env.RELEASE_ISO == 'true' }}
+        if: ${{ github.event.inputs.release_iso == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ISO_FILENAME }}
@@ -413,7 +434,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.distro == 'fedora' }}
     container:
-      image: ${{ (github.event.inputs.distro_version == '40' && 'fedora:40') || (github.event.inputs.distro_version == 'rawhide' && 'fedora:rawhide') || 'fedora:41' }}
+      image: ${{ (github.event.inputs.fedora_version == '40' && 'fedora:40') || (github.event.inputs.fedora_version == 'rawhide' && 'fedora:rawhide') || 'fedora:41' }}
       options: --privileged
     steps:
       - name: "Cài build tools trên HOST (container fedora — build-fedora.sh chỉ cài vào --installroot, không tự cài công cụ cho chính host)"
@@ -430,15 +451,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Resolve Fedora version
-        run: echo "FEDORA_VERSION=${{ github.event.inputs.distro_version || '41' }}" >> "$GITHUB_ENV"
+        run: echo "FEDORA_VERSION=${{ github.event.inputs.fedora_version || '41' }}" >> "$GITHUB_ENV"
 
       - name: Chmod +x cho scripts/distros/build-fedora.sh
         run: chmod +x scripts/distros/build-fedora.sh
-
-      - name: Parse release_iso từ advanced_options
-        run: |
-          VAL=$(printf '%s\n' "${{ github.event.inputs.advanced_options }}" | grep -m1 '^release_iso=' | cut -d= -f2-)
-          echo "RELEASE_ISO=${VAL:-false}" >> "$GITHUB_ENV"
 
       - name: "[build-fedora.sh] Bootstrap dnf --installroot + build ISO (dracut dmsquash-live)"
         run: bash scripts/distros/build-fedora.sh
@@ -451,7 +467,7 @@ jobs:
           retention-days: 14
 
       - name: Attach ISO to GitHub Release (optional)
-        if: ${{ env.RELEASE_ISO == 'true' }}
+        if: ${{ github.event.inputs.release_iso == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ISO_FILENAME }}
