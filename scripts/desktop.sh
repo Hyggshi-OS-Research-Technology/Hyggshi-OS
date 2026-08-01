@@ -434,29 +434,53 @@ fi
 
 command -v xrandr >/dev/null 2>&1 || { echo "Không có xrandr (phiên X11 nhưng thiếu x11-xserver-utils?), bỏ qua." >> "$LOG"; exit 0; }
 
-# 1) Với mỗi output đang "connected", bật mode ưu tiên nhất (--auto) của
-#    chính nó. An toàn hơn nhiều so với đoán 1 mode cứng, vì mỗi màn hình/
-#    máy ảo báo danh sách mode khác nhau.
-CONNECTED=$(xrandr --query | awk '/ connected/{print $1}')
-for OUT in $CONNECTED; do
-  xrandr --output "$OUT" --auto >> "$LOG" 2>&1 \
-    || echo "Cảnh báo: xrandr --auto thất bại cho $OUT" >> "$LOG"
-done
+# apply_scale: 1 lần "dò output + set mode/dpi". Tách hàm riêng vì cần gọi
+# lại nhiều lần bên dưới (không chỉ 1 lần lúc login) — máy ảo QEMU không tự
+# báo cho DE biết khi cửa sổ QEMU bị resize/maximize SAU lúc đăng nhập, nên
+# nếu chỉ chạy 1 lần thì màn hình desktop bị kẹt ở độ phân giải cũ, nhỏ hơn
+# cửa sổ QEMU -> viền đen bao quanh dù script "đã chạy xong".
+apply_scale() {
+  # 1) Với mỗi output đang "connected", bật mode ưu tiên nhất (--auto) của
+  #    chính nó. An toàn hơn nhiều so với đoán 1 mode cứng, vì mỗi màn hình/
+  #    máy ảo báo danh sách mode khác nhau.
+  CONNECTED=$(xrandr --query | awk '/ connected/{print $1}')
+  for OUT in $CONNECTED; do
+    xrandr --output "$OUT" --auto >> "$LOG" 2>&1 \
+      || echo "Cảnh báo: xrandr --auto thất bại cho $OUT" >> "$LOG"
+  done
 
-# 2) Ước lượng DPI/scale từ độ phân giải thật của output chính (đầu tiên),
-#    để chữ/icon không bị tí hon trên panel 4K nhưng vẫn giữ 96dpi mặc định
-#    cho màn hình phổ thông (không ép scale khi không cần).
-PRIMARY=$(echo "$CONNECTED" | head -n1)
-if [ -n "$PRIMARY" ]; then
-  HEIGHT=$(xrandr --query | awk -v o="$PRIMARY" '$1==o && / connected/{ \
-    for(i=1;i<=NF;i++){ if ($i ~ /^[0-9]+x[0-9]+\+/) { split($i,a,"x"); split(a[2],b,"+"); print b[1]; exit } } }')
-  if [ -n "$HEIGHT" ] && [ "$HEIGHT" -ge 1440 ] 2>/dev/null; then
-    # Màn hình cao >=1440px (2K/4K) -> nâng DPI lên 144 (tương đương scale 1.5x)
-    xrdb -merge <<< "Xft.dpi: 144" >> "$LOG" 2>&1 || true
-    echo "HiDPI ($PRIMARY, height=$HEIGHT) -> Xft.dpi=144" >> "$LOG"
+  # 2) Ước lượng DPI/scale từ độ phân giải thật của output chính (đầu tiên),
+  #    để chữ/icon không bị tí hon trên panel 4K nhưng vẫn giữ 96dpi mặc định
+  #    cho màn hình phổ thông (không ép scale khi không cần).
+  PRIMARY=$(echo "$CONNECTED" | head -n1)
+  if [ -n "$PRIMARY" ]; then
+    HEIGHT=$(xrandr --query | awk -v o="$PRIMARY" '$1==o && / connected/{ \
+      for(i=1;i<=NF;i++){ if ($i ~ /^[0-9]+x[0-9]+\+/) { split($i,a,"x"); split(a[2],b,"+"); print b[1]; exit } } }')
+    if [ -n "$HEIGHT" ] && [ "$HEIGHT" -ge 1440 ] 2>/dev/null; then
+      # Màn hình cao >=1440px (2K/4K) -> nâng DPI lên 144 (tương đương scale 1.5x)
+      xrdb -merge <<< "Xft.dpi: 144" >> "$LOG" 2>&1 || true
+      echo "HiDPI ($PRIMARY, height=$HEIGHT) -> Xft.dpi=144" >> "$LOG"
+    fi
   fi
-fi
-echo "xong." >> "$LOG"
+}
+
+apply_scale
+echo "Áp dụng lần đầu xong." >> "$LOG"
+
+# Vòng theo dõi: mỗi 2s so sánh danh sách mode hiện tại (xrandr --query) với
+# lần trước — nếu khác (ví dụ cửa sổ QEMU vừa bị resize/maximize làm lộ ra
+# mode mới), gọi lại apply_scale ngay. Poll nhẹ (1 lệnh xrandr mỗi 2s), đủ
+# rẻ để chạy suốt phiên làm việc thay vì chỉ 1 lần lúc login.
+PREV_STATE=$(xrandr --query 2>/dev/null)
+while sleep 2; do
+  CUR_STATE=$(xrandr --query 2>/dev/null)
+  if [ "$CUR_STATE" != "$PREV_STATE" ]; then
+    echo "Phát hiện thay đổi màn hình (resize cửa sổ?), áp lại scale." >> "$LOG"
+    apply_scale
+    CUR_STATE=$(xrandr --query 2>/dev/null)
+  fi
+  PREV_STATE="$CUR_STATE"
+done
 SCRIPT
   chmod +x /usr/local/bin/hyggshi-autoscale.sh
 
