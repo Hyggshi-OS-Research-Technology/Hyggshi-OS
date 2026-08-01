@@ -12,6 +12,8 @@ export DEBIAN_FRONTEND=noninteractive
 # shellcheck source=/dev/null
 source /tmp/kernel-tuning.sh
 : "${EDITION:=normal}"
+: "${AUTOLOGIN:=true}"
+: "${AUTOSCALE_DISPLAY:=true}"
 
 if [ "$BASE_DISTRO" = "alpine" ]; then
   echo "LỖI: desktop.sh này chỉ hỗ trợ apt/dpkg (Debian/Ubuntu/Mint)."
@@ -305,13 +307,19 @@ useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
 [ "$DEBUG_MODE" = "true" ] && set -x
 
-echo "===== Autologin cho live session ====="
+echo "===== Autologin cho live session (AUTOLOGIN=$AUTOLOGIN) ====="
 # QUAN TRỌNG: nếu không bật autologin, live ISO sẽ dừng ở màn hình đăng
 # nhập LightDM/SDDM. Không ai chạm tới thì KHÔNG session desktop nào được
 # tạo, nghĩa là autostart script set-wallpaper trong branding.sh (chỉ chạy
 # lúc có phiên desktop) không bao giờ được thực thi -> nhìn như "hình nền
 # không tự apply", dù bản thân script set-wallpaper hoàn toàn không có lỗi.
-if [ "$DE" = "kde" ]; then
+#
+# AUTOLOGIN=false: chỉ đơn giản KHÔNG ghi config autologin — display manager
+# (đã cài ở trên theo từng DE) mặc định fallback về màn hình đăng nhập bình
+# thường, không cần xoá/undo gì thêm.
+if [ "$AUTOLOGIN" != "true" ]; then
+  echo "AUTOLOGIN=false — bỏ qua, giữ màn hình đăng nhập mặc định của DM."
+elif [ "$DE" = "kde" ]; then
   mkdir -p /etc/sddm.conf.d
   cat <<EOF > /etc/sddm.conf.d/hyggshi-autologin.conf
 [Autologin]
@@ -366,6 +374,114 @@ autologin-user=$OS_USERNAME
 autologin-user-timeout=0
 autologin-session=xfce
 EOF
+fi
+
+echo "===== Auto scale màn hình (AUTOSCALE_DISPLAY=$AUTOSCALE_DISPLAY) ====="
+# Mục tiêu: máy có màn hình/độ phân giải khác nhau (laptop HiDPI, VM, máy
+# chiếu...) tự dò xrandr và chọn --auto (mode ưu tiên) cho MỌI output đang
+# cắm, đồng thời set Xft/DPI hợp lý theo chiều cao thực tế để chữ/icon
+# không bị quá nhỏ trên màn HiDPI. Chạy 1 lần mỗi khi có phiên desktop mới
+# (autostart), không đụng tới cấu hình đã có nếu user tự chỉnh tay sau đó
+# trong cùng phiên (chỉ chạy lúc login).
+if [ "$AUTOSCALE_DISPLAY" = "true" ]; then
+  mkdir -p /usr/local/bin
+  cat <<'SCRIPT' > /usr/local/bin/hyggshi-autoscale.sh
+#!/bin/bash
+# hyggshi-autoscale.sh — tự dò output + đặt mode/scale màn hình lúc login.
+# Không set -e: 1 output lỗi không được làm script chết giữa chừng, các
+# output còn lại vẫn phải được xử lý.
+LOG="$HOME/.cache/hyggshi-autoscale.log"
+mkdir -p "$HOME/.cache"
+echo "=== hyggshi-autoscale $(date) ===" >> "$LOG"
+
+command -v xrandr >/dev/null 2>&1 || { echo "Không có xrandr, bỏ qua." >> "$LOG"; exit 0; }
+
+# 1) Với mỗi output đang "connected", bật mode ưu tiên nhất (--auto) của
+#    chính nó. An toàn hơn nhiều so với đoán 1 mode cứng, vì mỗi màn hình/
+#    máy ảo báo danh sách mode khác nhau.
+CONNECTED=$(xrandr --query | awk '/ connected/{print $1}')
+for OUT in $CONNECTED; do
+  xrandr --output "$OUT" --auto >> "$LOG" 2>&1 \
+    || echo "Cảnh báo: xrandr --auto thất bại cho $OUT" >> "$LOG"
+done
+
+# 2) Ước lượng DPI/scale từ độ phân giải thật của output chính (đầu tiên),
+#    để chữ/icon không bị tí hon trên panel 4K nhưng vẫn giữ 96dpi mặc định
+#    cho màn hình phổ thông (không ép scale khi không cần).
+PRIMARY=$(echo "$CONNECTED" | head -n1)
+if [ -n "$PRIMARY" ]; then
+  HEIGHT=$(xrandr --query | awk -v o="$PRIMARY" '$1==o && / connected/{ \
+    for(i=1;i<=NF;i++){ if ($i ~ /^[0-9]+x[0-9]+\+/) { split($i,a,"x"); split(a[2],b,"+"); print b[1]; exit } } }')
+  if [ -n "$HEIGHT" ] && [ "$HEIGHT" -ge 1440 ] 2>/dev/null; then
+    # Màn hình cao >=1440px (2K/4K) -> nâng DPI lên 144 (tương đương scale 1.5x)
+    xrdb -merge <<< "Xft.dpi: 144" >> "$LOG" 2>&1 || true
+    echo "HiDPI ($PRIMARY, height=$HEIGHT) -> Xft.dpi=144" >> "$LOG"
+  fi
+fi
+echo "xong." >> "$LOG"
+SCRIPT
+  chmod +x /usr/local/bin/hyggshi-autoscale.sh
+
+  mkdir -p /etc/skel/.config/autostart
+  cat <<'DESKTOP' > /etc/skel/.config/autostart/hyggshi-autoscale.desktop
+[Desktop Entry]
+Type=Application
+Name=Hyggshi Auto Scale Display
+Exec=/usr/local/bin/hyggshi-autoscale.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+DESKTOP
+
+  # System-wide (như hyggshi-wallpaper.desktop trong branding.sh) để áp dụng
+  # cho MỌI user, kể cả user Calamares tạo sau này chứ không chỉ user live.
+  mkdir -p /etc/xdg/autostart
+  cp /etc/skel/.config/autostart/hyggshi-autoscale.desktop \
+    /etc/xdg/autostart/hyggshi-autoscale.desktop
+  echo "OK: đã cài autoscale autostart system-wide."
+else
+  echo "AUTOSCALE_DISPLAY=false — bỏ qua, không cài autostart autoscale."
+fi
+
+echo "===== Calamares: user live đi thẳng vào máy, không hỏi mật khẩu khi setup ====="
+# Yêu cầu: "live > root luôn đi với tư cách là khách dùng mới không hỏi Pass
+# khi setup". Áp dụng cho module "users" của Calamares (chạy lúc CÀI ĐẶT
+# thật vào đĩa, khác với autologin ở live session phía trên):
+#   - setRootPassword: false  -> KHÔNG có trang hỏi mật khẩu root riêng.
+#   - doAutologin: true       -> mặc định tick sẵn "log in automatically",
+#     hệ thống sau khi cài xong cũng vào thẳng desktop như live, không hỏi
+#     mật khẩu ở màn hình đăng nhập (giống hành vi "khách" hiện tại).
+#   - allowWeakPasswords: true + password rỗng vẫn qua được -> không bị
+#     chặn ở bước "Set up your account" bởi yêu cầu mật khẩu mạnh.
+# LƯU Ý: Calamares (module "users") vẫn hiển thị trang tạo tài khoản (nhập
+# username/tên máy) vì đây là bước bắt buộc để có 1 user thật trên hệ thống
+# đích — không thể ẩn hoàn toàn trang này chỉ bằng users.conf. Muốn hoàn
+# toàn không hỏi gì (kiểu "OEM"/unattended) cần cấu hình settings.conf riêng
+# (bỏ module "users"/"welcome" khỏi sequence) — nằm ngoài phạm vi override
+# packages.conf/users.conf hiện có trong repo này.
+if command -v calamares >/dev/null 2>&1; then
+  mkdir -p /etc/calamares/modules
+  cat <<EOF > /etc/calamares/modules/users.conf
+---
+defaultGroups:
+  - sudo
+  - live
+  - network
+  - plugdev
+  - video
+  - audio
+autologinGroup: autologin
+doAutologin: true
+sudoersGroup: sudo
+setRootPassword: false
+doReusePassword: true
+allowWeakPasswords: true
+allowWeakPasswordsDefault: true
+userShell: /bin/bash
+hostname: $OS_HOSTNAME
+EOF
+  echo "OK: đã ghi /etc/calamares/modules/users.conf (autologin + không ép mật khẩu mạnh)."
+else
+  echo "Calamares chưa được cài (xem cảnh báo phía trên) — bỏ qua bước ghi users.conf."
 fi
 
 # ============================================================

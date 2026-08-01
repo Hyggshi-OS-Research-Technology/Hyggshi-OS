@@ -66,4 +66,17 @@ sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image \
   --compress=xz -- -volid "HYGGSHI_OS"
 
 ls -lh "$ISO_FILENAME"
+
+echo "===== Sinh SHA256SUMS để người dùng verify integrity sau khi tải ====="
+# grub-mkrescue chạy bằng sudo -> file ISO thuộc root:root. sha256sum chỉ
+# cần quyền đọc nên không cần sudo, nhưng thêm phòng trường hợp umask lạ
+# khiến file không world-readable.
+sudo chmod 644 "$ISO_FILENAME" 2>/dev/null || true
+sha256sum "$ISO_FILENAME" > "${ISO_FILENAME}.sha256"
+echo "Đã ghi ${ISO_FILENAME}.sha256:"
+cat "${ISO_FILENAME}.sha256"
+# GHI CHÚ: đây mới là checksum toàn vẹn (chống lỗi tải/hỏng file), KHÔNG
+# phải chữ ký GPG (chống giả mạo nguồn) — ký GPG cần quản lý private key
+# (vd qua GitHub Actions secret) nên chưa làm ở bước này.
+
 echo "===== iso.sh xong ====="
