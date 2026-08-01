@@ -214,9 +214,20 @@ echo "127.0.1.1 $OS_HOSTNAME" >> /etc/hosts
 ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 dpkg-reconfigure -f noninteractive tzdata || true
 
+# x11-xserver-utils (cung cấp xrandr) cần cho MỌI DE, không chỉ xfce —
+# tính năng "Auto scale màn hình" bên dưới (AUTOSCALE_DISPLAY) gọi xrandr
+# lúc đăng nhập bất kể DE nào đang chạy phiên X11. Trước đây gói này chỉ
+# được cài ở nhánh xfce (mặc định) nên autoscale âm thầm no-op trên
+# kde/lxqt/gnome/mate/cinnamon (xrandr không tồn tại -> script tự thoát,
+# không log lỗi rõ ràng, nhìn như tính năng "biến mất").
+apt-get install -y x11-xserver-utils || true
+
 case "$DE" in
   kde)
     apt-get install -y kde-plasma-desktop sddm
+    # kscreen-doctor cần cho fallback autoscale khi phiên KDE chạy Wayland
+    # (xrandr không hoạt động dưới Wayland dù đã cài x11-xserver-utils).
+    apt-get install -y kscreen || true
     ;;
 
   lxqt)
@@ -394,7 +405,34 @@ LOG="$HOME/.cache/hyggshi-autoscale.log"
 mkdir -p "$HOME/.cache"
 echo "=== hyggshi-autoscale $(date) ===" >> "$LOG"
 
-command -v xrandr >/dev/null 2>&1 || { echo "Không có xrandr, bỏ qua." >> "$LOG"; exit 0; }
+# Xác định loại phiên (x11/wayland) TRƯỚC khi quyết định đường xử lý —
+# trước đây thiếu bước này nên trên phiên Wayland (GNOME/KDE mặc định
+# gdm3/sddm hiện nay hay dùng Wayland) script chỉ ghi 1 dòng mơ hồ
+# "Không có xrandr, bỏ qua." mà không nói rõ lý do là do Wayland, khiến
+# tính năng trông như im lặng "biến mất" thay vì log rõ nguyên nhân.
+SESSION_TYPE="${XDG_SESSION_TYPE:-}"
+[ -z "$SESSION_TYPE" ] && SESSION_TYPE=$(loginctl show-session "$(loginctl | awk -v u="$USER" '$3==u{print $1; exit}')" -p Type --value 2>/dev/null)
+echo "Phiên hiện tại: SESSION_TYPE=${SESSION_TYPE:-không rõ}" >> "$LOG"
+
+if [ "$SESSION_TYPE" = "wayland" ]; then
+  echo "Wayland: xrandr không áp dụng được, thử fallback theo DE." >> "$LOG"
+  if command -v kscreen-doctor >/dev/null 2>&1; then
+    # KDE Plasma Wayland: kscreen-doctor tự dò output và bật mode ưu tiên.
+    kscreen-doctor output.all.mode.preferred >> "$LOG" 2>&1 \
+      || echo "Cảnh báo: kscreen-doctor thất bại." >> "$LOG"
+    echo "Đã gọi kscreen-doctor (KDE Wayland)." >> "$LOG"
+  elif command -v gsettings >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ] && gsettings list-schemas 2>/dev/null | grep -q org.gnome.desktop.interface; then
+    # GNOME Wayland/Mutter tự dò và scale HiDPI theo output rồi, không cần
+    # ép mode; chỉ ghi log xác nhận để không tưởng nhầm là tính năng lỗi.
+    echo "GNOME Wayland: Mutter tự quản lý scale theo output, không cần can thiệp thêm." >> "$LOG"
+  else
+    echo "Không tìm được công cụ phù hợp cho Wayland trên DE này, bỏ qua." >> "$LOG"
+  fi
+  echo "xong." >> "$LOG"
+  exit 0
+fi
+
+command -v xrandr >/dev/null 2>&1 || { echo "Không có xrandr (phiên X11 nhưng thiếu x11-xserver-utils?), bỏ qua." >> "$LOG"; exit 0; }
 
 # 1) Với mỗi output đang "connected", bật mode ưu tiên nhất (--auto) của
 #    chính nó. An toàn hơn nhiều so với đoán 1 mode cứng, vì mỗi màn hình/
