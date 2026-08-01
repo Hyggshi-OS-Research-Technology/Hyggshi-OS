@@ -46,9 +46,21 @@ on:
         required: false
         default: ""
       advanced_options:
-        description: "ĐỂ TRỐNG = dùng nguyên default trong iso-config/advanced-options.env (sửa file đó trong repo, không cần gõ ở đây). Ô này chỉ để OVERRIDE vài key cho 1 lần chạy, cú pháp key=value;key=value (vd: debug_mode=true;release_iso=true). Key hỗ trợ: distro_name, user_password, timezone, wallpaper_url, logo_url, plymouth_logo_url, panel_style, icon_theme, include_browser, include_office, release_iso, debug_mode."
+        description: "Tuỳ chọn nâng cao, MỖI DÒNG 1 cặp key=value (xoá dòng nào không cần đổi thì để nguyên default). Các key hỗ trợ: distro_name, user_password, timezone, wallpaper_url, logo_url, plymouth_logo_url, panel_style, icon_theme, include_browser, include_office, release_iso, debug_mode."
         required: false
-        default: ""
+        default: |
+          distro_name=Hyggshi OS
+          user_password=hyggshi
+          timezone=Asia/Ho_Chi_Minh
+          wallpaper_url=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true
+          logo_url=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true
+          plymouth_logo_url=
+          panel_style=windows10
+          icon_theme=papirus
+          include_browser=true
+          include_office=false
+          release_iso=false
+          debug_mode=false
   push:
     branches: [ main ]
     paths:
@@ -68,14 +80,12 @@ env:
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
   # LƯU Ý: DISTRO_NAME/PANEL_STYLE/ICON_THEME/OS_PASSWORD/OS_TIMEZONE/
   # WALLPAPER_URL/LOGO_URL/PLYMOUTH_LOGO_URL/INCLUDE_BROWSER/INCLUDE_OFFICE/
-  # RELEASE_ISO/DEBUG_MODE KHÔNG đặt cứng ở đây nữa (12 input đó sẽ vượt quá
-  # giới hạn CỨNG của GitHub Actions: tối đa 10 input cho workflow_dispatch).
-  # Giá trị mặc định của chúng nằm trong file "iso-config/advanced-options.env"
-  # (sửa trực tiếp file đó trong repo, KHÔNG cần đụng vào form Run workflow).
-  # Ô "advanced_options" trên form chỉ dùng để OVERRIDE vài key cho 1 lần
-  # chạy cụ thể, cú pháp key=value;key=value — để trống = dùng 100% file.
-  # Mỗi job dưới đây có step "Parse advanced_options" riêng: đọc file trước,
-  # rồi áp override từ input (nếu có) đè lên, sau đó export vào $GITHUB_ENV.
+  # RELEASE_ISO/DEBUG_MODE KHÔNG đặt cứng ở đây nữa — 12 input đó đã dồn vào
+  # 1 ô "advanced_options" (key=value mỗi dòng) để không vượt quá giới hạn
+  # CỨNG của GitHub Actions: tối đa 10 input cho workflow_dispatch (input
+  # thứ 11 trở đi sẽ KHÔNG hiện trên form "Run workflow", có lúc GitHub còn
+  # từ chối cả file luôn). Mỗi job dưới đây có step "Parse advanced_options"
+  # riêng để tự parse + export các biến này vào $GITHUB_ENV của job đó.
 
 jobs:
   build-iso:
@@ -94,19 +104,14 @@ jobs:
         run: find scripts -type f -name '*.sh' -exec chmod +x {} +
 
       # advanced_options gộp 12 input cũ (đã bỏ khỏi workflow_dispatch vì
-      # GitHub giới hạn CỨNG tối đa 10 input). Nguồn giá trị theo thứ tự ưu
-      # tiên tăng dần (cái sau đè cái trước):
-      #   1) default cứng trong associative array bên dưới (fallback cuối)
-      #   2) iso-config/advanced-options.env trong repo (sửa file này là đủ,
-      #      không cần đụng form Run workflow mỗi lần chạy)
-      #   3) input "advanced_options" trên form, nếu người dùng có gõ gì đó
-      #      (cú pháp key=value;key=value) — dùng để override 1 lần chạy.
-      # Cắt key/value bằng parameter expansion (%%=* và #*=) thay vì
-      # `IFS='=' read` để KHÔNG bị lỗi khi value tự chứa dấu '=' (vd:
-      # wallpaper_url=...?raw=true) — chỉ cắt tại dấu '=' đầu tiên của mỗi cặp.
+      # GitHub giới hạn CỨNG tối đa 10 input) thành 1 ô nhiều dòng "key=value".
+      # Step này parse ra rồi export từng biến vào $GITHUB_ENV — dùng
+      # associative array làm "whitelist + default" nên 1 dòng sai chính tả
+      # trong advanced_options chỉ bị bỏ qua (giữ default), không phá cả build.
       - name: Parse advanced_options
         run: |
           set -e
+          ADV="${{ github.event.inputs.advanced_options }}"
           declare -A V=(
             [distro_name]="Hyggshi OS"
             [user_password]="hyggshi"
@@ -121,31 +126,12 @@ jobs:
             [release_iso]="false"
             [debug_mode]="false"
           )
-
-          # 2) Nạp default từ file trong repo (nếu file tồn tại)
-          if [ -f "iso-config/advanced-options.env" ]; then
-            while IFS='=' read -r k v; do
-              k="$(echo "$k" | xargs)"
-              [ -z "$k" ] && continue
-              case "$k" in \#*) continue ;; esac
-              if [ -n "${V[$k]+_}" ]; then V[$k]="$v"; fi
-            done < "iso-config/advanced-options.env"
-          fi
-
-          # 3) Áp override từ ô advanced_options trên form (nếu có nhập)
-          ADV="${{ github.event.inputs.advanced_options }}"
-          if [ -n "$ADV" ]; then
-            IFS=';' read -ra PAIRS <<< "$ADV"
-            for pair in "${PAIRS[@]}"; do
-              k="${pair%%=*}"
-              v="${pair#*=}"
-              k="$(echo "$k" | xargs)"
-              [ -z "$k" ] && continue
-              case "$k" in \#*) continue ;; esac
-              if [ -n "${V[$k]+_}" ]; then V[$k]="$v"; fi
-            done
-          fi
-
+          while IFS='=' read -r k v; do
+            k="$(echo "$k" | xargs)"
+            [ -z "$k" ] && continue
+            case "$k" in \#*) continue ;; esac
+            if [ -n "${V[$k]+_}" ]; then V[$k]="$v"; fi
+          done <<< "$ADV"
           {
             echo "DISTRO_NAME=${V[distro_name]}"
             echo "OS_PASSWORD=${V[user_password]}"
@@ -390,22 +376,11 @@ jobs:
         run: chmod +x scripts/distros/build-arch-iso.sh
 
       # release_iso nằm trong advanced_options (gộp input, xem ghi chú ở
-      # job build-iso phía trên) — job này chỉ cần đúng 1 cặp đó nên parse
-      # tối giản bằng grep/cut, không cần cả associative array như job build-iso.
-      # Thứ tự ưu tiên: file iso-config/advanced-options.env trước, rồi input
-      # form (nếu người dùng có gõ override) đè lên sau cùng.
+      # job build-iso phía trên) — job này chỉ cần đúng 1 dòng đó nên parse
+      # tối giản bằng grep, không cần cả associative array như job build-iso.
       - name: Parse release_iso từ advanced_options
         run: |
-          VAL=false
-          if [ -f "iso-config/advanced-options.env" ]; then
-            FILEVAL=$(grep -E '^[[:space:]]*release_iso=' iso-config/advanced-options.env | tail -1 | cut -d= -f2-)
-            [ -n "$FILEVAL" ] && VAL="$FILEVAL"
-          fi
-          ADV="${{ github.event.inputs.advanced_options }}"
-          if [ -n "$ADV" ]; then
-            OVERRIDE=$(printf '%s' "$ADV" | grep -oE '(^|;)release_iso=[^;]*' | tail -1 | cut -d= -f2-)
-            [ -n "$OVERRIDE" ] && VAL="$OVERRIDE"
-          fi
+          VAL=$(printf '%s\n' "${{ github.event.inputs.advanced_options }}" | grep -m1 '^release_iso=' | cut -d= -f2-)
           echo "RELEASE_ISO=${VAL:-false}" >> "$GITHUB_ENV"
 
       - name: "[build-arch-iso.sh] Build ISO bằng mkarchiso"
@@ -462,16 +437,7 @@ jobs:
 
       - name: Parse release_iso từ advanced_options
         run: |
-          VAL=false
-          if [ -f "iso-config/advanced-options.env" ]; then
-            FILEVAL=$(grep -E '^[[:space:]]*release_iso=' iso-config/advanced-options.env | tail -1 | cut -d= -f2-)
-            [ -n "$FILEVAL" ] && VAL="$FILEVAL"
-          fi
-          ADV="${{ github.event.inputs.advanced_options }}"
-          if [ -n "$ADV" ]; then
-            OVERRIDE=$(printf '%s' "$ADV" | grep -oE '(^|;)release_iso=[^;]*' | tail -1 | cut -d= -f2-)
-            [ -n "$OVERRIDE" ] && VAL="$OVERRIDE"
-          fi
+          VAL=$(printf '%s\n' "${{ github.event.inputs.advanced_options }}" | grep -m1 '^release_iso=' | cut -d= -f2-)
           echo "RELEASE_ISO=${VAL:-false}" >> "$GITHUB_ENV"
 
       - name: "[build-fedora.sh] Bootstrap dnf --installroot + build ISO (dracut dmsquash-live)"
