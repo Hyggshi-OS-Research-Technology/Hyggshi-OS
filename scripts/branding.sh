@@ -274,6 +274,92 @@ SCRIPTEOF
   fi
 fi
 
+echo "===== Fastfetch: gắn logo.txt custom (nhúng sẵn ANSI màu) ====="
+# ĐẶT TRƯỚC nhánh "if DE != xfce -> exit 0" bên dưới để áp dụng cho MỌI DE
+# (KDE/LXQt/GNOME/MATE/Cinnamon), không chỉ riêng XFCE.
+# logo.txt là ASCII/ANSI-art ĐÃ CÓ SẴN mã màu (\033[38;2;r;g;bm...) — dùng
+# "type": "file" trong config fastfetch để fastfetch IN THẲNG nội dung file,
+# giữ nguyên escape sequence màu, KHÔNG convert lại từ ảnh (đỡ phải cài
+# libchafa/imagemagick chỉ để render logo).
+FASTFETCH_LOGO_SRC=$(find iso-config/branding -maxdepth 1 -iname "logo.txt" 2>/dev/null | head -n1)
+if [ -n "$FASTFETCH_LOGO_SRC" ]; then
+  LOGO_DEST_DIR="$CHROOT/usr/share/hyggshi/branding"
+  sudo mkdir -p "$LOGO_DEST_DIR"
+  sudo cp "$FASTFETCH_LOGO_SRC" "$LOGO_DEST_DIR/logo.txt"
+
+  # Config mặc định — đặt trong /etc/xdg/fastfetch/ (system-wide default mà
+  # fastfetch tự đọc nếu user chưa có config riêng ở ~/.config/fastfetch/).
+  sudo mkdir -p "$CHROOT/etc/xdg/fastfetch"
+  cat <<'FFCFG' | sudo tee "$CHROOT/etc/xdg/fastfetch/config.jsonc" > /dev/null
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+  "logo": {
+    "type": "file",
+    "source": "/usr/share/hyggshi/branding/logo.txt"
+  },
+  "display": {
+    "separator": " "
+  },
+  "modules": [
+    "title",
+    "separator",
+    { "type": "os", "key": "OS" },
+    { "type": "host", "key": "Máy" },
+    { "type": "kernel", "key": "Kernel" },
+    { "type": "uptime", "key": "Uptime" },
+    { "type": "packages", "key": "Packages" },
+    { "type": "shell", "key": "Shell" },
+    { "type": "de", "key": "DE" },
+    { "type": "wm", "key": "WM" },
+    { "type": "display", "key": "Màn hình" },
+    { "type": "theme", "key": "Theme" },
+    { "type": "icons", "key": "Icons" },
+    { "type": "terminal", "key": "Terminal" },
+    "break",
+    { "type": "cpu", "key": "CPU" },
+    { "type": "gpu", "key": "GPU" },
+    { "type": "memory", "key": "RAM" },
+    { "type": "swap", "key": "Swap" },
+    { "type": "disk", "key": "Disk" },
+    { "type": "localip", "key": "IP" },
+    "break",
+    "colors"
+  ]
+}
+FFCFG
+
+  # Ghi vào skel (user Calamares tạo sau này) + user live hiện có — fastfetch
+  # ưu tiên ~/.config/fastfetch/config.jsonc của user hơn /etc/xdg nếu có.
+  sudo mkdir -p "$CHROOT/etc/skel/.config/fastfetch"
+  sudo cp "$CHROOT/etc/xdg/fastfetch/config.jsonc" \
+    "$CHROOT/etc/skel/.config/fastfetch/config.jsonc"
+
+  # User live (useradd -m) đã được tạo TRƯỚC ở desktop.sh nên đã có sẵn
+  # $USER_HOME — nhưng biến này (định nghĩa ở dưới, gần cuối file) chưa tồn
+  # tại ở điểm này trong luồng chạy, nên tính lại tại chỗ.
+  FF_USER_HOME="$CHROOT/home/$OS_USERNAME"
+  if [ -d "$FF_USER_HOME" ]; then
+    sudo mkdir -p "$FF_USER_HOME/.config/fastfetch"
+    sudo cp "$CHROOT/etc/xdg/fastfetch/config.jsonc" \
+      "$FF_USER_HOME/.config/fastfetch/config.jsonc"
+    sudo chroot "$CHROOT" chown -R "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME/.config/fastfetch"
+
+    # Chạy fastfetch mỗi khi mở terminal mới — chỉ thêm nếu chưa có, tránh
+    # nhân đôi khi build lại nhiều lần trên cùng chroot.
+    for RC in "$CHROOT/etc/skel/.bashrc" "$FF_USER_HOME/.bashrc"; do
+      if [ -f "$RC" ] && ! sudo grep -q "^command -v fastfetch" "$RC" 2>/dev/null; then
+        printf '\n# Hyggshi OS: hiện thông tin hệ thống + logo khi mở terminal\ncommand -v fastfetch >/dev/null 2>&1 && fastfetch\n' \
+          | sudo tee -a "$RC" > /dev/null
+      fi
+    done
+    sudo chroot "$CHROOT" chown "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME/.bashrc" 2>/dev/null || true
+  fi
+
+  echo "OK: đã gắn logo.txt custom cho fastfetch (/usr/share/hyggshi/branding/logo.txt)."
+else
+  echo "Không thấy iso-config/branding/logo.txt trong repo — fastfetch dùng logo tự nhận diện distro mặc định."
+fi
+
 if [ "$DE" != "xfce" ]; then
   echo "DE=$DE, bỏ qua cấu hình panel/theme XFCE."
   echo "===== branding.sh xong ====="
