@@ -274,29 +274,59 @@ SCRIPTEOF
   fi
 fi
 
-echo "===== Fastfetch: gắn logo.txt custom (nhúng sẵn ANSI màu) ====="
+echo "===== Fastfetch: gắn logo custom (logo.txt ưu tiên, Logo.png dự phòng) ====="
 # ĐẶT TRƯỚC nhánh "if DE != xfce -> exit 0" bên dưới để áp dụng cho MỌI DE
 # (KDE/LXQt/GNOME/MATE/Cinnamon), không chỉ riêng XFCE.
-# logo.txt là ASCII/ANSI-art ĐÃ CÓ SẴN mã màu (\033[38;2;r;g;bm...) — dùng
-# "type": "file" trong config fastfetch để fastfetch IN THẲNG nội dung file,
-# giữ nguyên escape sequence màu, KHÔNG convert lại từ ảnh (đỡ phải cài
-# libchafa/imagemagick chỉ để render logo).
-FASTFETCH_LOGO_SRC=$(find iso-config/branding -maxdepth 1 -iname "logo.txt" 2>/dev/null | head -n1)
-if [ -n "$FASTFETCH_LOGO_SRC" ]; then
-  LOGO_DEST_DIR="$CHROOT/usr/share/hyggshi/branding"
-  sudo mkdir -p "$LOGO_DEST_DIR"
-  sudo cp "$FASTFETCH_LOGO_SRC" "$LOGO_DEST_DIR/logo.txt"
+#
+# Thứ tự ưu tiên:
+#   1) iso-config/branding/logo.txt  — ASCII/ANSI-art ĐÃ CÓ SẴN mã màu
+#      (\033[38;2;r;g;bm...) -> dùng "type": "file", fastfetch IN THẲNG nội
+#      dung, giữ nguyên escape sequence màu, KHÔNG cần imagemagick/chafa,
+#      chạy đúng trên MỌI terminal (kể cả terminal không hỗ trợ image protocol).
+#   2) iso-config/branding/Logo.png  — fallback nếu không có logo.txt, dùng
+#      "type": "kitty" (image protocol) — CHỈ hiển thị đúng trên terminal hỗ
+#      trợ kitty graphics protocol (Kitty, WezTerm, Konsole mới...). Terminal
+#      không hỗ trợ sẽ không hiện logo (chỉ hiện info bên phải), không lỗi.
+#   3) Không có gì cả — bỏ qua, fastfetch tự dùng logo nhận diện distro mặc định.
+FASTFETCH_LOGO_TXT=$(find iso-config/branding -maxdepth 1 -iname "logo.txt" 2>/dev/null | head -n1)
+FASTFETCH_LOGO_PNG=$(find iso-config/branding -maxdepth 1 -iname "logo.png" 2>/dev/null | head -n1)
 
+LOGO_DEST_DIR="$CHROOT/usr/share/hyggshi/branding"
+LOGO_JSON=""
+
+if [ -n "$FASTFETCH_LOGO_TXT" ]; then
+  sudo mkdir -p "$LOGO_DEST_DIR"
+  sudo cp "$FASTFETCH_LOGO_TXT" "$LOGO_DEST_DIR/logo.txt"
+  LOGO_JSON='  "logo": {
+    "type": "file",
+    "source": "/usr/share/hyggshi/branding/logo.txt",
+    "width": 24,
+    "height": 24
+  },'
+  echo "Dùng logo.txt (ANSI text, tương thích mọi terminal) làm logo fastfetch."
+
+elif [ -n "$FASTFETCH_LOGO_PNG" ]; then
+  sudo mkdir -p "$LOGO_DEST_DIR"
+  sudo cp "$FASTFETCH_LOGO_PNG" "$LOGO_DEST_DIR/logo.png"
+  LOGO_JSON='  "logo": {
+    "type": "kitty",
+    "source": "/usr/share/hyggshi/branding/logo.png",
+    "height": 15
+  },'
+  echo "⚠️  Không thấy logo.txt — dùng Logo.png (kitty image protocol, cần terminal hỗ trợ) làm logo fastfetch."
+
+else
+  echo "Không thấy logo.txt hoặc Logo.png trong iso-config/branding/ — fastfetch dùng logo tự nhận diện distro mặc định."
+fi
+
+if [ -n "$LOGO_JSON" ]; then
   # Config mặc định — đặt trong /etc/xdg/fastfetch/ (system-wide default mà
   # fastfetch tự đọc nếu user chưa có config riêng ở ~/.config/fastfetch/).
   sudo mkdir -p "$CHROOT/etc/xdg/fastfetch"
-  cat <<'FFCFG' | sudo tee "$CHROOT/etc/xdg/fastfetch/config.jsonc" > /dev/null
+  cat <<FFCFG | sudo tee "$CHROOT/etc/xdg/fastfetch/config.jsonc" > /dev/null
 {
-  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
-  "logo": {
-    "type": "file",
-    "source": "/usr/share/hyggshi/branding/logo.txt"
-  },
+  "\$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+$LOGO_JSON
   "display": {
     "separator": " "
   },
@@ -355,9 +385,7 @@ FFCFG
     sudo chroot "$CHROOT" chown "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME/.bashrc" 2>/dev/null || true
   fi
 
-  echo "OK: đã gắn logo.txt custom cho fastfetch (/usr/share/hyggshi/branding/logo.txt)."
-else
-  echo "Không thấy iso-config/branding/logo.txt trong repo — fastfetch dùng logo tự nhận diện distro mặc định."
+  echo "OK: đã gắn logo custom cho fastfetch."
 fi
 
 if [ "$DE" != "xfce" ]; then
