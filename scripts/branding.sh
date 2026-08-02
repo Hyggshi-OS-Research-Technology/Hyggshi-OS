@@ -297,11 +297,14 @@ LOGO_JSON=""
 if [ -n "$FASTFETCH_LOGO_TXT" ]; then
   sudo mkdir -p "$LOGO_DEST_DIR"
   sudo cp "$FASTFETCH_LOGO_TXT" "$LOGO_DEST_DIR/logo.txt"
+  # KHÔNG set width/height cứng: logo.txt chứa ANSI escape sequence
+  # (\033[38;2;r;g;bm...) trên mỗi dòng — nếu fastfetch cắt bớt ký tự theo
+  # width, nó dễ cắt NGANG giữa 1 mã escape, làm hỏng phần còn lại của
+  # dòng và toàn bộ layout logo bị vỡ thành từng khối màu rời rạc. Để
+  # trống, fastfetch in nguyên bản file, đúng kích thước đã thiết kế sẵn.
   LOGO_JSON='  "logo": {
     "type": "file",
-    "source": "/usr/share/hyggshi/branding/logo.txt",
-    "width": 24,
-    "height": 24
+    "source": "/usr/share/hyggshi/branding/logo.txt"
   },'
   echo "Dùng logo.txt (ANSI text, tương thích mọi terminal) làm logo fastfetch."
 
