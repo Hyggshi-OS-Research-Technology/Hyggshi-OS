@@ -227,6 +227,25 @@ jobs:
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
+      # === 2b) ECOSYSTEM: mở app-for-hyggshi/*.zip, cài .deb, cấu hình
+      # config.json (logo/plugin/module) cho nexfetch — PHẢI chạy BÊN TRONG
+      # chroot (giống desktop.sh), nếu không apt install/ghi config.json sẽ
+      # chỉ tác động lên máy runner CI chứ không nằm trong ISO cuối cùng.
+      - name: "[install-ecosystem-for-hyggshi.sh] Cài hệ sinh thái ứng dụng Hyggshi (nexfetch...)"
+        run: |
+          set -o pipefail
+          sudo mkdir -p live-build/chroot/tmp/app-for-hyggshi
+          sudo cp -r app-for-hyggshi/. live-build/chroot/tmp/app-for-hyggshi/
+          sudo mkdir -p live-build/chroot/tmp/iso-config/branding
+          sudo cp -r iso-config/branding/. live-build/chroot/tmp/iso-config/branding/
+          sudo cp scripts/install-ecosystem-for-hyggshi.sh live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
+          sudo chmod +x live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
+          sudo chroot live-build/chroot env \
+            DEBUG_MODE="$DEBUG_MODE" \
+            REPO_ROOT="/tmp" \
+            APP_DIR="app-for-hyggshi" \
+            /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
+
       # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
         run: |
@@ -306,6 +325,7 @@ jobs:
           name: hyggshi-os-debug
           path: |
             install-debug.log
+            ecosystem-debug.log
             branding-debug.log
             debug-info.txt
           retention-days: 14
