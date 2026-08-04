@@ -7,12 +7,30 @@ set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
 # Cho phép chạy script từ bất kỳ đâu trong repo — tự xác định gốc repo dựa
-# trên vị trí thật của chính file này (scripts/install-ecosystem-for-hyggshi.sh)
+# trên vị trí thật của chính file này (scripts/install-ecosystem-for-hyggshi.sh).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
+DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$DEFAULT_REPO_ROOT}"
 
-APP_DIR="${APP_DIR:-app-for-hyggshi}"
+# Bên trong chroot (chạy qua `chroot live-build/chroot ...`), tiến trình đã
+# LÀ root và chroot debootstrap tối giản thường KHÔNG có sẵn lệnh sudo — gọi
+# cứng "sudo" sẽ báo "command not found" và script chết ngay dòng đầu. Chỉ
+# dùng sudo khi thật sự chưa phải root.
+SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+  SUDO="sudo"
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+
+# APP_DIR nhận đường dẫn TUYỆT ĐỐI trực tiếp nếu được truyền qua biến môi
+# trường (xem step "[install-ecosystem-for-hyggshi.sh]" trong .github/
+# workflows/Build-Hyggshi-OS-ISO.yml — nó copy app-for-hyggshi/ vào /tmp bên
+# trong chroot rồi truyền thẳng path tuyệt đối), KHÔNG phụ thuộc vào
+# REPO_ROOT/logic "cd" — tránh lỗi lệch version khi .yml và .sh không được
+# cập nhật đồng bộ. Nếu không truyền, tự fallback theo REPO_ROOT.
+APP_DIR="${APP_DIR:-$REPO_ROOT/app-for-hyggshi}"
+
 WORK_DIR="$(mktemp -d /tmp/hyggshi-ecosystem-XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -23,8 +41,8 @@ echo "App dir   : $APP_DIR"
 # ----- 0. Đảm bảo có unzip -----
 if ! command -v unzip > /dev/null 2>&1; then
   echo "Không tìm thấy 'unzip', đang cài đặt..."
-  sudo apt-get update -qq
-  sudo apt-get install -y unzip
+  $SUDO apt-get update -qq
+  $SUDO apt-get install -y unzip
 fi
 
 if [ ! -d "$APP_DIR" ]; then
@@ -60,16 +78,16 @@ if [ "${#DEB_FILES[@]}" -eq 0 ]; then
   echo "⚠️  Không tìm thấy file .deb nào sau khi giải nén — bỏ qua bước cài gói."
 else
   echo "===== Cài đặt ${#DEB_FILES[@]} gói .deb tìm thấy ====="
-  sudo apt-get update -qq || true
+  $SUDO apt-get update -qq || true
   for DEB in "${DEB_FILES[@]}"; do
     echo "📥 Cài đặt: $(basename "$DEB")"
     # apt-get install tự resolve dependency cho file .deb local (apt >= 1.1);
     # nếu không có/không hoạt động thì fallback sang dpkg -i + apt -f install
-    if ! sudo apt-get install -y "$DEB"; then
+    if ! $SUDO apt-get install -y "$DEB"; then
       echo "   apt-get install thất bại, thử dpkg -i ..."
-      sudo dpkg -i "$DEB" || true
+      $SUDO dpkg -i "$DEB" || true
       echo "   Sửa dependency còn thiếu (apt-get install -f) ..."
-      sudo apt-get install -f -y
+      $SUDO apt-get install -f -y
     fi
   done
 fi
@@ -85,15 +103,18 @@ NEXFETCH_CONFIG_DIRS=(
   "/usr/share/nexfetch/config"
 )
 
-LOGO_REL_PATH=".iso-config/branding/Logo.png"
-SRC_LOGO="$REPO_ROOT/iso-config/branding/Logo.png"
+# Dùng logo ASCII có SẴN bên trong gói nexfetch (logos/hyggshi_OS.txt, đã
+# render ANSI/truecolor block art) thay vì Logo.png ngoài repo — file này do
+# chính .deb cài vào, nên KHÔNG cần copy/tính path tương đối gì thêm, luôn
+# tồn tại ngay sau bước cài .deb ở trên và không phụ thuộc REPO_ROOT.
+NEXFETCH_LOGO_PATH="/usr/share/nexfetch/logos/hyggshi_OS.txt"
 
-read -r -d '' NEXFETCH_CONFIG_JSON << 'JSON' || true
+read -r -d '' NEXFETCH_CONFIG_JSON << JSON || true
 {
   "show_logo": true,
   "color_blocks": true,
   "theme": "classic",
-  "logo": ".iso-config/branding/Logo.png",
+  "logo": "$NEXFETCH_LOGO_PATH",
   "logo_width": 32,
   "background_image": "",
   "plugins": [
@@ -133,20 +154,15 @@ read -r -d '' NEXFETCH_CONFIG_JSON << 'JSON' || true
 JSON
 
 for DIR in "${NEXFETCH_CONFIG_DIRS[@]}"; do
-  sudo mkdir -p "$DIR"
-  echo "$NEXFETCH_CONFIG_JSON" | sudo tee "$DIR/config.json" > /dev/null
+  $SUDO mkdir -p "$DIR"
+  echo "$NEXFETCH_CONFIG_JSON" | $SUDO tee "$DIR/config.json" > /dev/null
   echo "✅ Đã ghi $DIR/config.json"
-
-  # Copy Logo.png vào đúng đường dẫn tương đối mà "logo" trong config.json
-  # trỏ tới (.iso-config/branding/Logo.png), để resolve được ngay cả khi
-  # nexfetch chạy với cwd = $DIR
-  if [ -f "$SRC_LOGO" ]; then
-    sudo mkdir -p "$DIR/$(dirname "$LOGO_REL_PATH")"
-    sudo cp "$SRC_LOGO" "$DIR/$LOGO_REL_PATH"
-    echo "🖼  Đã copy logo -> $DIR/$LOGO_REL_PATH"
-  else
-    echo "⚠️  Không tìm thấy $SRC_LOGO — logo trong config.json sẽ không hiển thị."
-  fi
 done
+
+if [ -f "$NEXFETCH_LOGO_PATH" ]; then
+  echo "🖼  Logo có sẵn: $NEXFETCH_LOGO_PATH"
+else
+  echo "⚠️  Không thấy $NEXFETCH_LOGO_PATH — có thể gói nexfetch chưa cài thành công ở bước trên."
+fi
 
 echo "===== Hoàn tất cài đặt hệ sinh thái Hyggshi OS ====="
