@@ -242,8 +242,8 @@ jobs:
           sudo chmod +x live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
           sudo chroot live-build/chroot env \
             DEBUG_MODE="$DEBUG_MODE" \
-            REPO_ROOT="/tmp" \
-            APP_DIR="app-for-hyggshi" \
+            APP_DIR="/tmp/app-for-hyggshi" \
+            SRC_LOGO="/tmp/iso-config/branding/Logo.png" \
             /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
 
       # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
