@@ -231,19 +231,19 @@ jobs:
       # config.json (logo/plugin/module) cho nexfetch — PHẢI chạy BÊN TRONG
       # chroot (giống desktop.sh), nếu không apt install/ghi config.json sẽ
       # chỉ tác động lên máy runner CI chứ không nằm trong ISO cuối cùng.
+      # LƯU Ý: logo dùng file ASCII có sẵn TRONG gói nexfetch
+      # (/usr/share/nexfetch/logos/hyggshi_OS.txt, do chính .deb cài vào) nên
+      # không cần copy iso-config/branding/Logo.png vào chroot nữa.
       - name: "[install-ecosystem-for-hyggshi.sh] Cài hệ sinh thái ứng dụng Hyggshi (nexfetch...)"
         run: |
           set -o pipefail
           sudo mkdir -p live-build/chroot/tmp/app-for-hyggshi
           sudo cp -r app-for-hyggshi/. live-build/chroot/tmp/app-for-hyggshi/
-          sudo mkdir -p live-build/chroot/tmp/iso-config/branding
-          sudo cp -r iso-config/branding/. live-build/chroot/tmp/iso-config/branding/
           sudo cp scripts/install-ecosystem-for-hyggshi.sh live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
           sudo chmod +x live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
           sudo chroot live-build/chroot env \
             DEBUG_MODE="$DEBUG_MODE" \
             APP_DIR="/tmp/app-for-hyggshi" \
-            SRC_LOGO="/tmp/iso-config/branding/Logo.png" \
             /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
 
       # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
