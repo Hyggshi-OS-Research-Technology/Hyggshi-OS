@@ -512,6 +512,86 @@ else
 fi
 
 # ============================================================
+# >>> THÊM MỚI: LICENSE MODULE <<<
+# Trang "License" của Calamares (module "license") hiển thị thoả thuận
+# bản quyền / third-party software TRƯỚC bước locale, để user tick đồng ý
+# trước khi cài. Module này KHÔNG có sẵn trong sequence mặc định của
+# calamares-settings-debian nên phải: (1) ghi license.conf, (2) chèn
+# "license" vào sequence của settings.conf. Chỉ làm khi calamares thật sự
+# đã cài được (cùng điều kiện với users.conf ở trên) — nếu không có
+# calamares thì ghi config này vô nghĩa.
+if command -v calamares >/dev/null 2>&1; then
+  echo "===== Ghi /etc/calamares/modules/license.conf ====="
+  # Copy sẵn file LICENSE của Hyggshi OS vào chroot để Calamares hiển thị
+  # NGAY trong app (field "file:") thay vì chỉ mở link ngoài — user cài
+  # offline (live USB không mạng) vẫn đọc được nội dung đầy đủ.
+  # Dùng TẠM thẳng file LICENSE sẵn có ở root repo (Hyggshi-OS-Research-Technology/
+  # Hyggshi-OS, file "LICENSE" cạnh README.md) thay vì tạo riêng 1 file
+  # HYGGSHI_LICENSE.txt — workflow .yml cần copy file này vào /tmp/LICENSE
+  # trong chroot TRƯỚC khi chạy desktop.sh (xem hướng dẫn thêm dòng copy
+  # trong Build-Hyggshi-OS-ISO.yml, chỗ đang copy kernel-tuning.sh).
+  mkdir -p /usr/share/hyggshi-os
+  if [ -f /tmp/LICENSE ]; then
+    cp /tmp/LICENSE /usr/share/hyggshi-os/LICENSE.txt
+  else
+    # Fallback tối thiểu nếu build không truyền sẵn file LICENSE qua /tmp —
+    # tránh field "file:" trỏ tới đường dẫn không tồn tại làm Calamares lỗi
+    # ở bước License (không mở được nội dung).
+    cat <<'LICTXT' > /usr/share/hyggshi-os/LICENSE.txt
+Hyggshi OS — HOSL-1.3 / MIT
+Xem đầy đủ tại: https://hyggshi-os-website.pages.dev/license
+LICTXT
+    echo "CẢNH BÁO: không tìm thấy /tmp/LICENSE — đã ghi license.conf với nội dung rút gọn. Kiểm tra lại bước copy LICENSE trong .yml." >&2
+  fi
+
+  mkdir -p /etc/calamares/modules
+  cat <<'EOF' > /etc/calamares/modules/license.conf
+---
+# entries: danh sách license hiển thị trên 1 trang duy nhất. isMandatory:
+# bắt buộc tick "I accept" mới Next được. isOptedIn: mặc định đã tick sẵn
+# hay chưa (false = ép user tự đọc & tick, đúng tinh thần "phải đồng ý").
+entries:
+  - id:          "hyggshi-os"
+    name:        "Hyggshi OS"
+    vendor:      "Hyggshi OS Research Technology (HORT)"
+    url:         "https://hyggshi-os-website.pages.dev/license"
+    file:        "/usr/share/hyggshi-os/LICENSE.txt"
+    isMandatory: true
+    isOptedIn:   false
+EOF
+  echo "OK: đã ghi /etc/calamares/modules/license.conf"
+
+  echo "===== Chèn 'license' vào sequence (settings.conf) — sau welcome, trước locale ====="
+  if [ -f /etc/calamares/settings.conf ]; then
+    if grep -Eq '^\s*-\s*license\s*$' /etc/calamares/settings.conf; then
+      echo "settings.conf đã có 'license' trong sequence từ trước — bỏ qua, không chèn trùng."
+    else
+      # Chỉ chèn nếu dòng "- welcome" thực sự có trong khối show — nếu
+      # calamares-settings-debian đổi format (khác thụt lề/quote) ở version
+      # mới hơn, sed sẽ KHÔNG khớp gì và không chèn được gì cả -> phải kiểm
+      # tra lại bằng grep bên dưới, không được coi exit code 0 của sed là
+      # "đã chèn thành công".
+      sed -i '/^\s*-\s*welcome\s*$/a\    - license' /etc/calamares/settings.conf
+
+      if grep -Eq '^\s*-\s*license\s*$' /etc/calamares/settings.conf; then
+        echo "OK: đã chèn 'license' vào sequence."
+      else
+        echo "CẢNH BÁO: không tìm thấy pattern '- welcome' để chèn 'license' —" >&2
+        echo "kiểm tra thủ công /etc/calamares/settings.conf, có thể format khác chuẩn." >&2
+      fi
+    fi
+    echo "--- settings.conf (đoạn sequence) ---"
+    grep -A 20 '^sequence:' /etc/calamares/settings.conf || true
+  else
+    echo "CẢNH BÁO: /etc/calamares/settings.conf không tồn tại — bỏ qua chèn license module." >&2
+  fi
+else
+  echo "Calamares chưa được cài — bỏ qua bước ghi license.conf."
+fi
+# >>> HẾT PHẦN THÊM MỚI: LICENSE MODULE <<<
+# ============================================================
+
+# ============================================================
 # Edition (kernel tuning) — CHỈ áp dụng cho Debian, theo đúng yêu cầu
 # ("arch và debian thêm tuỳ chọn chỉnh thông số kernel"). Ubuntu/Mint chạy
 # chung script này nhưng không áp dụng, để không đổi hành vi đã ổn định.
