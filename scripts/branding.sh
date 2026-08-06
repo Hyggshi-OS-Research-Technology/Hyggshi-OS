@@ -154,6 +154,60 @@ else
   echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
 fi
 
+echo "===== Calamares: đổi logo sidebar (branding.desc) ====="
+# desktop.sh (chạy TRƯỚC branding.sh, xem thứ tự trong workflow .yml) đã cài
+# calamares + calamares-settings-debian trong chroot, nên tới đây thư mục
+# branding của calamares đã tồn tại sẵn để ghi đè.
+CALAMARES_SETTINGS="$CHROOT/etc/calamares/settings.conf"
+if [ -n "$LOGO_FILE" ] && [ -f "$CALAMARES_SETTINGS" ]; then
+  sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+  if ! command -v convert > /dev/null 2>&1; then
+    echo "⚠️  imagemagick không cài được — bỏ qua đổi logo sidebar Calamares."
+  else
+    # Component branding thực sự đang được settings.conf trỏ tới (dòng
+    # "branding: <tên>"). calamares-settings-debian dùng "debian" nhưng
+    # fallback về đúng tên đó nếu không đọc được, thay vì đoán bừa.
+    BRANDING_COMPONENT=$(sudo grep -E '^\s*branding\s*:' "$CALAMARES_SETTINGS" \
+      | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"'"'"'\r')
+    [ -z "$BRANDING_COMPONENT" ] && BRANDING_COMPONENT="debian"
+
+    BRANDING_DIR="$CHROOT/usr/share/calamares/branding/$BRANDING_COMPONENT"
+    BRANDING_DESC="$BRANDING_DIR/branding.desc"
+
+    if [ -f "$BRANDING_DESC" ]; then
+      # Lấy ĐÚNG tên file mà branding.desc khai báo cho "productLogo" (logo
+      # hiển thị đầu sidebar) thay vì đoán "logo.png" — mỗi bản
+      # calamares-settings-* có thể đặt tên file khác nhau.
+      LOGO_IMG_NAME=$(sudo grep -E '^\s*productLogo\s*:' "$BRANDING_DESC" \
+        | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"'"'"'\r')
+      [ -z "$LOGO_IMG_NAME" ] && LOGO_IMG_NAME="logo.png"
+
+      # Resize giữ nguyên tỷ lệ trên nền trong suốt (không méo ảnh, không
+      # méo khung vuông của sidebar) rồi ghi đè thẳng vào đúng file cũ.
+      convert "$LOGO_FILE" -resize 256x256 -background none -gravity center \
+        -extent 256x256 /tmp/calamares-sidebar-logo.png
+      sudo cp /tmp/calamares-sidebar-logo.png "$BRANDING_DIR/$LOGO_IMG_NAME"
+      echo "Đã ghi đè: $BRANDING_DIR/$LOGO_IMG_NAME"
+
+      # "productIcon" (icon cửa sổ/taskbar lúc chạy installer) thường trỏ
+      # cùng file với productLogo — chỉ ghi đè thêm nếu nó là file KHÁC.
+      ICON_IMG_NAME=$(sudo grep -E '^\s*productIcon\s*:' "$BRANDING_DESC" \
+        | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"'"'"'\r')
+      if [ -n "$ICON_IMG_NAME" ] && [ "$ICON_IMG_NAME" != "$LOGO_IMG_NAME" ]; then
+        sudo cp /tmp/calamares-sidebar-logo.png "$BRANDING_DIR/$ICON_IMG_NAME"
+        echo "Đã ghi đè thêm: $BRANDING_DIR/$ICON_IMG_NAME (productIcon)"
+      fi
+
+      echo "OK: đã đổi logo sidebar Calamares ($BRANDING_COMPONENT) bằng $LOGO_FILE"
+    else
+      echo "CẢNH BÁO: không thấy $BRANDING_DESC — bỏ qua đổi logo sidebar Calamares" >&2
+      echo "    (calamares-settings-debian có thể chưa cài được, hoặc đổi tên component — xem log desktop.sh)." >&2
+    fi
+  fi
+else
+  echo "Bỏ qua đổi logo sidebar Calamares (thiếu file logo trong iso-config/branding/, hoặc chưa có /etc/calamares/settings.conf)."
+fi
+
 echo "===== Plymouth boot splash (logo + chữ loading) ====="
 # Theme riêng "hyggshi-boot" dùng module "script" của Plymouth — logo tự
 # dán qua link (PLYMOUTH_LOGO_URL), không phụ thuộc theme có sẵn trong
