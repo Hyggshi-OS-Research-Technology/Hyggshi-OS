@@ -142,6 +142,13 @@ env:
   # theo distro đã chọn" bên dưới chỉ export ĐÚNG 1 biến khớp với
   # $BASE_DISTRO vào $GITHUB_ENV — 3 biến còn lại không hề được set.
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
+  # Đường dẫn chroot dùng chung cho MỌI step (trước đây một số step dùng
+  # literal "live-build/chroot", một số khác lại dùng "${CHROOT_DIR}" mà
+  # biến này CHƯA từng được định nghĩa ở đâu -> expand ra rỗng -> lệnh
+  # `sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"` thực chất chạy thành
+  # `sudo cp LICENSE "/tmp/LICENSE"`, tức KHÔNG copy vào chroot. Định nghĩa
+  # 1 lần ở đây và dùng thống nhất $CHROOT_DIR ở mọi nơi để tránh lệch nhau.
+  CHROOT_DIR: "live-build/chroot"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
   PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
   ICON_THEME: ${{ github.event.inputs.icon_theme || 'papirus' }}
@@ -203,14 +210,23 @@ jobs:
       - name: "[build.sh -> scripts/distros/build-${{ github.event.inputs.distro || 'debian' }}.sh] Chuẩn bị base rootfs"
         run: bash scripts/build.sh
 
-      # === 2) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
+      # === 2) Copy scripts vào chroot (tách riêng khỏi bước chạy chroot bên
+      # dưới, và dùng THỐNG NHẤT $CHROOT_DIR cho mọi lệnh copy — trước đây
+      # desktop.sh/kernel-tuning.sh dùng literal "live-build/chroot/tmp/..."
+      # còn LICENSE lại dùng "${CHROOT_DIR}" chưa được định nghĩa, nên LICENSE
+      # không thực sự được copy vào chroot).
+      - name: Copy scripts vào chroot
+        run: |
+          sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
+          sudo cp scripts/kernel-tuning.sh "${CHROOT_DIR}/tmp/kernel-tuning.sh"
+          sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"
+          sudo chmod +x "${CHROOT_DIR}/tmp/desktop.sh"
+
+      # === 3) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
         run: |
           set -o pipefail
-          sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
-          sudo cp scripts/kernel-tuning.sh live-build/chroot/tmp/kernel-tuning.sh
-          sudo chmod +x live-build/chroot/tmp/desktop.sh
-          sudo chroot live-build/chroot env \
+          sudo chroot "${CHROOT_DIR}" env \
             BASE_DISTRO="$BASE_DISTRO" \
             DE="$DE" \
             EDITION="$EDITION" \
@@ -227,7 +243,7 @@ jobs:
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
-      # === 2b) ECOSYSTEM: mở app-for-hyggshi/*.zip, cài .deb, cấu hình
+      # === 4) ECOSYSTEM: mở app-for-hyggshi/*.zip, cài .deb, cấu hình
       # config.json (logo/plugin/module) cho nexfetch — PHẢI chạy BÊN TRONG
       # chroot (giống desktop.sh), nếu không apt install/ghi config.json sẽ
       # chỉ tác động lên máy runner CI chứ không nằm trong ISO cuối cùng.
@@ -237,16 +253,16 @@ jobs:
       - name: "[install-ecosystem-for-hyggshi.sh] Cài hệ sinh thái ứng dụng Hyggshi (nexfetch...)"
         run: |
           set -o pipefail
-          sudo mkdir -p live-build/chroot/tmp/app-for-hyggshi
-          sudo cp -r app-for-hyggshi/. live-build/chroot/tmp/app-for-hyggshi/
-          sudo cp scripts/install-ecosystem-for-hyggshi.sh live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
-          sudo chmod +x live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
-          sudo chroot live-build/chroot env \
+          sudo mkdir -p "${CHROOT_DIR}/tmp/app-for-hyggshi"
+          sudo cp -r app-for-hyggshi/. "${CHROOT_DIR}/tmp/app-for-hyggshi/"
+          sudo cp scripts/install-ecosystem-for-hyggshi.sh "${CHROOT_DIR}/tmp/install-ecosystem-for-hyggshi.sh"
+          sudo chmod +x "${CHROOT_DIR}/tmp/install-ecosystem-for-hyggshi.sh"
+          sudo chroot "${CHROOT_DIR}" env \
             DEBUG_MODE="$DEBUG_MODE" \
             APP_DIR="/tmp/app-for-hyggshi" \
             /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
 
-      # === 3) BRANDING: wallpaper, logo, os-release, panel, autostart ===
+      # === 5) BRANDING: wallpaper, logo, os-release, panel, autostart ===
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
         run: |
           set -o pipefail
@@ -255,7 +271,7 @@ jobs:
       - name: Collect debug info (chỉ khi debug_mode = true)
         if: ${{ env.DEBUG_MODE == 'true' }}
         run: |
-          CHROOT=live-build/chroot
+          CHROOT="${CHROOT_DIR}"
           {
             echo "===== Inputs / env ====="
             echo "DISTRO_NAME=$DISTRO_NAME | EDITION=$EDITION"
@@ -331,7 +347,7 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      # === 4) ISO: unmount, squashfs, grub, đóng gói ISO ===
+      # === 6) ISO: unmount, squashfs, grub, đóng gói ISO ===
       - name: "[iso.sh] Build squashfs + ISO bootable"
         run: bash scripts/iso.sh
 
@@ -358,7 +374,7 @@ jobs:
   # Job riêng cho Alpine: chạy TRONG container alpine:latest thay vì giả lập
   # apk trên ubuntu-latest. Trong container này tiến trình đã là root, apk đã
   # có sẵn — build-alpine.sh không cần sudo / apk-tools-static nữa.
-  # EXPERIMENTAL: chỉ dựng base rootfs, chưa có desktop/branding/ISO cho
+  # EXPERIMENTAL: chỉ dựng base rootfs, chưa có desktop/branding/ISO riêng cho
   # Alpine (xem ghi chú trong scripts/distros/build-alpine.sh).
   # ============================================================
   build-alpine:
