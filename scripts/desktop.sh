@@ -571,7 +571,21 @@ EOF
       # mới hơn, sed sẽ KHÔNG khớp gì và không chèn được gì cả -> phải kiểm
       # tra lại bằng grep bên dưới, không được coi exit code 0 của sed là
       # "đã chèn thành công".
-      sed -i '/^\s*-\s*welcome\s*$/a\    - license' /etc/calamares/settings.conf
+      #
+      # QUAN TRỌNG: KHÔNG hardcode số cột thụt lề (trước đây dùng cứng 4
+      # space "    - license") — calamares-settings-debian thường thụt lề
+      # "- welcome" bằng 2 space, nên dòng chèn cứng 4 space bị THỤT SÂU HƠN
+      # dòng "- welcome" phía trên. Với YAML, một dòng "- license" thụt sâu
+      # hơn ngay sau một scalar list item ("- welcome") KHÔNG được hiểu là
+      # phần tử anh em cùng cấp, mà bị gộp (folded) vào làm PHẦN TIẾP THEO
+      # của chuỗi "welcome", ra một item DUY NHẤT là "welcome - license".
+      # Calamares sau đó cố nạp module tên "welcome - license" (không tồn
+      # tại) -> lỗi "Calamares Initialization Failed" với thông báo
+      # "welcome - license@welcome - license". Fix: dùng nhóm bắt
+      # (\1 = phần thụt lề thật sự của dòng "- welcome") và chèn dòng mới
+      # với ĐÚNG thụt lề đó, đảm bảo "- license" luôn là anh em cùng cấp
+      # với "- welcome" bất kể file gốc thụt lề bao nhiêu space.
+      sed -i -E 's/^([[:space:]]*)-[[:space:]]*welcome[[:space:]]*$/&\n\1- license/' /etc/calamares/settings.conf
 
       if grep -Eq '^\s*-\s*license\s*$' /etc/calamares/settings.conf; then
         echo "OK: đã chèn 'license' vào sequence."
