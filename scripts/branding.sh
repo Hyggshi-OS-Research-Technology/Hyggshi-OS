@@ -154,6 +154,87 @@ else
   echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
 fi
 
+echo "===== Calamares branding (logo góc sidebar installer) ====="
+# calamares-settings-debian mặc định dùng component branding "debian" (logo
+# Debian ở góc trên-trái sidebar, phía trên danh sách bước Welcome/Location/
+# Partition/...). Muốn đổi logo đó sang Logo.png của Hyggshi OS PHẢI tạo
+# component branding riêng (không sửa được logo bằng cách ghi đè file ảnh,
+# vì Calamares đọc tên file logo từ branding.desc của TỪNG component) rồi
+# trỏ field "branding:" trong settings.conf sang component mới đó.
+#
+# desktop.sh chạy TRƯỚC branding.sh trong workflow (xem .yml) nên tới đây
+# calamares + settings.conf mặc định đã có sẵn trong chroot (nếu cài được).
+if [ -f "$CHROOT/etc/calamares/settings.conf" ]; then
+  CAL_BRANDING_DIR="$CHROOT/etc/calamares/branding/hyggshi"
+  sudo mkdir -p "$CAL_BRANDING_DIR"
+
+  if [ -n "$LOGO_FILE" ]; then
+    # productLogo hiển thị trong khung cố định của sidebar — resize 256x256
+    # (giữ tỉ lệ, imagemagick tự pad nếu cần) để không bị vỡ nét/tràn khung.
+    sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+    if command -v convert > /dev/null 2>&1; then
+      convert "$LOGO_FILE" -resize 256x256 /tmp/calamares-logo.png
+      sudo cp /tmp/calamares-logo.png "$CAL_BRANDING_DIR/logo.png"
+    else
+      sudo cp "$LOGO_FILE" "$CAL_BRANDING_DIR/logo.png"
+    fi
+    echo "OK: đã copy logo Calamares sidebar: $LOGO_FILE -> $CAL_BRANDING_DIR/logo.png"
+  else
+    echo "⚠️  Không có \$LOGO_FILE (xem cảnh báo 'Distributor logo' phía trên) — component branding 'hyggshi' sẽ thiếu logo.png, Calamares có thể lỗi khi nạp." >&2
+  fi
+
+  sudo tee "$CAL_BRANDING_DIR/branding.desc" > /dev/null <<EOF
+---
+componentName: hyggshi
+
+welcomeStyleCalamares: true
+welcomeExpandingLogo: true
+
+strings:
+    productName:          "$DISTRO_NAME"
+    shortProductName:     "$DISTRO_NAME"
+    version:              "1.0"
+    shortVersion:         "1.0"
+    versionedName:        "$DISTRO_NAME 1.0 ($DISTRO_LABEL)"
+    shortVersionedName:   "$DISTRO_NAME 1.0"
+    bootloaderEntryName:  "$DISTRO_NAME"
+    productUrl:           "https://github.com/Hyggshi-OS-Research-Technology"
+    supportUrl:           "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
+    knownIssuesUrl:       "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
+    releaseNotesUrl:      "https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/releases"
+    donateUrl:            "https://github.com/Hyggshi-OS-Research-Technology"
+
+images:
+    productLogo: "logo.png"
+    productIcon: "logo.png"
+
+slideshow: ""
+
+style:
+   sidebarBackground:    "#292F34"
+   sidebarText:          "#FFFFFF"
+   sidebarTextSelect:    "#FFFFFF"
+   sidebarTextHighlight: "#3c4148"
+EOF
+  echo "OK: đã ghi $CAL_BRANDING_DIR/branding.desc (componentName: hyggshi)"
+
+  echo "===== Đổi 'branding:' trong settings.conf sang component 'hyggshi' ====="
+  if grep -Eq '^[[:space:]]*branding:[[:space:]]*\S+' "$CHROOT/etc/calamares/settings.conf"; then
+    sudo sed -i -E 's/^([[:space:]]*branding:[[:space:]]*).*/\1hyggshi/' "$CHROOT/etc/calamares/settings.conf"
+    if grep -Eq '^[[:space:]]*branding:[[:space:]]*hyggshi[[:space:]]*$' "$CHROOT/etc/calamares/settings.conf"; then
+      echo "OK: settings.conf đã trỏ branding: hyggshi"
+    else
+      echo "⚠️  sed chạy xong nhưng settings.conf vẫn chưa đúng 'branding: hyggshi' — kiểm tra thủ công." >&2
+    fi
+  else
+    echo "⚠️  Không tìm thấy dòng 'branding:' trong settings.conf — tự thêm 'branding: hyggshi' vào cuối file." >&2
+    echo "branding: hyggshi" | sudo tee -a "$CHROOT/etc/calamares/settings.conf" > /dev/null
+  fi
+  grep -n '^branding:' "$CHROOT/etc/calamares/settings.conf" || true
+else
+  echo "⚠️  Không thấy /etc/calamares/settings.conf trong chroot — bỏ qua Calamares branding (có thể calamares chưa cài được, xem log desktop.sh)." >&2
+fi
+
 echo "===== Plymouth boot splash (logo + chữ loading) ====="
 # Theme riêng "hyggshi-boot" dùng module "script" của Plymouth — logo tự
 # dán qua link (PLYMOUTH_LOGO_URL), không phụ thuộc theme có sẵn trong
