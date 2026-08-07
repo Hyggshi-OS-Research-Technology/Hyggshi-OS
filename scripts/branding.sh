@@ -14,6 +14,19 @@ fi
 echo "===== Wallpaper ====="
 sudo mkdir -p "$CHROOT/usr/share/backgrounds/hyggshi"
 
+# car-light.png / car-Dark.png: wallpaper riêng cho theme Sáng/Tối, được
+# hyggshi-welcome (make-welcome.sh) áp tự động khi user chọn theme ở trang
+# "Chọn giao diện". Copy sẵn vào đây (không phụ thuộc cmake install của app)
+# để có mặt ngay cả khi app hyggshi-welcome chưa từng được build/cài riêng.
+for CAR_FILE in car-light.png car-Dark.png; do
+  if [ -f "iso-config/branding/$CAR_FILE" ]; then
+    sudo cp "iso-config/branding/$CAR_FILE" "$CHROOT/usr/share/backgrounds/hyggshi/$CAR_FILE"
+    echo "Đã copy $CAR_FILE vào /usr/share/backgrounds/hyggshi/"
+  else
+    echo "⚠️  Không thấy iso-config/branding/$CAR_FILE — hyggshi-welcome sẽ bỏ qua đổi wallpaper cho theme tương ứng."
+  fi
+done
+
 # 1. Ưu tiên file wallpaper có sẵn trong repo (checkout local, không phân biệt hoa/thường)
 WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
@@ -667,9 +680,12 @@ LOG="/tmp/hyggshi-wallpaper.log"
 exec > "$LOG" 2>&1
 echo "=== hyggshi-set-wallpaper.sh $(date) ==="
 
-WALL="/usr/share/backgrounds/hyggshi/wallpaper.png"
+# Nhận đường dẫn wallpaper qua tham số dòng lệnh (dùng bởi hyggshi-welcome
+# để đổi wallpaper theo theme Sáng/Tối đã chọn) — không truyền gì thì giữ
+# đúng hành vi cũ lúc login: dùng wallpaper.png mặc định.
+WALL="${1:-/usr/share/backgrounds/hyggshi/wallpaper.png}"
 if [ ! -f "$WALL" ]; then
-  echo "LỖI: không tìm thấy file wallpaper, dừng."
+  echo "LỖI: không tìm thấy file wallpaper ($WALL), dừng."
   exit 0
 fi
 
