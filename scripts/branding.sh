@@ -233,11 +233,18 @@ else
   echo "Bỏ qua đổi logo sidebar Calamares (thiếu file logo trong iso-config/branding/, hoặc chưa có /etc/calamares/settings.conf)."
 fi
 
-echo "===== Plymouth boot splash (logo + chữ loading) ====="
+echo "===== Plymouth boot splash (logo + spinner tròn xoay) ====="
 # Theme riêng "hyggshi-boot" dùng module "script" của Plymouth — logo tự
 # dán qua link (PLYMOUTH_LOGO_URL), không phụ thuộc theme có sẵn trong
 # plymouth-themes. Chạy TRƯỚC bất kỳ desktop environment nào lúc boot nên
 # áp dụng chung cho mọi DE, không đặt trong nhánh "if DE=xfce" bên dưới.
+#
+# Đã bỏ dòng chữ "... đang khởi động..." — thay bằng animation spinner
+# hình tròn xoay bên dưới logo. Plymouth Script không có primitive vẽ
+# cung tròn trực tiếp, nên cách chuẩn (giống theme "two-step" gốc của
+# Plymouth) là NHÚNG SẴN một chuỗi frame PNG (mỗi frame là 1 góc xoay của
+# vòng tròn, vẽ bằng ImageMagick lúc build) rồi cho script đảo khung hình
+# liên tục — spinner mượt, không cần font/text nào.
 
 # 1. Ưu tiên file riêng cho Plymouth trong repo (đặt tên plymouth-logo.*)
 PLYMOUTH_LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "plymouth-logo.*" \
@@ -278,10 +285,37 @@ else
   fi
   sudo cp /tmp/plymouth-logo.png "$THEME_DIR/logo.png"
 
+  echo "----- Vẽ frame spinner tròn xoay (ImageMagick) -----"
+  # Track mờ (vòng tròn đầy) + 1 cung sáng ~100° xoay dần quanh vòng, đổi vị
+  # trí cung mỗi frame -> tạo cảm giác xoay khi Plymouth đảo khung hình.
+  # 28 frame là đủ mượt ở tốc độ đổi khung ~15 lần/giây (xem SPINNER_TICKS
+  # trong .script bên dưới) mà không sinh quá nhiều file PNG nhỏ.
+  SPINNER_FRAMES=28
+  SPINNER_SIZE=72
+  SPINNER_ARC_SPAN=100
+  if command -v convert > /dev/null 2>&1; then
+    for i in $(seq 0 $((SPINNER_FRAMES - 1))); do
+      ANGLE_START=$((i * 360 / SPINNER_FRAMES))
+      ANGLE_END=$((ANGLE_START + SPINNER_ARC_SPAN))
+      FRAME_NAME=$(printf "spinner-%02d.png" "$i")
+      convert -size ${SPINNER_SIZE}x${SPINNER_SIZE} xc:none \
+        -fill none -stroke "#33415c" -strokewidth 5 \
+        -draw "circle $((SPINNER_SIZE / 2)),$((SPINNER_SIZE / 2)) $((SPINNER_SIZE / 2)),4" \
+        -fill none -stroke "#4fd1c5" -strokewidth 5 -strokelinecap round \
+        -draw "arc 4,4 $((SPINNER_SIZE - 4)),$((SPINNER_SIZE - 4)) ${ANGLE_START},${ANGLE_END}" \
+        "/tmp/$FRAME_NAME"
+      sudo cp "/tmp/$FRAME_NAME" "$THEME_DIR/$FRAME_NAME"
+    done
+    echo "OK: đã tạo $SPINNER_FRAMES frame spinner trong $THEME_DIR"
+  else
+    echo "⚠️  imagemagick không cài được — không tạo được frame spinner, Plymouth sẽ chỉ hiện logo tĩnh."
+    SPINNER_FRAMES=0
+  fi
+
   cat <<PLYMOUTHEOF | sudo tee "$THEME_DIR/hyggshi-boot.plymouth" > /dev/null
 [Plymouth Theme]
 Name=Hyggshi Boot
-Description=$DISTRO_NAME_SAFE boot splash (logo + loading text)
+Description=$DISTRO_NAME_SAFE boot splash (logo + circular spinner)
 ModuleName=script
 
 [script]
@@ -291,9 +325,11 @@ PLYMOUTHEOF
 
   # Ngôn ngữ script riêng của Plymouth (cú pháp kiểu C, xem
   # freedesktop.org/wiki/Software/Plymouth/Scripts). Logo tĩnh ở giữa màn
-  # hình + dòng chữ "<DISTRO_NAME> đang khởi động..." có dấu chấm chạy
-  # (0-3 dấu chấm lặp lại) làm hiệu ứng loading, cập nhật qua
-  # Plymouth.SetRefreshFunction (gọi ~50 lần/giây).
+  # hình + spinner tròn xoay bên dưới (không còn chữ). Spinner hoạt động
+  # bằng cách nạp sẵn $SPINNER_FRAMES ảnh "spinner-NN.png" (vẽ ở bước
+  # ImageMagick phía trên) vào mảng, rồi đảo sprite sang frame kế tiếp mỗi
+  # SPINNER_TICKS lần Plymouth.SetRefreshFunction gọi (~50 lần/giây) — cùng
+  # cơ chế mà theme "two-step" mặc định của Plymouth dùng.
   cat <<SCRIPTEOF | sudo tee "$THEME_DIR/hyggshi-boot.script" > /dev/null
 Window.SetBackgroundTopColor(0.05, 0.07, 0.12);
 Window.SetBackgroundBottomColor(0.02, 0.03, 0.05);
@@ -309,31 +345,46 @@ logo.sprite.SetX(logo_x);
 logo.sprite.SetY(logo_y);
 logo.sprite.SetZ(10);
 
-message_sprite = Sprite();
-message_sprite.SetZ(10);
-message_y = logo_y + logo.image.GetHeight() + 30;
+spinner_frame_count = $SPINNER_FRAMES;
+spinner_y = logo_y + logo.image.GetHeight() + 30;
 
-dot_count = 0;
+if (spinner_frame_count > 0) {
+  spinner_images[0] = Image("spinner-00.png");
+  spinner_sprite = Sprite(spinner_images[0]);
+  spinner_sprite.SetX(window_width / 2 - spinner_images[0].GetWidth() / 2);
+  spinner_sprite.SetY(spinner_y);
+  spinner_sprite.SetZ(10);
 
-fun refresh_callback() {
-  dot_count++;
-  if (dot_count > 24) {
-    dot_count = 0;
-  }
-  n_dots = dot_count / 8 + 1;
-  dots = "";
-  i = 0;
-  while (i < n_dots) {
-    dots = dots + ".";
+  i = 1;
+  while (i < spinner_frame_count) {
+    if (i < 10) {
+      frame_suffix = "0" + i;
+    } else {
+      frame_suffix = "" + i;
+    }
+    spinner_images[i] = Image("spinner-" + frame_suffix + ".png");
     i++;
   }
-  msg_text = "$DISTRO_NAME_SAFE đang khởi động" + dots;
-  message_image = Image.Text(msg_text, 0.85, 0.85, 0.9, 1, "Sans 12");
-  message_sprite.SetImage(message_image);
-  message_sprite.SetX(window_width / 2 - message_image.GetWidth() / 2);
-  message_sprite.SetY(message_y);
+
+  spinner_tick = 0;
+  spinner_index = 0;
+  SPINNER_TICKS = 3; # đổi frame mỗi 3 lần refresh (~50Hz) -> spinner xoay ~1 vòng/giây
+
+  fun refresh_callback() {
+    spinner_tick++;
+    if (spinner_tick >= SPINNER_TICKS) {
+      spinner_tick = 0;
+      spinner_index++;
+      if (spinner_index >= spinner_frame_count) {
+        spinner_index = 0;
+      }
+      spinner_sprite.SetImage(spinner_images[spinner_index]);
+      spinner_sprite.SetX(window_width / 2 - spinner_images[spinner_index].GetWidth() / 2);
+      spinner_sprite.SetY(spinner_y);
+    }
+  }
+  Plymouth.SetRefreshFunction(refresh_callback);
 }
-Plymouth.SetRefreshFunction(refresh_callback);
 SCRIPTEOF
 
   echo "===== Đặt 'hyggshi-boot' làm Plymouth theme mặc định (-R tự rebuild initramfs) ====="
