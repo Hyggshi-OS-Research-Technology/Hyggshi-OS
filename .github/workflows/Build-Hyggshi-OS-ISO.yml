@@ -95,26 +95,20 @@ on:
         description: "Múi giờ (vd Asia/Ho_Chi_Minh, UTC)"
         required: false
         default: "Asia/Ho_Chi_Minh"
-      include_browser:
-        description: "Cài sẵn Firefox ESR?"
-        type: boolean
-        default: true
-      include_office:
-        description: "Cài sẵn LibreOffice?"
-        type: boolean
-        default: false
-      autologin:
-        description: "Tự động đăng nhập user live (bỏ qua màn hình LightDM/SDDM/GDM)? Tắt = hiện màn hình đăng nhập, phải gõ user_password ở trên."
-        type: boolean
-        default: true
-      autoscale_display:
-        description: "Tự động dò và chỉnh độ phân giải/scale màn hình (xrandr) mỗi khi đăng nhập desktop?"
-        type: boolean
-        default: true
-      welcome_wizard:
-        description: "Cài sẵn 'Hyggshi Welcome' — wizard cấu hình nhanh (C++/Qt, animation trượt trang) tự chạy lần đăng nhập đầu tiên?"
-        type: boolean
-        default: true
+      # LƯU Ý: workflow_dispatch chỉ cho phép TỐI ĐA 25 `inputs` (giới hạn
+      # cứng của GitHub Actions — vượt quá là toàn bộ workflow bị từ chối
+      # với lỗi "Invalid workflow file" ngay từ lúc parse, chưa kịp chạy).
+      # Vì vậy 5 toggle bật/tắt tính năng (browser/office/autologin/
+      # autoscale/welcome wizard) được GỘP CHUNG vào 1 input CSV duy nhất
+      # `feature_flags` thay vì 5 input `type: boolean` riêng — xem step
+      # "Resolve feature_flags..." bên dưới, nơi CSV này được tách ra lại
+      # thành đúng 5 biến INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
+      # AUTOSCALE_DISPLAY/WELCOME_WIZARD như cũ — không script nào khác
+      # (desktop.sh, welcome.sh...) phải đổi theo.
+      feature_flags:
+        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome. Vd bỏ welcome wizard: 'browser,autologin,autoscale'"
+        required: false
+        default: "browser,autologin,autoscale,welcome"
       extra_packages:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
@@ -160,11 +154,13 @@ env:
   OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
   OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
   OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
-  INCLUDE_BROWSER: ${{ github.event.inputs.include_browser || 'true' }}
-  INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
-  AUTOLOGIN: ${{ github.event.inputs.autologin || 'true' }}
-  AUTOSCALE_DISPLAY: ${{ github.event.inputs.autoscale_display || 'true' }}
-  WELCOME_WIZARD: ${{ github.event.inputs.welcome_wizard || 'true' }}
+  # INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD
+  # KHÔNG đặt ở đây (lý do giống DEBIAN_VERSION/UBUNTU_VERSION/... phía trên):
+  # từ khi 5 input boolean này bị gộp chung thành 1 input CSV `feature_flags`
+  # (để không vượt giới hạn 25 inputs của workflow_dispatch), 5 biến này chỉ
+  # có thể tách ra được LÚC CHẠY, không phải lúc parse workflow — xem step
+  # "Resolve feature_flags..." ở đầu job build-iso, nơi chúng được ghi vào
+  # $GITHUB_ENV.
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
   # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
@@ -207,6 +203,31 @@ jobs:
               echo "Distro không hợp lệ cho job build-iso: $BASE_DISTRO"
               exit 1 ;;
           esac
+
+      # Tách input CSV `feature_flags` (xem ghi chú ở khối `inputs:` phía
+      # trên) thành lại đúng 5 biến env như trước khi gộp — mọi step/script
+      # phía dưới (desktop.sh, welcome.sh...) không cần biết gì về việc gộp
+      # này, vẫn đọc INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
+      # AUTOSCALE_DISPLAY/WELCOME_WIZARD như bình thường.
+      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD"
+        run: |
+          # Bọc thêm dấu phẩy ở 2 đầu để match "$1" bằng pattern "*,$1,*"
+          # không bị dính nhầm token con (vd "autologin" không match nhầm
+          # bên trong 1 token dài hơn nào đó).
+          FLAGS=",${{ github.event.inputs.feature_flags || 'browser,autologin,autoscale,welcome' }},"
+          has_flag() {
+            case "$FLAGS" in
+              *",$1,"*) echo true ;;
+              *) echo false ;;
+            esac
+          }
+          {
+            echo "INCLUDE_BROWSER=$(has_flag browser)"
+            echo "INCLUDE_OFFICE=$(has_flag office)"
+            echo "AUTOLOGIN=$(has_flag autologin)"
+            echo "AUTOSCALE_DISPLAY=$(has_flag autoscale)"
+            echo "WELCOME_WIZARD=$(has_flag welcome)"
+          } >> "$GITHUB_ENV"
 
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
       # build.sh chỉ là dispatcher: nó source đúng scripts/distros/build-<distro>.sh
