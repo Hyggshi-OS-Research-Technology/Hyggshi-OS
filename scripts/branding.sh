@@ -168,21 +168,26 @@ if [ -n "$LOGO_FILE" ] && [ -f "$CALAMARES_SETTINGS" ]; then
     # "branding: <tên>"). calamares-settings-debian dùng "debian" nhưng
     # fallback về đúng tên đó nếu không đọc được, thay vì đoán bừa.
     #
-    # BUG ĐÃ SỬA: bản trước dùng `tr -d '"'"'"'\r'` — bên ngoài dấu nháy đơn,
-    # "\r" trong bash KHÔNG phải carriage return, nó chỉ là ký tự "r" thường
-    # (backslash chỉ triệt tiêu nghĩa đặc biệt của ký tự theo sau, "r" vốn
-    # không có nghĩa đặc biệt gì). Hệ quả: lệnh tr này vô tình XOÁ MỌI CHỮ
-    # "r" xuất hiện trong tên component/tên file (vd "productLogo" chứa chữ
-    # "r" -> không ảnh hưởng vì grep đã cắt bỏ phần này rồi, nhưng tên file
-    # đích như "hyggshi-brand-logo.png" sẽ bị cắt sai thành
-    # "hyggshi-band-logo.png", khiến "cp" ghi nhầm đường dẫn và Calamares
-    # vẫn hiển thị logo cũ). Dùng $'\r' (ANSI-C quoting) để có đúng ký tự
-    # carriage return thật, không đụng tới chữ "r" thường trong tên file.
+    # BUG ĐÃ SỬA #1: bản trước dùng `tr -d '"'"'"'\r'` — bên ngoài dấu nháy
+    # đơn, "\r" trong bash KHÔNG phải carriage return, nó chỉ là ký tự "r"
+    # thường (backslash chỉ triệt tiêu nghĩa đặc biệt của ký tự theo sau,
+    # "r" vốn không có nghĩa đặc biệt gì). Hệ quả: lệnh tr này vô tình XOÁ
+    # MỌI CHỮ "r" xuất hiện trong tên component/tên file, khiến "cp" ghi
+    # nhầm đường dẫn. Dùng $'\r' (ANSI-C quoting) để có đúng ký tự carriage
+    # return thật, không đụng tới chữ "r" thường trong tên file.
+    #
+    # BUG ĐÃ SỬA #2 (nguyên nhân THẬT SỰ khiến logo Calamares không đổi dù
+    # bug #1 đã sửa): gói .deb "calamares-settings-debian" của Debian cài
+    # branding.desc vào /etc/calamares/branding/debian/, KHÔNG PHẢI
+    # /usr/share/calamares/branding/debian/ (path đó chỉ đúng khi build
+    # Calamares từ source, src/branding/). Dùng sai path khiến script luôn
+    # coi như "không tìm thấy branding.desc" và bỏ qua toàn bộ bước ghi đè,
+    # dù file logo/branding.desc thật sự tồn tại sẵn trong chroot.
     BRANDING_COMPONENT=$(sudo grep -E '^\s*branding\s*:' "$CALAMARES_SETTINGS" \
       | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'" | tr -d $'\r')
     [ -z "$BRANDING_COMPONENT" ] && BRANDING_COMPONENT="debian"
 
-    BRANDING_DIR="$CHROOT/usr/share/calamares/branding/$BRANDING_COMPONENT"
+    BRANDING_DIR="$CHROOT/etc/calamares/branding/$BRANDING_COMPONENT"
     BRANDING_DESC="$BRANDING_DIR/branding.desc"
 
     if [ -f "$BRANDING_DESC" ]; then
