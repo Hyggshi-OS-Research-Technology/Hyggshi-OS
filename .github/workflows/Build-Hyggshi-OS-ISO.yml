@@ -111,6 +111,10 @@ on:
         description: "Tự động dò và chỉnh độ phân giải/scale màn hình (xrandr) mỗi khi đăng nhập desktop?"
         type: boolean
         default: true
+      welcome_wizard:
+        description: "Cài sẵn 'Hyggshi Welcome' — wizard cấu hình nhanh (C++/Qt, animation trượt trang) tự chạy lần đăng nhập đầu tiên?"
+        type: boolean
+        default: true
       extra_packages:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
@@ -160,6 +164,7 @@ env:
   INCLUDE_OFFICE: ${{ github.event.inputs.include_office || 'false' }}
   AUTOLOGIN: ${{ github.event.inputs.autologin || 'true' }}
   AUTOSCALE_DISPLAY: ${{ github.event.inputs.autoscale_display || 'true' }}
+  WELCOME_WIZARD: ${{ github.event.inputs.welcome_wizard || 'true' }}
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
   # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
@@ -262,6 +267,28 @@ jobs:
             APP_DIR="/tmp/app-for-hyggshi" \
             /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
 
+      # === 4.5) WELCOME: sinh source (host, không cần Qt) rồi build+cài THẬT
+      # bên trong chroot (welcome.sh — cần đúng glibc/Qt của ISO cuối cùng,
+      # không phải của runner). Tách 2 bước: make-welcome.sh không cần
+      # root/Qt nên chạy thẳng trên host cho nhanh, chỉ phần build mới cần
+      # chroot — giống lý do install-ecosystem-for-hyggshi.sh phải chroot.
+      - name: "[make-welcome.sh] Sinh source code Hyggshi Welcome (C++/Qt)"
+        if: ${{ env.WELCOME_WIZARD == 'true' }}
+        run: bash scripts/make-welcome.sh
+
+      - name: "[welcome.sh] Build & cài Hyggshi Welcome (trong chroot)"
+        if: ${{ env.WELCOME_WIZARD == 'true' }}
+        run: |
+          set -o pipefail
+          sudo mkdir -p "${CHROOT_DIR}/tmp/hyggshi-welcome-src"
+          sudo cp -r app-for-hyggshi/hyggshi-welcome/. "${CHROOT_DIR}/tmp/hyggshi-welcome-src/"
+          sudo cp scripts/welcome.sh "${CHROOT_DIR}/tmp/welcome.sh"
+          sudo chmod +x "${CHROOT_DIR}/tmp/welcome.sh"
+          sudo chroot "${CHROOT_DIR}" env \
+            DEBUG_MODE="$DEBUG_MODE" \
+            SRC_DIR="/tmp/hyggshi-welcome-src" \
+            /tmp/welcome.sh 2>&1 | tee welcome-debug.log
+
       # === 5) BRANDING: wallpaper, logo, os-release, panel, autostart ===
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
         run: |
@@ -312,6 +339,11 @@ jobs:
             sudo ls -la "$CHROOT/etc/xdg/autostart/" 2>/dev/null || true
             echo
 
+            echo "===== hyggshi-welcome (binary + desktop entry) ====="
+            sudo ls -la "$CHROOT/usr/bin/hyggshi-welcome" 2>/dev/null || echo "(chưa cài — WELCOME_WIZARD=false hoặc build lỗi)"
+            sudo cat "$CHROOT/usr/share/applications/hyggshi-welcome.desktop" 2>/dev/null || true
+            echo
+
             echo "===== update-alternatives desktop-background ====="
             sudo chroot "$CHROOT" update-alternatives --display desktop-background 2>&1 || true
             echo
@@ -342,6 +374,7 @@ jobs:
           path: |
             install-debug.log
             ecosystem-debug.log
+            welcome-debug.log
             branding-debug.log
             debug-info.txt
           retention-days: 14
