@@ -107,7 +107,22 @@ NEXFETCH_CONFIG_DIRS=(
 # render ANSI/truecolor block art) thay vì Logo.png ngoài repo — file này do
 # chính .deb cài vào, nên KHÔNG cần copy/tính path tương đối gì thêm, luôn
 # tồn tại ngay sau bước cài .deb ở trên và không phụ thuộc REPO_ROOT.
-NEXFETCH_LOGO_PATH="/usr/share/nexfetch/logos/logo.txt"
+#
+# LƯU Ý: gói nexfetch KHÔNG ship file tên "logo.txt" — tên file thật trong
+# logos/ là "hyggshi_OS.txt" (kèm theo debian.txt, arch.txt, tux.txt, ...).
+# Dò qua vài tên khả dĩ để không vỡ nếu tên file đổi giữa các bản nexfetch.
+NEXFETCH_LOGO_DIR="/usr/share/nexfetch/logos"
+NEXFETCH_LOGO_PATH=""
+for CANDIDATE in "hyggshi_OS.txt" "hyggshi-os.txt" "logo.txt" "nexfetch.txt"; do
+  if [ -f "$NEXFETCH_LOGO_DIR/$CANDIDATE" ]; then
+    NEXFETCH_LOGO_PATH="$NEXFETCH_LOGO_DIR/$CANDIDATE"
+    break
+  fi
+done
+if [ -z "$NEXFETCH_LOGO_PATH" ]; then
+  echo "⚠️  Không tìm thấy logo nào khớp trong $NEXFETCH_LOGO_DIR — dùng mặc định hyggshi_OS.txt."
+  NEXFETCH_LOGO_PATH="$NEXFETCH_LOGO_DIR/hyggshi_OS.txt"
+fi
 
 read -r -d '' NEXFETCH_CONFIG_JSON << JSON || true
 {
