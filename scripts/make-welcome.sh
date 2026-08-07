@@ -63,11 +63,27 @@ install(FILES packaging/hyggshi-welcome.desktop DESTINATION share/applications)
 install(FILES packaging/hyggshi-welcome-autostart.desktop
         DESTINATION /etc/xdg/autostart
         RENAME hyggshi-welcome.desktop)
+
+# Wallpaper thật cho 2 theme Sáng/Tối — cài vào cùng thư mục
+# /usr/share/backgrounds/hyggshi mà branding.sh dùng, để finishSetup() trong
+# MainWindow.cpp trỏ tới đường dẫn cố định này lúc runtime (không cần đọc
+# lại từ resource .qrc, vì xfconf-query cần path thật trên đĩa).
+install(FILES resources/icons/theme-light.png
+        DESTINATION /usr/share/backgrounds/hyggshi
+        RENAME car-light.png)
+install(FILES resources/icons/theme-dark.png
+        DESTINATION /usr/share/backgrounds/hyggshi
+        RENAME car-Dark.png)
 CMAKEEOF
 
 # ---------------------------------------------------------------------------
 # resources/hyggshi-welcome.qrc — nhúng logo/wallpaper từ iso-config/branding
 # (copy sẵn vào resources/icons để .qrc không phải trỏ ra ngoài project).
+#
+# car-light.png / car-Dark.png là ảnh preview cho 2 thẻ "Sáng"/"Tối" ở trang
+# Chọn giao diện — dùng làm border-image của thẻ (thay swatch màu phẳng) và
+# cũng là wallpaper thật sẽ được áp tự động khi người dùng chọn theme đó
+# (xem buildThemePage() + finishSetup() bên dưới).
 # ---------------------------------------------------------------------------
 if [ -f "$REPO_ROOT/iso-config/branding/Logo.png" ]; then
   cp "$REPO_ROOT/iso-config/branding/Logo.png" "$APP_DIR/resources/icons/logo.png"
@@ -76,10 +92,26 @@ else
   : > "$APP_DIR/resources/icons/logo.png"
 fi
 
+if [ -f "$REPO_ROOT/iso-config/branding/car-light.png" ]; then
+  cp "$REPO_ROOT/iso-config/branding/car-light.png" "$APP_DIR/resources/icons/theme-light.png"
+else
+  echo "⚠️  Không thấy iso-config/branding/car-light.png — thẻ 'Sáng' sẽ dùng swatch màu phẳng."
+  : > "$APP_DIR/resources/icons/theme-light.png"
+fi
+
+if [ -f "$REPO_ROOT/iso-config/branding/car-Dark.png" ]; then
+  cp "$REPO_ROOT/iso-config/branding/car-Dark.png" "$APP_DIR/resources/icons/theme-dark.png"
+else
+  echo "⚠️  Không thấy iso-config/branding/car-Dark.png — thẻ 'Tối' sẽ dùng swatch màu phẳng."
+  : > "$APP_DIR/resources/icons/theme-dark.png"
+fi
+
 cat > "$APP_DIR/resources/hyggshi-welcome.qrc" <<'QRCEOF'
 <RCC>
   <qresource prefix="/">
     <file>icons/logo.png</file>
+    <file>icons/theme-light.png</file>
+    <file>icons/theme-dark.png</file>
   </qresource>
 </RCC>
 QRCEOF
@@ -214,6 +246,9 @@ class MainWindow : public QMainWindow {
   QPushButton *m_nextBtn = nullptr;
   QButtonGroup *m_themeGroup = nullptr;
   QString m_selectedTheme = "auto";
+  // Đường dẫn wallpaper thật (đã cài ở /usr/share/backgrounds/hyggshi/) ứng
+  // với theme đang chọn — rỗng nếu theme đó không có wallpaper riêng.
+  QString m_selectedWallpaper = "/usr/share/backgrounds/hyggshi/car-light.png";
   QCheckBox *m_dontAskAgainChk = nullptr;
 
   QTimer *m_carouselTimer = nullptr;
@@ -236,6 +271,7 @@ class MainWindow : public QMainWindow {
   void goNext();
   void goBack();
   void finishSetup();
+  void applyWallpaper(const QString &wallpaperPath);
   void showFeatureSlide(int index);
   void advanceCarousel();
 };
@@ -376,11 +412,22 @@ QWidget *MainWindow::buildThemePage() {
   cardsRow->setSpacing(16);
   m_themeGroup = new QButtonGroup(page);
 
-  struct ThemeOpt { QString id, label, swatch; };
+  // "background" dùng cho thẻ Tự động (không có ảnh preview riêng) và cũng
+  // là fallback nếu ảnh car-light.png/car-Dark.png không nhúng được lúc
+  // build (file rỗng placeholder — xem make-welcome.sh phần copy resource).
+  // "wallpaper" là đường dẫn THẬT trên đĩa (được CMake install() vào
+  // /usr/share/backgrounds/hyggshi/) — dùng để áp wallpaper tự động lúc
+  // finishSetup(), không phải đường dẫn qrc (":/...") vì xfconf-query cần
+  // path thật trên filesystem.
+  struct ThemeOpt { QString id, label, background, wallpaper; };
   const QVector<ThemeOpt> opts = {
-      {"light", tr("Sáng"), "#f4f5f7"},
-      {"dark", tr("Tối"), "#1b1d23"},
-      {"auto", tr("Tự động"), "qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #f4f5f7, stop:1 #1b1d23)"},
+      {"light", tr("Sáng"), "#f4f5f7",
+       "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"dark", tr("Tối"), "#1b1d23",
+       "/usr/share/backgrounds/hyggshi/car-Dark.png"},
+      {"auto", tr("Tự động"),
+       "qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #f4f5f7, stop:1 #1b1d23)",
+       "/usr/share/backgrounds/hyggshi/car-light.png"},
   };
 
   for (int i = 0; i < opts.size(); ++i) {
@@ -391,19 +438,31 @@ QWidget *MainWindow::buildThemePage() {
     card->setFixedSize(150, 110);
     card->setCursor(Qt::PointingHandCursor);
     card->setText("\n\n" + opt.label);
+
+    // Sáng/Tối: hiện thumbnail wallpaper thật (car-light.png/car-Dark.png)
+    // làm nền thẻ qua border-image, chữ trắng cho dễ đọc trên ảnh. Tự động:
+    // giữ swatch gradient phẳng như cũ vì chưa có ảnh preview riêng.
+    const QString bodyStyle = (opt.id == "light" || opt.id == "dark")
+        ? QString("border-image: url(:/icons/theme-%1.png) 0 0 0 0 stretch stretch;"
+                   " color:#ffffff;").arg(opt.id == "light" ? "light" : "dark")
+        : QString("background:%1; color:#1b1d23;").arg(opt.background);
+
     card->setStyleSheet(QString(
         "QPushButton { border-radius:10px; border:2px solid #2c2f38;"
-        " background:%1; color:#1b1d23; font-weight:600; }"
+        " font-weight:600; %1 }"
         "QPushButton:checked { border:2px solid #5aa9ff; }")
-        .arg(opt.swatch));
+        .arg(bodyStyle));
     m_themeGroup->addButton(card, i);
     connect(card, &QPushButton::clicked, this, [this, opt]() {
       m_selectedTheme = opt.id;
+      m_selectedWallpaper = opt.wallpaper;
     });
     cardsRow->addWidget(card);
   }
 
-  auto *note = new QLabel(tr("Áp dụng cho toàn hệ thống sau khi hoàn tất."));
+  auto *note = new QLabel(
+      tr("Áp dụng cho toàn hệ thống sau khi hoàn tất — hình nền sẽ tự đổi theo giao diện bạn chọn."));
+  note->setWordWrap(true);
   note->setStyleSheet("color:#6f7480; font-size:11px; margin-top:10px;");
 
   layout->addWidget(title);
@@ -656,6 +715,10 @@ void MainWindow::finishSetup() {
         {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
   }
 
+  // Tự động áp wallpaper tương ứng theme đã chọn ở trang "Chọn giao diện"
+  // (m_selectedWallpaper được set ngay khi user bấm thẻ Sáng/Tối/Tự động).
+  applyWallpaper(m_selectedWallpaper);
+
   // Đánh dấu đã hoàn tất welcome để autostart không hiện lại lần sau —
   // CHỈ khi người dùng đã tick "Không hỏi lại lần sau" ở trang Xong.
   // Nếu m_dontAskAgainChk == nullptr (người dùng bấm "Bỏ qua" trước khi
@@ -679,6 +742,41 @@ void MainWindow::finishSetup() {
   }
 
   qApp->quit();
+}
+
+// Áp wallpaper theo theme đã chọn — best-effort, không fail nếu thiếu file
+// hoặc thiếu xfconf-query, giống style của finishSetup() ở trên.
+//
+// Ưu tiên gọi lại /usr/local/bin/hyggshi-set-wallpaper.sh (do branding.sh
+// cài lúc build ISO) thay vì tự dò tên monitor trong C++, vì script đó đã
+// xử lý sẵn race condition lúc login + dò đúng tên monitor thật qua xrandr
+// (monitor0 không đúng trên mọi máy/VM, xem ghi chú trong branding.sh).
+// Script nhận tham số đường dẫn wallpaper tuỳ chọn, mặc định vẫn là
+// wallpaper.png nếu gọi không kèm tham số (không phá hành vi cũ ở lúc login).
+void MainWindow::applyWallpaper(const QString &wallpaperPath) {
+  if (wallpaperPath.isEmpty() || !QFile::exists(wallpaperPath)) {
+    return;
+  }
+
+  const QString wallScript = "/usr/local/bin/hyggshi-set-wallpaper.sh";
+  if (QFile::exists(wallScript)) {
+    QProcess::startDetached(wallScript, {wallpaperPath});
+    return;
+  }
+
+  // Fallback tối giản khi chạy ngoài ISO đã build đầy đủ (vd. build tay
+  // bằng --install để test riêng app hyggshi-welcome): set thẳng property
+  // monitor0 mặc định, không dò monitor thật như script trên.
+  if (QStandardPaths::findExecutable("xfconf-query") != "") {
+    QProcess::execute("xfconf-query",
+        {"-c", "xfce4-desktop", "-p",
+         "/backdrop/screen0/monitor0/workspace0/last-image",
+         "-n", "-t", "string", "-s", wallpaperPath});
+    QProcess::execute("xfconf-query",
+        {"-c", "xfce4-desktop", "-p",
+         "/backdrop/screen0/monitor0/workspace0/image-style",
+         "-n", "-t", "int", "-s", "5"});
+  }
 }
 CEOF
 
