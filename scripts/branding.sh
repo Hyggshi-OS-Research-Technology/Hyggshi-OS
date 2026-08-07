@@ -626,6 +626,18 @@ cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
 </channel>
 XML
 
+# NOTE: GTK ThemeName and xfwm4 theme below are both set to "Windows-10",
+# which already gives the same end result as the Appearance dialog's
+# "Set matching Xfwm4 theme if there is one" switch (new users get
+# synced themes on first login regardless of the switch's own state).
+#
+# If you also want the switch itself to render ON in the live dialog,
+# find its exact xfconf property first:
+#   xfconf-query -c xsettings -lv > /tmp/before.txt
+#   # toggle the switch ON in Appearance settings, then:
+#   xfconf-query -c xsettings -lv > /tmp/after.txt
+#   diff /tmp/before.txt /tmp/after.txt
+# then add the discovered <property> line inside the "Net" block below.
 cat <<XML | sudo tee "$SKEL/xsettings.xml" > /dev/null
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xsettings" version="1.0">
