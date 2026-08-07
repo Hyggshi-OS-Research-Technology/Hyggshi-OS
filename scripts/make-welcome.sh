@@ -191,6 +191,7 @@ cat > "$APP_DIR/src/MainWindow.h" <<'HEOF'
 #include <QLabel>
 #include <QPushButton>
 #include <QButtonGroup>
+#include <QCheckBox>
 #include <QTimer>
 #include "SlideStackedWidget.h"
 
@@ -213,6 +214,7 @@ class MainWindow : public QMainWindow {
   QPushButton *m_nextBtn = nullptr;
   QButtonGroup *m_themeGroup = nullptr;
   QString m_selectedTheme = "auto";
+  QCheckBox *m_dontAskAgainChk = nullptr;
 
   QTimer *m_carouselTimer = nullptr;
   QVector<FeatureSlide> m_features;
@@ -544,10 +546,21 @@ QWidget *MainWindow::buildFinishPage() {
   desc->setStyleSheet("font-size:13px; color:#9aa0ab;");
   desc->setWordWrap(true);
 
+  m_dontAskAgainChk = new QCheckBox(tr("Không hỏi lại lần sau"));
+  m_dontAskAgainChk->setChecked(true);
+  m_dontAskAgainChk->setCursor(Qt::PointingHandCursor);
+  m_dontAskAgainChk->setStyleSheet(
+      "QCheckBox { color:#9aa0ab; font-size:12px; spacing:8px; }"
+      "QCheckBox::indicator { width:16px; height:16px; border-radius:4px;"
+      " border:1px solid #3a3f4b; background:#1e2027; }"
+      "QCheckBox::indicator:checked { background:#5aa9ff; border:1px solid #5aa9ff; }");
+
   layout->addStretch(1);
   layout->addWidget(icon);
   layout->addWidget(title);
   layout->addWidget(desc);
+  layout->addSpacing(10);
+  layout->addWidget(m_dontAskAgainChk, 0, Qt::AlignCenter);
   layout->addStretch(2);
   return page;
 }
@@ -643,14 +656,26 @@ void MainWindow::finishSetup() {
         {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
   }
 
-  // Đánh dấu đã hoàn tất welcome để autostart không hiện lại lần sau.
+  // Đánh dấu đã hoàn tất welcome để autostart không hiện lại lần sau —
+  // CHỈ khi người dùng đã tick "Không hỏi lại lần sau" ở trang Xong.
+  // Nếu m_dontAskAgainChk == nullptr (người dùng bấm "Bỏ qua" trước khi
+  // vào tới trang Xong) thì coi như đồng ý mặc định, giống hành vi cũ.
+  const bool dontAskAgain =
+      m_dontAskAgainChk == nullptr || m_dontAskAgainChk->isChecked();
+
   const QString cfgDir = QStandardPaths::writableLocation(
       QStandardPaths::GenericConfigLocation) + "/hyggshi";
   QDir().mkpath(cfgDir);
   QFile marker(cfgDir + "/welcome-shown");
-  if (marker.open(QIODevice::WriteOnly)) {
-    marker.write("1");
-    marker.close();
+  if (dontAskAgain) {
+    if (marker.open(QIODevice::WriteOnly)) {
+      marker.write("1");
+      marker.close();
+    }
+  } else if (marker.exists()) {
+    // Người dùng bỏ tick -> xoá marker cũ (nếu có) để welcome hiện lại
+    // ở lần đăng nhập kế tiếp.
+    marker.remove();
   }
 
   qApp->quit();
