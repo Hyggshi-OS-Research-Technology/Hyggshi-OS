@@ -301,8 +301,8 @@ else
       convert -size ${SPINNER_SIZE}x${SPINNER_SIZE} xc:none \
         -fill none -stroke "#33415c" -strokewidth 5 \
         -draw "circle $((SPINNER_SIZE / 2)),$((SPINNER_SIZE / 2)) $((SPINNER_SIZE / 2)),4" \
-        -fill none -stroke "#4fd1c5" -strokewidth 5 -strokelinecap round \
-        -draw "arc 4,4 $((SPINNER_SIZE - 4)),$((SPINNER_SIZE - 4)) ${ANGLE_START},${ANGLE_END}" \
+        -fill none -stroke "#4fd1c5" -strokewidth 5 \
+        -draw "stroke-linecap round arc 4,4 $((SPINNER_SIZE - 4)),$((SPINNER_SIZE - 4)) ${ANGLE_START},${ANGLE_END}" \
         "/tmp/$FRAME_NAME"
       sudo cp "/tmp/$FRAME_NAME" "$THEME_DIR/$FRAME_NAME"
     done
