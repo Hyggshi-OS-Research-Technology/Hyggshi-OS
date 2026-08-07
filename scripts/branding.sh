@@ -285,37 +285,61 @@ else
   fi
   sudo cp /tmp/plymouth-logo.png "$THEME_DIR/logo.png"
 
-  echo "----- Vẽ frame spinner tròn xoay (ImageMagick) -----"
-  # Track mờ (vòng tròn đầy) + 1 cung sáng ~100° xoay dần quanh vòng, đổi vị
-  # trí cung mỗi frame -> tạo cảm giác xoay khi Plymouth đảo khung hình.
-  # 28 frame là đủ mượt ở tốc độ đổi khung ~15 lần/giây (xem SPINNER_TICKS
-  # trong .script bên dưới) mà không sinh quá nhiều file PNG nhỏ.
-  SPINNER_FRAMES=28
-  SPINNER_SIZE=72
-  SPINNER_ARC_SPAN=100
+  echo "----- Vẽ frame dot-wave kiểu Fedora/Ubuntu (ImageMagick) -----"
+  # Cả Fedora (theme "spinner" cũ) lẫn Ubuntu (theme mặc định hiện tại) đều
+  # dùng chung 1 kiểu: nền ĐEN TUYỀN + một hàng chấm tròn nằm ngang bên
+  # dưới logo, độ sáng từng chấm chạy thành sóng đuổi nhau trái->phải rồi
+  # lặp lại (không phải xoay tròn như spinner cũ). Dùng awk tính màu mỗi
+  # chấm theo hàm sin (offset pha theo index chấm) để có hiệu ứng mượt,
+  # rồi vẽ tất cả DOTS_COUNT chấm trong CÙNG một lệnh convert/frame.
+  DOTS_COUNT=5
+  DOT_RADIUS=6
+  DOT_GAP=26
+  SPINNER_FRAMES=30
+  DOT_ROW_WIDTH=$(( (DOTS_COUNT - 1) * DOT_GAP ))
+  SPINNER_CANVAS_W=$(( DOT_ROW_WIDTH + DOT_RADIUS * 2 + 20 ))
+  SPINNER_CANVAS_H=$(( DOT_RADIUS * 2 + 20 ))
+  DOT_CY=$(( SPINNER_CANVAS_H / 2 ))
   if command -v convert > /dev/null 2>&1; then
     for i in $(seq 0 $((SPINNER_FRAMES - 1))); do
-      ANGLE_START=$((i * 360 / SPINNER_FRAMES))
-      ANGLE_END=$((ANGLE_START + SPINNER_ARC_SPAN))
+      # Màu từng chấm trong frame $i: chấm tối #262626 (gần đen, chìm vào
+      # nền) -> chấm sáng #ffffff (trắng) theo pha sóng riêng của nó.
+      read -ra DOT_COLORS <<< "$(awk -v frame="$i" -v frames="$SPINNER_FRAMES" -v dots="$DOTS_COUNT" 'BEGIN{
+        pi = 3.14159265;
+        base_r = 38; base_g = 38; base_b = 38;
+        hi_r = 255; hi_g = 255; hi_b = 255;
+        for (j = 0; j < dots; j++) {
+          phase = 2 * pi * frame / frames - j * (2 * pi / dots);
+          val = (sin(phase) + 1) / 2;
+          r = base_r + (hi_r - base_r) * val;
+          g = base_g + (hi_g - base_g) * val;
+          b = base_b + (hi_b - base_b) * val;
+          printf "#%02x%02x%02x ", r, g, b;
+        }
+      }')"
+
+      DRAW_STR=""
+      for j in $(seq 0 $((DOTS_COUNT - 1))); do
+        DOT_CX=$(( DOT_RADIUS + 10 + j * DOT_GAP ))
+        DRAW_STR="$DRAW_STR fill \"${DOT_COLORS[$j]}\" circle $DOT_CX,$DOT_CY $((DOT_CX + DOT_RADIUS)),$DOT_CY"
+      done
+
       FRAME_NAME=$(printf "spinner-%02d.png" "$i")
-      convert -size ${SPINNER_SIZE}x${SPINNER_SIZE} xc:none \
-        -fill none -stroke "#33415c" -strokewidth 5 \
-        -draw "circle $((SPINNER_SIZE / 2)),$((SPINNER_SIZE / 2)) $((SPINNER_SIZE / 2)),4" \
-        -fill none -stroke "#4fd1c5" -strokewidth 5 \
-        -draw "stroke-linecap round arc 4,4 $((SPINNER_SIZE - 4)),$((SPINNER_SIZE - 4)) ${ANGLE_START},${ANGLE_END}" \
+      convert -size ${SPINNER_CANVAS_W}x${SPINNER_CANVAS_H} xc:none \
+        -draw "$DRAW_STR" \
         "/tmp/$FRAME_NAME"
       sudo cp "/tmp/$FRAME_NAME" "$THEME_DIR/$FRAME_NAME"
     done
-    echo "OK: đã tạo $SPINNER_FRAMES frame spinner trong $THEME_DIR"
+    echo "OK: đã tạo $SPINNER_FRAMES frame dot-wave trong $THEME_DIR"
   else
-    echo "⚠️  imagemagick không cài được — không tạo được frame spinner, Plymouth sẽ chỉ hiện logo tĩnh."
+    echo "⚠️  imagemagick không cài được — không tạo được frame dot-wave, Plymouth sẽ chỉ hiện logo tĩnh."
     SPINNER_FRAMES=0
   fi
 
   cat <<PLYMOUTHEOF | sudo tee "$THEME_DIR/hyggshi-boot.plymouth" > /dev/null
 [Plymouth Theme]
 Name=Hyggshi Boot
-Description=$DISTRO_NAME_SAFE boot splash (logo + circular spinner)
+Description=$DISTRO_NAME_SAFE boot splash (logo + dot-wave loading, nền đen kiểu Fedora/Ubuntu)
 ModuleName=script
 
 [script]
@@ -325,14 +349,13 @@ PLYMOUTHEOF
 
   # Ngôn ngữ script riêng của Plymouth (cú pháp kiểu C, xem
   # freedesktop.org/wiki/Software/Plymouth/Scripts). Logo tĩnh ở giữa màn
-  # hình + spinner tròn xoay bên dưới (không còn chữ). Spinner hoạt động
-  # bằng cách nạp sẵn $SPINNER_FRAMES ảnh "spinner-NN.png" (vẽ ở bước
-  # ImageMagick phía trên) vào mảng, rồi đảo sprite sang frame kế tiếp mỗi
-  # SPINNER_TICKS lần Plymouth.SetRefreshFunction gọi (~50 lần/giây) — cùng
-  # cơ chế mà theme "two-step" mặc định của Plymouth dùng.
+  # hình + hàng chấm dot-wave bên dưới, nền ĐEN TUYỀN (0,0,0) thay vì
+  # gradient xanh navy như bản trước. Cơ chế nạp/đảo frame giữ nguyên như
+  # bản spinner tròn (mảng ảnh preload + đổi frame mỗi SPINNER_TICKS lần
+  # refresh_callback), chỉ khác nội dung ảnh từng frame.
   cat <<SCRIPTEOF | sudo tee "$THEME_DIR/hyggshi-boot.script" > /dev/null
-Window.SetBackgroundTopColor(0.05, 0.07, 0.12);
-Window.SetBackgroundBottomColor(0.02, 0.03, 0.05);
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
 
 window_width = Window.GetWidth();
 window_height = Window.GetHeight();
@@ -368,7 +391,7 @@ if (spinner_frame_count > 0) {
 
   spinner_tick = 0;
   spinner_index = 0;
-  SPINNER_TICKS = 3; # đổi frame mỗi 3 lần refresh (~50Hz) -> spinner xoay ~1 vòng/giây
+  SPINNER_TICKS = 3; # đổi frame mỗi 3 lần refresh (~50Hz) -> sóng chạy hết 1 vòng trong ~1.8s
 
   fun refresh_callback() {
     spinner_tick++;
