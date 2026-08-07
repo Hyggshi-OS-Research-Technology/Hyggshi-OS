@@ -303,7 +303,7 @@ jobs:
           set -o pipefail
           sudo mkdir -p "${CHROOT_DIR}/tmp/hyggshi-welcome-src"
           sudo cp -r app-for-hyggshi/hyggshi-welcome/. "${CHROOT_DIR}/tmp/hyggshi-welcome-src/"
-          sudo cp scripts/welcome.sh "${CHROOT_DIR}/tmp/welcome.sh"
+          sudo cp app-for-hyggshi/welcome.sh "${CHROOT_DIR}/tmp/welcome.sh"
           sudo chmod +x "${CHROOT_DIR}/tmp/welcome.sh"
           sudo chroot "${CHROOT_DIR}" env \
             DEBUG_MODE="$DEBUG_MODE" \
