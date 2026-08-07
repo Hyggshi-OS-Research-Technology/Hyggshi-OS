@@ -167,8 +167,19 @@ if [ -n "$LOGO_FILE" ] && [ -f "$CALAMARES_SETTINGS" ]; then
     # Component branding thực sự đang được settings.conf trỏ tới (dòng
     # "branding: <tên>"). calamares-settings-debian dùng "debian" nhưng
     # fallback về đúng tên đó nếu không đọc được, thay vì đoán bừa.
+    #
+    # BUG ĐÃ SỬA: bản trước dùng `tr -d '"'"'"'\r'` — bên ngoài dấu nháy đơn,
+    # "\r" trong bash KHÔNG phải carriage return, nó chỉ là ký tự "r" thường
+    # (backslash chỉ triệt tiêu nghĩa đặc biệt của ký tự theo sau, "r" vốn
+    # không có nghĩa đặc biệt gì). Hệ quả: lệnh tr này vô tình XOÁ MỌI CHỮ
+    # "r" xuất hiện trong tên component/tên file (vd "productLogo" chứa chữ
+    # "r" -> không ảnh hưởng vì grep đã cắt bỏ phần này rồi, nhưng tên file
+    # đích như "hyggshi-brand-logo.png" sẽ bị cắt sai thành
+    # "hyggshi-band-logo.png", khiến "cp" ghi nhầm đường dẫn và Calamares
+    # vẫn hiển thị logo cũ). Dùng $'\r' (ANSI-C quoting) để có đúng ký tự
+    # carriage return thật, không đụng tới chữ "r" thường trong tên file.
     BRANDING_COMPONENT=$(sudo grep -E '^\s*branding\s*:' "$CALAMARES_SETTINGS" \
-      | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"'"'"'\r')
+      | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'" | tr -d $'\r')
     [ -z "$BRANDING_COMPONENT" ] && BRANDING_COMPONENT="debian"
 
     BRANDING_DIR="$CHROOT/usr/share/calamares/branding/$BRANDING_COMPONENT"
@@ -179,20 +190,29 @@ if [ -n "$LOGO_FILE" ] && [ -f "$CALAMARES_SETTINGS" ]; then
       # hiển thị đầu sidebar) thay vì đoán "logo.png" — mỗi bản
       # calamares-settings-* có thể đặt tên file khác nhau.
       LOGO_IMG_NAME=$(sudo grep -E '^\s*productLogo\s*:' "$BRANDING_DESC" \
-        | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"'"'"'\r')
+        | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'" | tr -d $'\r')
       [ -z "$LOGO_IMG_NAME" ] && LOGO_IMG_NAME="logo.png"
+
+      echo "DEBUG: BRANDING_COMPONENT='$BRANDING_COMPONENT' LOGO_IMG_NAME='$LOGO_IMG_NAME'"
+      echo "DEBUG: sẽ ghi vào -> $BRANDING_DIR/$LOGO_IMG_NAME"
 
       # Resize giữ nguyên tỷ lệ trên nền trong suốt (không méo ảnh, không
       # méo khung vuông của sidebar) rồi ghi đè thẳng vào đúng file cũ.
       convert "$LOGO_FILE" -resize 256x256 -background none -gravity center \
         -extent 256x256 /tmp/calamares-sidebar-logo.png
+
+      if [ ! -f "$BRANDING_DIR/$LOGO_IMG_NAME" ]; then
+        echo "CẢNH BÁO: '$BRANDING_DIR/$LOGO_IMG_NAME' không tồn tại TRƯỚC khi ghi —" >&2
+        echo "kiểm tra lại LOGO_IMG_NAME có bị cắt sai tên không (xem dòng DEBUG ở trên)." >&2
+      fi
+
       sudo cp /tmp/calamares-sidebar-logo.png "$BRANDING_DIR/$LOGO_IMG_NAME"
       echo "Đã ghi đè: $BRANDING_DIR/$LOGO_IMG_NAME"
 
       # "productIcon" (icon cửa sổ/taskbar lúc chạy installer) thường trỏ
       # cùng file với productLogo — chỉ ghi đè thêm nếu nó là file KHÁC.
       ICON_IMG_NAME=$(sudo grep -E '^\s*productIcon\s*:' "$BRANDING_DESC" \
-        | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"'"'"'\r')
+        | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'" | tr -d $'\r')
       if [ -n "$ICON_IMG_NAME" ] && [ "$ICON_IMG_NAME" != "$LOGO_IMG_NAME" ]; then
         sudo cp /tmp/calamares-sidebar-logo.png "$BRANDING_DIR/$ICON_IMG_NAME"
         echo "Đã ghi đè thêm: $BRANDING_DIR/$ICON_IMG_NAME (productIcon)"
