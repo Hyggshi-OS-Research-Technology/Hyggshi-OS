@@ -19,8 +19,19 @@ mkdir -p live-build/image/live
 # rỗng (không có vmlinuz/initrd/System.map/config, cũng không có sẵn để
 # grub-install/update-grub chạy trong target). Kết quả: lỗi "grub-pc has
 # no installation candidate" + "update-grub: No such file or directory".
+#
+# Tối ưu kích thước (không đổi nội dung, chỉ đổi cách nén):
+#   -b 1M       block size 1MiB thay vì mặc định 128KiB — block lớn hơn cho
+#               xz nhiều ngữ cảnh hơn để nén, tỷ lệ nén tốt hơn rõ rệt trên
+#               1 filesystem nhiều file lặp lại (icon theme, locale, lib...),
+#               đánh đổi bằng RAM/thời gian build squashfs (chấp nhận được
+#               trên runner CI).
+#   -Xbcj x86   BCJ filter chuyển đổi lệnh nhảy/gọi hàm x86 trước khi nén —
+#               phần lớn nội dung squashfs là binary/thư viện x86_64, filter
+#               này giúp xz nén binary tốt hơn đáng kể so với coi chúng như
+#               dữ liệu ngẫu nhiên.
 sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
-  -comp xz
+  -comp xz -b 1M -Xbcj x86
 
 echo "===== Prepare boot files (kernel + initrd) ====="
 # Dùng ls -t + head -n1 thay vì cp trực tiếp theo glob: nếu vì lý do gì đó
