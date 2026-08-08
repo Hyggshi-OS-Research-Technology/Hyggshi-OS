@@ -269,6 +269,21 @@ jobs:
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
+      # === 3.5) NEXWM: clone + build (make) + cài NexWM TỪ SOURCE, và tạo
+      # đúng X11 session (/usr/share/xsessions/nexwm.desktop, Type=XSession)
+      # — chạy BÊN TRONG chroot (giống desktop.sh/welcome.sh) vì binary +
+      # session file cần nằm trong rootfs của ISO, không phải máy runner CI.
+      # Chạy SONG SONG với bước cài .deb nexfetch/nexwm-binary.zip có sẵn ở
+      # bước [install-ecosystem-for-hyggshi.sh] bên dưới — không xoá bước đó.
+      - name: "[build-nexwm.sh] Build & cài NexWM từ source (trong chroot)"
+        run: |
+          set -o pipefail
+          sudo cp scripts/build-nexwm.sh "${CHROOT_DIR}/tmp/build-nexwm.sh"
+          sudo chmod +x "${CHROOT_DIR}/tmp/build-nexwm.sh"
+          sudo chroot "${CHROOT_DIR}" env \
+            DEBUG_MODE="$DEBUG_MODE" \
+            /tmp/build-nexwm.sh 2>&1 | tee nexwm-build-debug.log
+
       # === 4) ECOSYSTEM: mở app-for-hyggshi/*.zip, cài .deb, cấu hình
       # config.json (logo/plugin/module) cho nexfetch — PHẢI chạy BÊN TRONG
       # chroot (giống desktop.sh), nếu không apt install/ghi config.json sẽ
@@ -394,6 +409,7 @@ jobs:
           name: hyggshi-os-debug
           path: |
             install-debug.log
+            nexwm-build-debug.log
             ecosystem-debug.log
             welcome-debug.log
             branding-debug.log
