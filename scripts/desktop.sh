@@ -24,6 +24,33 @@ fi
 
 apt-get update
 
+echo "===== Giảm kích thước ISO: chặn cài doc/man/info ngay từ gói ĐẦU TIÊN ====="
+# Kỹ thuật chuẩn của các base image Debian/Ubuntu tối giản (Docker
+# debian:slim dùng chính cách này): dpkg hỗ trợ path-exclude NGAY TỪ LÚC
+# GIẢI NÉN gói — không phải xoá SAU khi đã cài (chậm hơn, và một số file có
+# thể đã bị hardlink/dùng bởi postinst script). Đặt file này TRƯỚC MỌI
+# apt-get install trong script để mọi gói cài từ đây trở đi (kernel, DE,
+# LibreOffice, Firefox...) đều không unpack doc/man — đây là phần chiếm
+# dung lượng lớn nhất trong 1 desktop ISO đầy đủ.
+#
+# Giữ lại /usr/share/doc/*/copyright: Debian Policy §12.5 yêu cầu MỌI gói
+# phải có file copyright — xoá hết sẽ vi phạm yêu cầu ghi nhận bản quyền
+# của các package đi kèm.
+#
+# Đánh đổi: hệ thống cài xong sẽ KHÔNG có `man <lệnh>` / doc offline. Muốn
+# tắt tối ưu này (giữ đầy đủ doc/man) thì xoá file
+# /etc/dpkg/dpkg.cfg.d/01-hyggshi-nodoc trước khi build.
+mkdir -p /etc/dpkg/dpkg.cfg.d
+cat > /etc/dpkg/dpkg.cfg.d/01-hyggshi-nodoc <<'DPKGCFGEOF'
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/groff/*
+path-exclude=/usr/share/info/*
+path-exclude=/usr/share/lintian/*
+path-exclude=/usr/share/linda/*
+DPKGCFGEOF
+
 echo "===== Cài kernel + base system (fallback giữa generic/amd64) ====="
 apt-get install -y linux-image-generic live-boot systemd-sysv \
   plymouth plymouth-themes network-manager sudo locales tzdata \
@@ -316,6 +343,53 @@ if command -v fastfetch > /dev/null 2>&1; then
   echo "OK: đã cài fastfetch ($(fastfetch --version 2>/dev/null | head -n1))"
 else
   echo "CẢNH BÁO: fastfetch KHÔNG được cài — build vẫn tiếp tục, chỉ là thiếu tool này." >&2
+fi
+
+echo "===== Công cụ dev cơ bản (cmake, gcc) ====="
+# Cần để build các component C++ tự sinh trong repo ngay TRÊN máy đã cài
+# đặt (hyggshi-welcome, hyggshi-theme-daemon — xem scripts/make-welcome.sh,
+# make-theme-daemon.sh), không chỉ lúc build ISO trên CI. Best-effort (không
+# fatal): thiếu 1 trong 2 gói này không nên làm hỏng cả build ISO.
+for pkg in cmake gcc; do
+  if ! apt-get install -y "$pkg"; then
+    echo "CẢNH BÁO: cài gói '$pkg' thất bại — không fatal, nhưng build C++ trên máy đích sẽ thiếu công cụ này." >&2
+  fi
+done
+
+echo "===== Bộ gõ tiếng Việt (Fcitx5 + engine Unikey) ====="
+# fcitx5-unikey: engine gõ tiếng Việt kiểu Telex/VNI quen thuộc (tương đương
+# Unikey trên Windows), chạy trên nền fcitx5. fcitx5-frontend-gtk3/qt5: cầu
+# nối để app GTK3 (XFCE mặc định) và Qt5 nhận input method (Qt6 dùng chung
+# module Qt5 qua tương thích ngược của fcitx5, KHÔNG cần gói riêng).
+#
+# Cài TỪNG gói + best-effort (không fatal): fcitx5 chỉ có trong repo chính
+# thức từ Debian 12/Ubuntu 22.04 trở lên — distro cũ hơn sẽ báo "Unable to
+# locate package" cho 1 vài gói, giống cách xử lý fastfetch ở trên, không
+# nên làm fail cả build ISO chỉ vì thiếu bộ gõ.
+for pkg in fcitx5 fcitx5-unikey fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5; do
+  if ! apt-get install -y "$pkg"; then
+    echo "CẢNH BÁO: cài gói '$pkg' (Fcitx5) thất bại — bỏ qua gói này." >&2
+  fi
+done
+
+if command -v fcitx5 > /dev/null 2>&1; then
+  echo "OK: đã cài fcitx5."
+  # Biến môi trường input-method chuẩn (GTK/Qt/X11 XIM/SDL) — ghi vào
+  # /etc/environment để áp dụng cho MỌI phiên đăng nhập trên MỌI DE (PAM/
+  # systemd đọc file này lúc login), không phụ thuộc DE nào cấu hình riêng.
+  if ! grep -q '^GTK_IM_MODULE=' /etc/environment 2>/dev/null; then
+    cat >> /etc/environment <<'ENVEOF'
+GTK_IM_MODULE=fcitx
+QT_IM_MODULE=fcitx
+XMODIFIERS=@im=fcitx
+SDL_IM_MODULE=fcitx
+ENVEOF
+    echo "OK: đã ghi biến môi trường input-method vào /etc/environment."
+  fi
+  # Gói fcitx5 (Debian/Ubuntu) tự cài sẵn autostart tại
+  # /etc/xdg/autostart/org.fcitx.Fcitx5.desktop — không cần tạo tay.
+else
+  echo "CẢNH BÁO: fcitx5 KHÔNG được cài — bộ gõ tiếng Việt sẽ không khả dụng, build vẫn tiếp tục." >&2
 fi
 
 # gói thêm do người dùng chỉ định
@@ -640,6 +714,38 @@ fi
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*
+
+echo "===== Dọn thêm để giảm kích thước ISO (doc/man sót từ base debootstrap, cache, log) ====="
+# path-exclude ở ĐẦU file chỉ chặn được các gói cài SAU nó trong desktop.sh
+# này — base rootfs debootstrap (chạy TRƯỚC desktop.sh, ở build.sh trên
+# host) có thể đã unpack sẵn doc/man cho các gói base trước khi ta kịp cài
+# dpkg.cfg.d. Dọn nốt phần còn sót ở đây.
+#
+# Giữ lại copyright (yêu cầu Debian Policy §12.5) bằng cách backup ra /tmp
+# TRƯỚC khi xoá /usr/share/doc, rồi khôi phục lại đúng cấu trúc
+# <package>/copyright sau khi xoá phần còn lại.
+find /usr/share/doc -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r d; do
+  [ -f "$d/copyright" ] && cp "$d/copyright" "/tmp/$(basename "$d")-copyright" 2>/dev/null
+done
+rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /usr/share/groff/* 2>/dev/null || true
+mkdir -p /usr/share/doc
+for f in /tmp/*-copyright; do
+  [ -f "$f" ] || continue
+  pkgname="$(basename "$f" -copyright)"
+  mkdir -p "/usr/share/doc/$pkgname"
+  mv "$f" "/usr/share/doc/$pkgname/copyright"
+done
+
+# Cache/log/tmp không cần đóng gói trong ISO — hệ thống tự tạo lại lúc chạy
+# thật. truncate thay vì rm cho log hệ thống vẫn muốn giữ file (một số
+# service không tự tạo lại file nếu thiếu, chỉ ghi tiếp vào file rỗng).
+rm -rf /var/cache/apt/archives/*.deb /tmp/* /var/tmp/* 2>/dev/null || true
+find /var/log -type f -exec truncate -s 0 {} \; 2>/dev/null || true
+
+# .git để lại bởi bước clone GTK theme Windows-10 ở trên (chỉ là metadata
+# lịch sử git, không cần trong hệ thống đã cài) — vài chục MB không đáng có
+# trong ISO.
+rm -rf /usr/share/themes/Windows-10/.git 2>/dev/null || true
 
 echo "Checkpoint kernel CUỐI desktop.sh: $(ls /boot/vmlinuz-* 2>/dev/null || echo 'KHÔNG CÓ FILE')"
 echo "===== desktop.sh xong ====="
