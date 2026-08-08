@@ -2,7 +2,8 @@
 # install-ecosystem-for-hyggshi.sh — cài đặt hệ sinh thái ứng dụng Hyggshi OS:
 #   1) Tự động mở mọi file .zip trong app-for-hyggshi/
 #   2) Cài mọi file .deb tìm thấy bên trong (apt install, fallback dpkg -i)
-#   3) Ghi lại config.json (logo, plugin, module) cho nexfetch
+#   3) Cài NexWM (nếu có trong zip) vào /usr/bin + tạo X11 session cho LightDM
+#   4) Ghi lại config.json (logo, plugin, module) cho nexfetch
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
@@ -92,7 +93,39 @@ else
   done
 fi
 
-# ----- 3. Cấu hình logo + module cho nexfetch -----
+# ----- 3. Cài NexWM (nếu có trong app-for-hyggshi/nexwm-binary.zip) -----
+# Binary "nexwm" nằm ngay trong zip đã được giải nén ở bước 1 (không phải
+# .deb nên không nằm trong DEB_FILES), tìm theo tên file thay vì hardcode
+# đường dẫn zip cụ thể — script vẫn chạy đúng nếu tên zip đổi.
+NEXWM_BIN=""
+while IFS= read -r -d '' CANDIDATE; do
+  NEXWM_BIN="$CANDIDATE"
+  break
+done < <(find "$WORK_DIR" -maxdepth 3 -type f -name "nexwm" -print0)
+
+if [ -z "$NEXWM_BIN" ]; then
+  echo "⚠️  Không tìm thấy binary 'nexwm' trong các zip đã giải nén — bỏ qua bước cài NexWM."
+else
+  echo "===== Cài NexWM ====="
+  echo "🗂  Binary: $NEXWM_BIN"
+  $SUDO install -Dm755 "$NEXWM_BIN" /usr/bin/nexwm
+  echo "✅ Đã cài /usr/bin/nexwm"
+
+  XSESSION_PATH="/usr/share/xsessions/nexwm.desktop"
+  $SUDO mkdir -p "$(dirname "$XSESSION_PATH")"
+  cat << 'DESKTOP' | $SUDO tee "$XSESSION_PATH" > /dev/null
+[Desktop Entry]
+Name=NexWM
+Comment=Nex Window Manager
+Exec=/usr/bin/nexwm
+TryExec=/usr/bin/nexwm
+Type=Application
+DesktopNames=NexWM
+DESKTOP
+  echo "✅ Đã tạo $XSESSION_PATH — LightDM có thể nhận NexWM như một session."
+fi
+
+# ----- 4. Cấu hình logo + module cho nexfetch -----
 echo "===== Cấu hình config.json (logo, plugin, module) cho nexfetch ====="
 
 # nexfetch đọc config từ /etc/nexfetch/config.json (conffile của gói .deb)
