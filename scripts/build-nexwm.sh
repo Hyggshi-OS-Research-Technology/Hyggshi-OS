@@ -37,7 +37,8 @@ apt-get update
 apt-get install -y --no-install-recommends \
   git build-essential pkg-config \
   libx11-dev libxcb1-dev libxcb-util-dev libxcb-util0-dev \
-  libxcb-randr0-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-keysyms1-dev
+  libxcb-randr0-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-keysyms1-dev \
+  qt6-base-dev qt6-base-dev-tools
 
 echo "===== Clone NexWM (${NEXWM_REPO_URL} @ ${NEXWM_REF}) ====="
 rm -rf "$SRC_DIR"
