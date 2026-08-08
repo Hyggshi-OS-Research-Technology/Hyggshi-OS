@@ -106,12 +106,20 @@ else
   : > "$APP_DIR/resources/icons/theme-dark.png"
 fi
 
+if [ -f "$REPO_ROOT/iso-config/branding/car-auto.png" ]; then
+  cp "$REPO_ROOT/iso-config/branding/car-auto.png" "$APP_DIR/resources/icons/theme-auto.png"
+else
+  echo "⚠️  Không thấy iso-config/branding/car-auto.png — thẻ 'Tự động' sẽ dùng swatch gradient."
+  : > "$APP_DIR/resources/icons/theme-auto.png"
+fi
+
 cat > "$APP_DIR/resources/hyggshi-welcome.qrc" <<'QRCEOF'
 <RCC>
   <qresource prefix="/">
     <file>icons/logo.png</file>
     <file>icons/theme-light.png</file>
     <file>icons/theme-dark.png</file>
+    <file>icons/theme-auto.png</file>
   </qresource>
 </RCC>
 QRCEOF
@@ -412,13 +420,15 @@ QWidget *MainWindow::buildThemePage() {
   cardsRow->setSpacing(16);
   m_themeGroup = new QButtonGroup(page);
 
-  // "background" dùng cho thẻ Tự động (không có ảnh preview riêng) và cũng
-  // là fallback nếu ảnh car-light.png/car-Dark.png không nhúng được lúc
-  // build (file rỗng placeholder — xem make-welcome.sh phần copy resource).
+  // "background" dùng khi ảnh preview không nhúng được lúc build (file rỗng
+  // placeholder — xem phần copy resource phía trên) — fallback về swatch
+  // màu phẳng để card không bị vỡ layout.
   // "wallpaper" là đường dẫn THẬT trên đĩa (được CMake install() vào
-  // /usr/share/backgrounds/hyggshi/) — dùng để áp wallpaper tự động lúc
-  // finishSetup(), không phải đường dẫn qrc (":/...") vì xfconf-query cần
-  // path thật trên filesystem.
+  // /usr/share/backgrounds/hyggshi/) — dùng làm fallback áp 1 lần lúc
+  // finishSetup() khi hyggshi-theme-daemon CHƯA được cài (xem finishSetup()
+  // + scripts/make-theme-daemon.sh); khi daemon có sẵn, việc áp wallpaper
+  // theo giờ (cho "auto") hay theo theme (cho "light"/"dark") do daemon lo,
+  // welcome chỉ cần ghi lựa chọn vào xfconf channel "hyggshi".
   struct ThemeOpt { QString id, label, background, wallpaper; };
   const QVector<ThemeOpt> opts = {
       {"light", tr("Sáng"), "#f4f5f7",
@@ -439,13 +449,11 @@ QWidget *MainWindow::buildThemePage() {
     card->setCursor(Qt::PointingHandCursor);
     card->setText("\n\n" + opt.label);
 
-    // Sáng/Tối: hiện thumbnail wallpaper thật (car-light.png/car-Dark.png)
-    // làm nền thẻ qua border-image, chữ trắng cho dễ đọc trên ảnh. Tự động:
-    // giữ swatch gradient phẳng như cũ vì chưa có ảnh preview riêng.
-    const QString bodyStyle = (opt.id == "light" || opt.id == "dark")
-        ? QString("border-image: url(:/icons/theme-%1.png) 0 0 0 0 stretch stretch;"
-                   " color:#ffffff;").arg(opt.id == "light" ? "light" : "dark")
-        : QString("background:%1; color:#1b1d23;").arg(opt.background);
+    // Cả 3 thẻ đều hiện thumbnail wallpaper thật (car-light/car-Dark/car-auto)
+    // làm nền qua border-image, chữ trắng cho dễ đọc trên ảnh.
+    const QString bodyStyle =
+        QString("border-image: url(:/icons/theme-%1.png) 0 0 0 0 stretch stretch;"
+                 " color:#ffffff;").arg(opt.id);
 
     card->setStyleSheet(QString(
         "QPushButton { border-radius:10px; border:2px solid #2c2f38;"
@@ -461,7 +469,8 @@ QWidget *MainWindow::buildThemePage() {
   }
 
   auto *note = new QLabel(
-      tr("Áp dụng cho toàn hệ thống sau khi hoàn tất — hình nền sẽ tự đổi theo giao diện bạn chọn."));
+      tr("Áp dụng cho toàn hệ thống sau khi hoàn tất — hình nền sẽ tự đổi theo giao diện bạn chọn."
+         " Chế độ Tự động chuyển Sáng/Tối theo giờ (mặc định 6:00 và 18:00)."));
   note->setWordWrap(true);
   note->setStyleSheet("color:#6f7480; font-size:11px; margin-top:10px;");
 
@@ -715,9 +724,27 @@ void MainWindow::finishSetup() {
         {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
   }
 
-  // Tự động áp wallpaper tương ứng theme đã chọn ở trang "Chọn giao diện"
-  // (m_selectedWallpaper được set ngay khi user bấm thẻ Sáng/Tối/Tự động).
-  applyWallpaper(m_selectedWallpaper);
+  // Ghi lựa chọn (Sáng/Tối/Tự động) vào channel xfconf riêng "hyggshi" —
+  // nếu hyggshi-theme-daemon (scripts/make-theme-daemon.sh) đang chạy, nó
+  // lắng nghe property-changed trên channel này và tự áp lại wallpaper
+  // ngay lập tức (đúng theo giờ hiện tại nếu là "auto"), không cần gọi gì
+  // thêm ở đây — xem README của hyggshi-theme-daemon để biết chi tiết.
+  if (QStandardPaths::findExecutable("xfconf-query") != "") {
+    QProcess::execute("xfconf-query",
+        {"-c", "hyggshi", "-p", "/theme/mode", "-n", "-t", "string",
+         "-s", m_selectedTheme});
+  }
+
+  // Daemon chưa được cài (vd. ISO chưa chạy make-theme-daemon.sh, hoặc bị
+  // gỡ) — fallback về cách cũ: tự áp wallpaper MỘT LẦN ngay tại đây. "auto"
+  // sẽ tạm hiện đúng wallpaper Sáng cho tới khi có daemon lo phần đổi theo
+  // giờ, thay vì không đổi gì cả.
+  const bool daemonInstalled =
+      QFile::exists("/usr/bin/hyggshi-theme-daemon") ||
+      QFile::exists("/usr/local/bin/hyggshi-theme-daemon");
+  if (!daemonInstalled) {
+    applyWallpaper(m_selectedWallpaper);
+  }
 
   // Đánh dấu đã hoàn tất welcome để autostart không hiện lại lần sau —
   // CHỈ khi người dùng đã tick "Không hỏi lại lần sau" ở trang Xong.
