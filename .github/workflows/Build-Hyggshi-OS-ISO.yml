@@ -113,6 +113,10 @@ on:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
         default: ""
+      build_nexwm:
+        description: "Build & cài NexWM từ source (chroot, scripts/build-nexwm.sh) — KHÔNG mặc định, chỉ bật khi cần"
+        type: boolean
+        default: false
       release_iso:
         description: "Attach ISO to a GitHub Release?"
         type: boolean
@@ -163,6 +167,10 @@ env:
   # $GITHUB_ENV.
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+  # Không gộp vào feature_flags (CSV) vì đây là toggle build-time riêng cho
+  # NexWM, không phải feature bật/tắt trong desktop.sh. Mặc định false —
+  # bước "[build-nexwm.sh]" bên dưới chỉ chạy khi input này = true.
+  BUILD_NEXWM: ${{ github.event.inputs.build_nexwm || 'false' }}
   # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
   # file cùng tên trong iso-config/branding/ (xem WALLPAPER_FILE/LOGO_FILE/
   # PLYMOUTH_LOGO_FILE trong branding.sh). PLYMOUTH_LOGO_URL để trống sẽ
@@ -275,7 +283,11 @@ jobs:
       # session file cần nằm trong rootfs của ISO, không phải máy runner CI.
       # Chạy SONG SONG với bước cài .deb nexfetch/nexwm-binary.zip có sẵn ở
       # bước [install-ecosystem-for-hyggshi.sh] bên dưới — không xoá bước đó.
+      # TUỲ CHỌN, KHÔNG mặc định: chỉ chạy khi input build_nexwm = true
+      # (xem BUILD_NEXWM ở env cấp workflow) — build từ source tốn nhiều
+      # thời gian CI hơn hẳn so với cài sẵn .deb ở bước ecosystem bên dưới.
       - name: "[build-nexwm.sh] Build & cài NexWM từ source (trong chroot)"
+        if: ${{ env.BUILD_NEXWM == 'true' }}
         run: |
           set -o pipefail
           sudo cp scripts/build-nexwm.sh "${CHROOT_DIR}/tmp/build-nexwm.sh"
