@@ -98,17 +98,17 @@ on:
       # LƯU Ý: workflow_dispatch chỉ cho phép TỐI ĐA 25 `inputs` (giới hạn
       # cứng của GitHub Actions — vượt quá là toàn bộ workflow bị từ chối
       # với lỗi "Invalid workflow file" ngay từ lúc parse, chưa kịp chạy).
-      # Vì vậy 5 toggle bật/tắt tính năng (browser/office/autologin/
+      # Vì vậy 6 toggle bật/tắt tính năng (browser/office/autologin/
       # autoscale/welcome wizard) được GỘP CHUNG vào 1 input CSV duy nhất
-      # `feature_flags` thay vì 5 input `type: boolean` riêng — xem step
+      # `feature_flags` thay vì 6 input `type: boolean` riêng — xem step
       # "Resolve feature_flags..." bên dưới, nơi CSV này được tách ra lại
-      # thành đúng 5 biến INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
-      # AUTOSCALE_DISPLAY/WELCOME_WIZARD như cũ — không script nào khác
+      # thành đúng 6 biến INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
+      # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như cũ — không script nào khác
       # (desktop.sh, welcome.sh...) phải đổi theo.
       feature_flags:
-        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome. Vd bỏ welcome wizard: 'browser,autologin,autoscale'"
+        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon. Vd bỏ welcome wizard: 'browser,autologin,autoscale,theme-daemon'"
         required: false
-        default: "browser,autologin,autoscale,welcome"
+        default: "browser,autologin,autoscale,welcome,theme-daemon"
       extra_packages:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
@@ -158,10 +158,10 @@ env:
   OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
   OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
   OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
-  # INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD
-  # KHÔNG đặt ở đây (lý do giống DEBIAN_VERSION/UBUNTU_VERSION/... phía trên):
-  # từ khi 5 input boolean này bị gộp chung thành 1 input CSV `feature_flags`
-  # (để không vượt giới hạn 25 inputs của workflow_dispatch), 5 biến này chỉ
+  # INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/
+  # THEME_DAEMON KHÔNG đặt ở đây (lý do giống DEBIAN_VERSION/UBUNTU_VERSION/... phía trên):
+  # từ khi 6 input boolean này bị gộp chung thành 1 input CSV `feature_flags`
+  # (để không vượt giới hạn 25 inputs của workflow_dispatch), 6 biến này chỉ
   # có thể tách ra được LÚC CHẠY, không phải lúc parse workflow — xem step
   # "Resolve feature_flags..." ở đầu job build-iso, nơi chúng được ghi vào
   # $GITHUB_ENV.
@@ -213,11 +213,11 @@ jobs:
           esac
 
       # Tách input CSV `feature_flags` (xem ghi chú ở khối `inputs:` phía
-      # trên) thành lại đúng 5 biến env như trước khi gộp — mọi step/script
+      # trên) thành lại đúng 6 biến env như trước khi gộp — mọi step/script
       # phía dưới (desktop.sh, welcome.sh...) không cần biết gì về việc gộp
       # này, vẫn đọc INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
-      # AUTOSCALE_DISPLAY/WELCOME_WIZARD như bình thường.
-      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD"
+      # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như bình thường.
+      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON"
         run: |
           # Bọc thêm dấu phẩy ở 2 đầu để match "$1" bằng pattern "*,$1,*"
           # không bị dính nhầm token con (vd "autologin" không match nhầm
@@ -235,6 +235,7 @@ jobs:
             echo "AUTOLOGIN=$(has_flag autologin)"
             echo "AUTOSCALE_DISPLAY=$(has_flag autoscale)"
             echo "WELCOME_WIZARD=$(has_flag welcome)"
+            echo "THEME_DAEMON=$(has_flag theme-daemon)"
           } >> "$GITHUB_ENV"
 
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
@@ -337,6 +338,30 @@ jobs:
             SRC_DIR="/tmp/hyggshi-welcome-src" \
             /tmp/welcome.sh 2>&1 | tee welcome-debug.log
 
+      # === 4.6) THEME DAEMON: sinh source (host, không cần libxfconf) rồi
+      # build+cài THẬT bên trong chroot (theme-daemon.sh — cần đúng
+      # glibc/libxfconf của ISO cuối cùng, không phải của runner). Tách 2
+      # bước giống hệt lý do make-welcome.sh/welcome.sh ở trên. Đặt SAU
+      # branding.sh về mặt logic thì hợp lý hơn (daemon chỉ đọc wallpaper
+      # branding.sh copy vào, không phụ thuộc thứ tự build), nhưng để CÙNG
+      # khối "app-for-hyggshi" build ở đây cho nhất quán với welcome.
+      - name: "[make-theme-daemon.sh] Sinh source code Hyggshi Theme Daemon (C++/xfconf)"
+        if: ${{ env.THEME_DAEMON == 'true' }}
+        run: bash scripts/make-theme-daemon.sh
+
+      - name: "[theme-daemon.sh] Build & cài Hyggshi Theme Daemon (trong chroot)"
+        if: ${{ env.THEME_DAEMON == 'true' }}
+        run: |
+          set -o pipefail
+          sudo mkdir -p "${CHROOT_DIR}/tmp/hyggshi-theme-daemon-src"
+          sudo cp -r app-for-hyggshi/hyggshi-theme-daemon/. "${CHROOT_DIR}/tmp/hyggshi-theme-daemon-src/"
+          sudo cp app-for-hyggshi/theme-daemon.sh "${CHROOT_DIR}/tmp/theme-daemon.sh"
+          sudo chmod +x "${CHROOT_DIR}/tmp/theme-daemon.sh"
+          sudo chroot "${CHROOT_DIR}" env \
+            DEBUG_MODE="$DEBUG_MODE" \
+            SRC_DIR="/tmp/hyggshi-theme-daemon-src" \
+            /tmp/theme-daemon.sh 2>&1 | tee theme-daemon-debug.log
+
       # === 5) BRANDING: wallpaper, logo, os-release, panel, autostart ===
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
         run: |
@@ -390,6 +415,11 @@ jobs:
             echo "===== hyggshi-welcome (binary + desktop entry) ====="
             sudo ls -la "$CHROOT/usr/bin/hyggshi-welcome" 2>/dev/null || echo "(chưa cài — WELCOME_WIZARD=false hoặc build lỗi)"
             sudo cat "$CHROOT/usr/share/applications/hyggshi-welcome.desktop" 2>/dev/null || true
+            echo
+
+            echo "===== hyggshi-theme-daemon (binary + systemd preset) ====="
+            sudo ls -la "$CHROOT/usr/bin/hyggshi-theme-daemon" 2>/dev/null || echo "(chưa cài — THEME_DAEMON=false hoặc build lỗi)"
+            sudo cat "$CHROOT/usr/lib/systemd/user-preset/90-hyggshi-theme-daemon.preset" 2>/dev/null || true
             echo
 
             echo "===== update-alternatives desktop-background ====="
