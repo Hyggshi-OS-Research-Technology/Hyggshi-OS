@@ -552,7 +552,17 @@ FFCFG
     sudo mkdir -p "$FF_USER_HOME/.config/fastfetch"
     sudo cp "$CHROOT/etc/xdg/fastfetch/config.jsonc" \
       "$FF_USER_HOME/.config/fastfetch/config.jsonc"
-    sudo chroot "$CHROOT" chown -R "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME/.config/fastfetch"
+    # QUAN TRỌNG: chown luôn "$HOME/.config" (KHÔNG chỉ .config/fastfetch).
+    # useradd -m (desktop.sh) chạy TRƯỚC khi bất kỳ nội dung nào được thêm
+    # vào /etc/skel/.config, nên tại thời điểm đó user CHƯA có sẵn thư mục
+    # .config trong home. `sudo mkdir -p` ở trên chạy bằng HOST root (không
+    # qua chroot exec) nên tự tạo mới CẢ ".config" lẫn ".config/fastfetch",
+    # và cả hai đều thuộc về root:root. Nếu chỉ chown mỗi ".config/fastfetch"
+    # như trước, ".config" gốc vẫn còn là root:root — mọi app khác cần ghi
+    # config riêng vào trong đó (caja, mate-settings-daemon, v.v.) sẽ bị từ
+    # chối quyền, gây đúng lỗi "The path for the directory containing caja
+    # settings need read and write permissions: /home/<user>/.config/caja".
+    sudo chroot "$CHROOT" chown -R "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME/.config"
 
     # Chạy fastfetch mỗi khi mở terminal mới — chỉ thêm nếu chưa có, tránh
     # nhân đôi khi build lại nhiều lần trên cùng chroot.
