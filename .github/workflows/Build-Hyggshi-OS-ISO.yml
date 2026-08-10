@@ -106,9 +106,9 @@ on:
       # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như cũ — không script nào khác
       # (desktop.sh, welcome.sh...) phải đổi theo.
       feature_flags:
-        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon. Vd bỏ welcome wizard: 'browser,autologin,autoscale,theme-daemon'"
+        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
         required: false
-        default: "browser,autologin,autoscale,welcome,theme-daemon"
+        default: "browser,autologin,autoscale,welcome,auto-theme"
       extra_packages:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
@@ -217,12 +217,12 @@ jobs:
       # phía dưới (desktop.sh, welcome.sh...) không cần biết gì về việc gộp
       # này, vẫn đọc INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
       # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như bình thường.
-      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON"
+      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON/AUTO_THEME"
         run: |
           # Bọc thêm dấu phẩy ở 2 đầu để match "$1" bằng pattern "*,$1,*"
           # không bị dính nhầm token con (vd "autologin" không match nhầm
           # bên trong 1 token dài hơn nào đó).
-          FLAGS=",${{ github.event.inputs.feature_flags || 'browser,autologin,autoscale,welcome' }},"
+          FLAGS=",${{ github.event.inputs.feature_flags || 'browser,autologin,autoscale,welcome,auto-theme' }},"
           has_flag() {
             case "$FLAGS" in
               *",$1,"*) echo true ;;
@@ -236,6 +236,7 @@ jobs:
             echo "AUTOSCALE_DISPLAY=$(has_flag autoscale)"
             echo "WELCOME_WIZARD=$(has_flag welcome)"
             echo "THEME_DAEMON=$(has_flag theme-daemon)"
+            echo "AUTO_THEME=$(has_flag auto-theme)"
           } >> "$GITHUB_ENV"
 
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
@@ -362,6 +363,29 @@ jobs:
             SRC_DIR="/tmp/hyggshi-theme-daemon-src" \
             /tmp/theme-daemon.sh 2>&1 | tee theme-daemon-debug.log
 
+      # === 4.7) AUTO THEME: bản thay thế nhẹ cho theme-daemon (bash +
+      # systemd timer, xem scripts/make-auto-theme.sh) — KHÔNG build gì cả
+      # (không cmake/libxfconf), auto-theme.sh chỉ copy file + systemctl
+      # enable nên không cần tách riêng thành 2 bước sinh-source/build như
+      # welcome.sh & theme-daemon.sh, nhưng vẫn giữ đúng pattern
+      # make-*.sh (host) + *.sh (chroot) để nhất quán với 2 cái kia.
+      - name: "[make-auto-theme.sh] Sinh source code Hyggshi Auto Theme (bash)"
+        if: ${{ env.AUTO_THEME == 'true' }}
+        run: bash scripts/make-auto-theme.sh
+
+      - name: "[auto-theme.sh] Cài Hyggshi Auto Theme (trong chroot, không cần build)"
+        if: ${{ env.AUTO_THEME == 'true' }}
+        run: |
+          set -o pipefail
+          sudo mkdir -p "${CHROOT_DIR}/tmp/hyggshi-theme-src"
+          sudo cp -r app-for-hyggshi/hyggshi-theme/. "${CHROOT_DIR}/tmp/hyggshi-theme-src/"
+          sudo cp app-for-hyggshi/auto-theme.sh "${CHROOT_DIR}/tmp/auto-theme.sh"
+          sudo chmod +x "${CHROOT_DIR}/tmp/auto-theme.sh"
+          sudo chroot "${CHROOT_DIR}" env \
+            DEBUG_MODE="$DEBUG_MODE" \
+            SRC_DIR="/tmp/hyggshi-theme-src" \
+            /tmp/auto-theme.sh 2>&1 | tee auto-theme-debug.log
+
       # === 5) BRANDING: wallpaper, logo, os-release, panel, autostart ===
       - name: "[branding.sh] Wallpaper / logo / rebrand / panel"
         run: |
@@ -420,6 +444,11 @@ jobs:
             echo "===== hyggshi-theme-daemon (binary + systemd preset) ====="
             sudo ls -la "$CHROOT/usr/bin/hyggshi-theme-daemon" 2>/dev/null || echo "(chưa cài — THEME_DAEMON=false hoặc build lỗi)"
             sudo cat "$CHROOT/usr/lib/systemd/user-preset/90-hyggshi-theme-daemon.preset" 2>/dev/null || true
+
+            echo "===== hyggshi-auto-theme (bash script + systemd timer) ====="
+            sudo ls -la "$CHROOT/usr/local/bin/hyggshi-auto-theme" 2>/dev/null || echo "(chưa cài — AUTO_THEME=false hoặc cài lỗi)"
+            sudo ls -la "$CHROOT/etc/systemd/system/timers.target.wants/hyggshi-auto-theme.timer" 2>/dev/null || true
+            sudo cat "$CHROOT/etc/hyggshi/theme.conf" 2>/dev/null || true
             echo
 
             echo "===== update-alternatives desktop-background ====="
