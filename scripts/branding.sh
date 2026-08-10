@@ -42,9 +42,15 @@ if [ -z "$WALLPAPER_FILE" ]; then
   fi
 fi
 
-# 3. Áp dụng, hoặc fallback gradient nếu cả 2 cách trên đều fail
+# 3. Áp dụng, hoặc fallback gradient nếu cả 2 cách trên đều fail. KHÔNG còn
+# hardcode coi như wallpaper.png luôn tồn tại ở các bước sau — WALLPAPER_APPLIED
+# ghi lại đúng thực tế có/không có file, để mọi bước áp dụng (update-alternatives,
+# patch xfce4-desktop.xml, skel property, autostart script) chỉ chạy khi thật sự
+# có wallpaper, tránh trỏ vào 1 file không tồn tại.
+WALLPAPER_APPLIED=false
 if [ -n "$WALLPAPER_FILE" ]; then
   sudo cp "$WALLPAPER_FILE" "$CHROOT/usr/share/backgrounds/hyggshi/wallpaper.png"
+  WALLPAPER_APPLIED=true
   echo "Đã dùng wallpaper: $WALLPAPER_FILE"
 else
   echo "⚠️  Không lấy được wallpaper — tự tạo wallpaper gradient tạm thời."
@@ -52,48 +58,53 @@ else
   if command -v convert > /dev/null 2>&1; then
     convert -size 1920x1080 gradient:'#1a2a4a-#0d1220' /tmp/wallpaper.png
     sudo cp /tmp/wallpaper.png "$CHROOT/usr/share/backgrounds/hyggshi/wallpaper.png"
+    WALLPAPER_APPLIED=true
   else
     echo "⚠️  imagemagick không cài được — bỏ qua wallpaper, giữ theme mặc định."
   fi
 fi
 
-echo "===== Ghi đè default wallpaper qua update-alternatives (KHÔNG phụ thuộc"
-echo "     tên monitor hay script chạy lúc login — đây là cơ chế Debian dùng"
-echo "     để chọn ảnh nền mặc định, ổn định hơn nhiều so với xfconf runtime) ====="
-for LINK in "$CHROOT/etc/alternatives/desktop-background" \
-            "$CHROOT/usr/share/backgrounds/desktop-background" \
-            "$CHROOT/usr/share/images/desktop-base/desktop-background"; do
-  if [ -e "$LINK" ] || [ -L "$LINK" ]; then
-    sudo rm -f "$LINK"
-    sudo ln -sf /usr/share/backgrounds/hyggshi/wallpaper.png "$LINK"
-    echo "Đã trỏ $LINK -> wallpaper.png"
+if [ "$WALLPAPER_APPLIED" = "true" ]; then
+  echo "===== Ghi đè default wallpaper qua update-alternatives (KHÔNG phụ thuộc"
+  echo "     tên monitor hay script chạy lúc login — đây là cơ chế Debian dùng"
+  echo "     để chọn ảnh nền mặc định, ổn định hơn nhiều so với xfconf runtime) ====="
+  for LINK in "$CHROOT/etc/alternatives/desktop-background" \
+              "$CHROOT/usr/share/backgrounds/desktop-background" \
+              "$CHROOT/usr/share/images/desktop-base/desktop-background"; do
+    if [ -e "$LINK" ] || [ -L "$LINK" ]; then
+      sudo rm -f "$LINK"
+      sudo ln -sf /usr/share/backgrounds/hyggshi/wallpaper.png "$LINK"
+      echo "Đã trỏ $LINK -> wallpaper.png"
+    fi
+  done
+
+  # "desktop-background" thực ra do update-alternatives QUẢN LÝ (đã xác nhận
+  # qua log build: gói desktop-base đăng ký nó với auto mode), nên chỉ rm+ln
+  # tay có thể không "chính chủ" / dễ bị coi là lỗi bởi dpkg. Đăng ký đàng
+  # hoàng qua update-alternatives để chắc chắn được công nhận là active:
+  if sudo chroot "$CHROOT" bash -c 'command -v update-alternatives' > /dev/null 2>&1; then
+    sudo chroot "$CHROOT" update-alternatives --install \
+      /usr/share/images/desktop-base/desktop-background desktop-background \
+      /usr/share/backgrounds/hyggshi/wallpaper.png 100 2>&1 || true
+    sudo chroot "$CHROOT" update-alternatives --set \
+      desktop-background /usr/share/backgrounds/hyggshi/wallpaper.png 2>&1 || true
+    echo "--- update-alternatives --display desktop-background ---"
+    sudo chroot "$CHROOT" update-alternatives --display desktop-background 2>&1 || true
   fi
-done
 
-# "desktop-background" thực ra do update-alternatives QUẢN LÝ (đã xác nhận
-# qua log build: gói desktop-base đăng ký nó với auto mode), nên chỉ rm+ln
-# tay có thể không "chính chủ" / dễ bị coi là lỗi bởi dpkg. Đăng ký đàng
-# hoàng qua update-alternatives để chắc chắn được công nhận là active:
-if sudo chroot "$CHROOT" bash -c 'command -v update-alternatives' > /dev/null 2>&1; then
-  sudo chroot "$CHROOT" update-alternatives --install \
-    /usr/share/images/desktop-base/desktop-background desktop-background \
-    /usr/share/backgrounds/hyggshi/wallpaper.png 100 2>&1 || true
-  sudo chroot "$CHROOT" update-alternatives --set \
-    desktop-background /usr/share/backgrounds/hyggshi/wallpaper.png 2>&1 || true
-  echo "--- update-alternatives --display desktop-background ---"
-  sudo chroot "$CHROOT" update-alternatives --display desktop-background 2>&1 || true
+  echo "===== Patch trực tiếp mọi xfce4-desktop.xml có sẵn trong hệ thống (không"
+  echo "     phải file skel do ta tạo) — phòng trường hợp gói cài sẵn ghi đè lại ====="
+  FOUND_XMLS=$(sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" -name "xfce4-desktop.xml" 2>/dev/null || true)
+  for f in $FOUND_XMLS; do
+    echo "Patch: $f"
+    sudo sed -i -E \
+      -e 's#(<property name="last-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
+      -e 's#(<property name="image-style" type="int" value=")[0-9]+(")#\g<1>5\2#g' \
+      "$f" 2>/dev/null || true
+  done
+else
+  echo "===== Bỏ qua update-alternatives / patch xfce4-desktop.xml (không có wallpaper.png thật) ====="
 fi
-
-echo "===== Patch trực tiếp mọi xfce4-desktop.xml có sẵn trong hệ thống (không"
-echo "     phải file skel do ta tạo) — phòng trường hợp gói cài sẵn ghi đè lại ====="
-FOUND_XMLS=$(sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" -name "xfce4-desktop.xml" 2>/dev/null || true)
-for f in $FOUND_XMLS; do
-  echo "Patch: $f"
-  sudo sed -i -E \
-    -e 's#(<property name="last-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
-    -e 's#(<property name="image-style" type="int" value=")[0-9]+(")#\g<1>5\2#g' \
-    "$f" 2>/dev/null || true
-done
 
 echo "===== Rebrand os-release / lsb-release / banner ====="
 # Debian mặc định để /etc/os-release là symlink -> ../usr/lib/os-release.
@@ -623,6 +634,12 @@ cat <<XML | sudo tee "$SKEL/xfce4-panel.xml" > /dev/null
 XML
 fi
 
+# CHỈ ghi property "last-image" trỏ vào wallpaper.png khi file đó THẬT SỰ
+# tồn tại (WALLPAPER_APPLIED=true, xem khối wallpaper phía trên) — trước đây
+# hardcode giá trị này bất kể có wallpaper hay không, khiến xfdesktop trỏ
+# vào 1 file có thể không tồn tại. Không có wallpaper thì bỏ trống channel,
+# giữ nguyên theme/wallpaper mặc định của DE gốc.
+if [ "$WALLPAPER_APPLIED" = "true" ]; then
 cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfce4-desktop" version="1.0">
@@ -638,6 +655,9 @@ cat <<XML | sudo tee "$SKEL/xfce4-desktop.xml" > /dev/null
   </property>
 </channel>
 XML
+else
+  echo "Bỏ qua tạo $SKEL/xfce4-desktop.xml (không có wallpaper.png thật) — giữ wallpaper mặc định của DE gốc."
+fi
 
 # NOTE: GTK ThemeName and xfwm4 theme below are both set to "Windows-10",
 # which already gives the same end result as the Appearance dialog's
@@ -672,6 +692,14 @@ cat <<XML | sudo tee "$SKEL/xfwm4.xml" > /dev/null
 XML
 
 sudo chroot "$CHROOT" chown -R root:root /etc/skel/.config
+
+# Toàn bộ khối autostart set-wallpaper-lúc-login bên dưới CHỈ cài khi thật
+# sự có wallpaper.png (WALLPAPER_APPLIED=true) — trước đây script + autostart
+# entry luôn được cài bất kể có wallpaper hay không (script tự thoát ở
+# runtime nếu thiếu file, nhưng vẫn hardcode cài đặt "chờ sẵn" một tính năng
+# không có gì để áp). Phần copy config panel/theme cho user ở CUỐI file
+# không phụ thuộc wallpaper nên vẫn chạy bình thường sau khối if này.
+if [ "$WALLPAPER_APPLIED" = "true" ]; then
 
 echo "===== Script tự set wallpaper lúc login (dò đúng property monitor) ====="
 cat <<'SCRIPT' | sudo tee "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh" > /dev/null
@@ -796,6 +824,10 @@ if [ -f "$CHROOT/etc/xdg/autostart/hyggshi-wallpaper.desktop" ]; then
 else
   echo "LỖI: cài autostart system-wide thất bại!"
   exit 1
+fi
+
+else
+  echo "===== Bỏ qua autostart set-wallpaper (không có wallpaper.png thật) ====="
 fi
 
 # user đã được tạo (useradd -m trong desktop.sh) TRƯỚC bước này nên đã copy
