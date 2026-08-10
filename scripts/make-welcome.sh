@@ -735,16 +735,23 @@ void MainWindow::finishSetup() {
          "-s", m_selectedTheme});
   }
 
-  // Daemon chưa được cài (vd. ISO chưa chạy make-theme-daemon.sh, hoặc bị
-  // gỡ) — fallback về cách cũ: tự áp wallpaper MỘT LẦN ngay tại đây. "auto"
-  // sẽ tạm hiện đúng wallpaper Sáng cho tới khi có daemon lo phần đổi theo
-  // giờ, thay vì không đổi gì cả.
-  const bool daemonInstalled =
-      QFile::exists("/usr/bin/hyggshi-theme-daemon") ||
-      QFile::exists("/usr/local/bin/hyggshi-theme-daemon");
-  if (!daemonInstalled) {
-    applyWallpaper(m_selectedWallpaper);
-  }
+  // LUÔN áp wallpaper MỘT LẦN ngay tại đây, bất kể hyggshi-theme-daemon đã
+  // được cài hay chưa. Trước đây chỗ này chỉ gọi applyWallpaper() khi
+  // KHÔNG tìm thấy binary daemon trên đĩa (QFile::exists), với giả định
+  // "nếu daemon có cài thì tự nó sẽ đổi wallpaper qua property-changed".
+  // Vấn đề: daemon chạy qua systemd --user (WantedBy=graphical-session.
+  // target), khởi động gần như SONG SONG với autostart của hyggshi-welcome
+  // — không có gì đảm bảo nó đã start + kết nối signal xong đúng lúc
+  // welcome ghi property, nhất là khi người dùng bấm "Bỏ qua"/"Tiếp tục"
+  // rất nhanh để hoàn tất welcome ngay (start nhanh). Nếu daemon chưa kịp
+  // chạy tại thời điểm đó, hình nền sẽ KHÔNG đổi ngay như mong đợi — chỉ
+  // đổi (nếu có) khi daemon khởi động xong và tự áp state ban đầu, không
+  // đáng tin cậy 100% ở mọi thứ tự session/DE.
+  //
+  // Gọi applyWallpaper() vô điều kiện là an toàn: nếu daemon cũng đang
+  // chạy, nó sẽ ghi lại đúng giá trị tương ứng với mode vừa lưu (không
+  // xung đột) và tiếp quản việc tự đổi theo giờ cho chế độ "auto" sau đó.
+  applyWallpaper(m_selectedWallpaper);
 
   // Đánh dấu đã hoàn tất welcome để autostart không hiện lại lần sau —
   // CHỈ khi người dùng đã tick "Không hỏi lại lần sau" ở trang Xong.
