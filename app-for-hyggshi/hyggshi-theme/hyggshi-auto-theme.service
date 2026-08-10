@@ -1,0 +1,8 @@
+[Unit]
+Description=Hyggshi auto theme — doi wallpaper Sang/Toi theo gio (chay 1 lan roi thoat)
+# Can /run/user/<uid>/bus cua phien dang nhap da san sang.
+After=systemd-logind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hyggshi-auto-theme

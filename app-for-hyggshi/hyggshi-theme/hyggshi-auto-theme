@@ -1,0 +1,118 @@
+#!/bin/bash
+# hyggshi-auto-theme — thay thế hyggshi-theme-daemon (C++/libxfconf) bằng
+# 1 script bash chạy ĐỊNH KỲ qua systemd timer (không chạy nền liên tục,
+# gần như 0 RAM lúc rảnh). Mỗi lần chạy:
+#   1. Đọc config (system-wide /etc/hyggshi/theme.conf, user override
+#      ~/.config/hyggshi/theme.conf nếu có) để biết MODE + khung giờ.
+#   2. Tính theme muốn áp (light/dark).
+#   3. Nếu GIỐNG lần áp gần nhất thì thoát ngay — KHÔNG gọi lại
+#      hyggshi-set-wallpaper.sh, vì script đó restart hẳn xfdesktop
+#      (killall + relaunch), gọi mỗi 5 phút dù không đổi gì sẽ làm màn
+#      hình giật/nháy liên tục.
+#   4. Nếu khác, tự dò phiên đồ hoạ (X11/Wayland) đang active trên máy qua
+#      loginctl, rồi sudo -u <user> kèm đúng DISPLAY/DBUS_SESSION_BUS_ADDRESS
+#      để gọi hyggshi-set-wallpaper.sh — vì service này chạy bằng ROOT
+#      (systemd SYSTEM service, không phải --user), xfconf-query cần đúng
+#      D-Bus session bus của user thì mới ghi được, gọi thẳng bằng root sẽ
+#      fail (không lỗi ồn ào, chỉ lặng lẽ không đổi gì).
+set -u
+
+SYS_CONF="/etc/hyggshi/theme.conf"
+STATE_DIR="/var/lib/hyggshi-auto-theme"
+WALLPAPER_SCRIPT="/usr/local/bin/hyggshi-set-wallpaper.sh"
+LIGHT_WALL="/usr/share/backgrounds/hyggshi/car-light.png"
+DARK_WALL="/usr/share/backgrounds/hyggshi/car-Dark.png"
+
+log() { echo "[hyggshi-auto-theme] $*"; }
+
+# Chuyển "HH:MM" -> tổng số phút trong ngày, để so sánh bằng số nguyên thay
+# vì so chuỗi giờ (tránh lỗi vặt kiểu "08:00" bị bash coi là octal nếu lỡ
+# dùng $((...)) trực tiếp trên chuỗi có số 0 đứng đầu).
+to_minutes() {
+  local hhmm="$1" h="${1%%:*}" m="${1##*:}"
+  h="${h#0}"; m="${m#0}"
+  [ -z "$h" ] && h=0
+  [ -z "$m" ] && m=0
+  echo $(( 10#$h * 60 + 10#$m ))
+}
+
+# Tính theme muốn áp (light/dark) dựa theo MODE + LIGHT_START/DARK_START đã
+# nạp sẵn ra biến môi trường trước khi gọi hàm này.
+decide_theme() {
+  case "${MODE:-auto}" in
+    light) echo "light" ;;
+    dark)  echo "dark" ;;
+    *)
+      local now l d
+      now=$(to_minutes "$(date +%H:%M)")
+      l=$(to_minutes "${LIGHT_START:-06:00}")
+      d=$(to_minutes "${DARK_START:-18:00}")
+      if [ "$l" -le "$d" ]; then
+        if [ "$now" -ge "$l" ] && [ "$now" -lt "$d" ]; then echo "light"; else echo "dark"; fi
+      else
+        # Trường hợp hiếm: DARK_START nhỏ hơn LIGHT_START (vd DARK_START=02:00)
+        if [ "$now" -ge "$d" ] && [ "$now" -lt "$l" ]; then echo "dark"; else echo "light"; fi
+      fi
+      ;;
+  esac
+}
+
+mkdir -p "$STATE_DIR"
+
+# Không có phiên đồ hoạ nào -> loginctl trả rỗng, thoát êm (vd chạy trên
+# server/headless, hoặc chưa ai đăng nhập lúc OnBootSec=1min kích hoạt).
+SESSION_IDS=$(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}')
+if [ -z "$SESSION_IDS" ]; then
+  log "khong co phien dang nhap nao dang active, bo qua lan nay"
+  exit 0
+fi
+
+while IFS= read -r SID; do
+  [ -z "$SID" ] && continue
+
+  U=$(loginctl show-session "$SID" -p Name --value 2>/dev/null)
+  [ -z "$U" ] && continue
+  UID_N=$(id -u "$U" 2>/dev/null) || continue
+  BUS="/run/user/$UID_N/bus"
+  # Không có socket D-Bus user -> không phải phiên đồ hoạ thật (vd phiên
+  # SSH/tty thuần), bỏ qua session này.
+  [ -S "$BUS" ] || continue
+
+  DISP=$(loginctl show-session "$SID" -p Display --value 2>/dev/null)
+  [ -z "$DISP" ] && DISP=":0"
+
+  # ---- Nạp config: mặc định -> system-wide -> user override, theo đúng
+  #      thứ tự ưu tiên tăng dần (file sau ghi đè file trước). ----
+  MODE="auto"; LIGHT_START="06:00"; DARK_START="18:00"
+  [ -f "$SYS_CONF" ] && source "$SYS_CONF"
+  USER_HOME=$(getent passwd "$U" | cut -d: -f6)
+  USER_CONF="$USER_HOME/.config/hyggshi/theme.conf"
+  [ -n "$USER_HOME" ] && [ -f "$USER_CONF" ] && source "$USER_CONF"
+
+  WANT=$(decide_theme)
+
+  STATE_FILE="$STATE_DIR/last-applied-$U"
+  LAST=""
+  [ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE" 2>/dev/null)
+  if [ "$LAST" = "$WANT" ]; then
+    continue
+  fi
+
+  WALL="$LIGHT_WALL"
+  [ "$WANT" = "dark" ] && WALL="$DARK_WALL"
+  if [ ! -f "$WALL" ]; then
+    log "khong tim thay $WALL cho user $U, bo qua"
+    continue
+  fi
+
+  if [ ! -x "$WALLPAPER_SCRIPT" ]; then
+    log "khong tim thay $WALLPAPER_SCRIPT, bo qua"
+    continue
+  fi
+
+  log "user=$U mode=$MODE -> ap theme=$WANT ($WALL)"
+  sudo -u "$U" DISPLAY="$DISP" DBUS_SESSION_BUS_ADDRESS="unix:path=$BUS" \
+    "$WALLPAPER_SCRIPT" "$WALL" >/dev/null 2>&1
+
+  echo "$WANT" > "$STATE_FILE"
+done <<< "$SESSION_IDS"
