@@ -544,21 +544,28 @@ else
 fi
 
 echo "===== Calamares: user live đi thẳng vào máy, không hỏi mật khẩu khi setup ====="
-# Yêu cầu: "live > root luôn đi với tư cách là khách dùng mới không hỏi Pass
-# khi setup". Áp dụng cho module "users" của Calamares (chạy lúc CÀI ĐẶT
-# thật vào đĩa, khác với autologin ở live session phía trên):
+# Yêu cầu: live ISO thì autologin cho tiện trải nghiệm (đã xử lý ở khối
+# AUTOLOGIN phía trên), nhưng hệ thống THẬT sau khi Calamares cài xong thì
+# TẮT autologin để bảo mật hơn — reboot xong phải ra màn hình LightDM hỏi
+# username/password, không tự vào thẳng desktop.
+# Áp dụng cho module "users" của Calamares (chạy lúc CÀI ĐẶT thật vào đĩa,
+# khác với autologin ở live session phía trên):
 #   - setRootPassword: false  -> KHÔNG có trang hỏi mật khẩu root riêng.
-#   - doAutologin: true       -> mặc định tick sẵn "log in automatically",
-#     hệ thống sau khi cài xong cũng vào thẳng desktop như live, không hỏi
-#     mật khẩu ở màn hình đăng nhập (giống hành vi "khách" hiện tại).
+#   - doAutologin: false      -> KHÔNG tick sẵn "log in automatically";
+#     hệ thống sau khi cài xong ra màn hình đăng nhập bình thường (username
+#     + password), không tự vào thẳng desktop như live nữa.
 #   - allowWeakPasswords: true + password rỗng vẫn qua được -> không bị
-#     chặn ở bước "Set up your account" bởi yêu cầu mật khẩu mạnh.
-# LƯU Ý: Calamares (module "users") vẫn hiển thị trang tạo tài khoản (nhập
-# username/tên máy) vì đây là bước bắt buộc để có 1 user thật trên hệ thống
-# đích — không thể ẩn hoàn toàn trang này chỉ bằng users.conf. Muốn hoàn
-# toàn không hỏi gì (kiểu "OEM"/unattended) cần cấu hình settings.conf riêng
-# (bỏ module "users"/"welcome" khỏi sequence) — nằm ngoài phạm vi override
-# packages.conf/users.conf hiện có trong repo này.
+#     chặn ở bước "Set up your account" bởi yêu cầu mật khẩu mạnh (user vẫn
+#     được TỰ CHỌN đặt password mạnh nếu muốn, chỉ là không ép buộc).
+# LƯU Ý: doAutologin: false chỉ quyết định checkbox mặc định trong trang
+# "Create your account" và việc module "users" có tự ghi cấu hình autologin
+# cho hệ thống đích hay không — nó KHÔNG tự xoá các file cấu hình autologin
+# của LIVE SESSION (lightdm.conf.d/50-hyggshi-autologin.conf,
+# sddm.conf.d/hyggshi-autologin.conf, gdm3/custom.conf...) mà chính
+# desktop.sh đã ghi vào squashfs ở khối AUTOLOGIN phía trên — squashfs đó
+# được Calamares (unpackfs) chép y nguyên sang đĩa, nên nếu không dọn thì
+# hệ thống thật vẫn autologin dù users.conf đã tắt. Việc dọn các file đó
+# nằm ở khối "shellprocess@removeautologin" ngay bên dưới.
 if command -v calamares >/dev/null 2>&1; then
   mkdir -p /etc/calamares/modules
   cat <<EOF > /etc/calamares/modules/users.conf
@@ -571,7 +578,7 @@ defaultGroups:
   - video
   - audio
 autologinGroup: autologin
-doAutologin: true
+doAutologin: false
 sudoersGroup: sudo
 setRootPassword: false
 doReusePassword: true
@@ -580,7 +587,52 @@ allowWeakPasswordsDefault: true
 userShell: /bin/bash
 hostname: $OS_HOSTNAME
 EOF
-  echo "OK: đã ghi /etc/calamares/modules/users.conf (autologin + không ép mật khẩu mạnh)."
+  echo "OK: đã ghi /etc/calamares/modules/users.conf (tắt autologin cho hệ thống thật, không ép mật khẩu mạnh)."
+
+  echo "===== Calamares: xoá cấu hình autologin của LIVE SESSION khỏi hệ thống thật ====="
+  # shellprocess@removeautologin — job Calamares chạy TRONG chroot của hệ
+  # thống đích (dontChroot: false), ngay trước lúc umount, để dọn sạch mọi
+  # file cấu hình autologin mà desktop.sh đã ghi cho live session (khối
+  # AUTOLOGIN phía trên) nhưng bị unpackfs chép nhầm sang cài đặt thật.
+  # Xoá/an toàn cho MỌI display manager (mate/cinnamon/xfce dùng lightdm,
+  # kde/lxqt dùng sddm, gnome dùng gdm3) — lệnh nào không áp dụng cho DE
+  # đang build thì đơn giản là no-op (file không tồn tại, "|| true").
+  mkdir -p /etc/calamares/modules
+  cat <<'EOF' > /etc/calamares/modules/shellprocess-removeautologin.conf
+---
+dontChroot: false
+timeout: 15
+exec:
+  - "rm -f /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf"
+  - "rm -f /etc/sddm.conf.d/hyggshi-autologin.conf"
+  - "sh -c \"[ -f /etc/gdm3/custom.conf ] && sed -i -E 's/^#?AutomaticLoginEnable[[:space:]]*=.*/AutomaticLoginEnable = false/' /etc/gdm3/custom.conf; true\""
+EOF
+  echo "OK: đã ghi /etc/calamares/modules/shellprocess-removeautologin.conf"
+
+  echo "===== Chèn 'shellprocess@removeautologin' vào sequence (settings.conf) — sau packages ====="
+  if [ -f /etc/calamares/settings.conf ]; then
+    if grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
+      echo "settings.conf đã có 'shellprocess@removeautologin' trong sequence từ trước — bỏ qua, không chèn trùng."
+    else
+      # Anchor vào "- packages": module này CHẮC CHẮN có trong sequence vì
+      # chính desktop.sh vừa ghi /etc/calamares/modules/packages.conf ở
+      # trên (mục "Ghi đè packages.conf"). Chèn SAU "packages" (job purge
+      # gói live chạy gần cuối exec sequence) để đảm bảo job xoá autologin
+      # chạy sau khi mọi thứ khác đã xong, ngay trước umount. Giữ đúng
+      # nguyên tắc thụt lề động (dùng \1) như khối chèn "license" ở dưới,
+      # tránh lỗi YAML fold dòng khi indent gốc khác 2 space.
+      sed -i -E 's/^([[:space:]]*)-[[:space:]]*packages[[:space:]]*$/&\n\1- shellprocess@removeautologin/' /etc/calamares/settings.conf
+
+      if grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
+        echo "OK: đã chèn 'shellprocess@removeautologin' vào sequence."
+      else
+        echo "CẢNH BÁO: không tìm thấy pattern '- packages' để chèn 'shellprocess@removeautologin' —" >&2
+        echo "hệ thống thật có thể vẫn bị autologin dù users.conf đã tắt. Kiểm tra thủ công /etc/calamares/settings.conf." >&2
+      fi
+    fi
+  else
+    echo "CẢNH BÁO: /etc/calamares/settings.conf không tồn tại — bỏ qua chèn shellprocess@removeautologin." >&2
+  fi
 else
   echo "Calamares chưa được cài (xem cảnh báo phía trên) — bỏ qua bước ghi users.conf."
 fi
