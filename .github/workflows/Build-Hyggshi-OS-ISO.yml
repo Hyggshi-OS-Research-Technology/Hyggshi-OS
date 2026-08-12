@@ -256,8 +256,10 @@ jobs:
           sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
           sudo cp scripts/kernel-tuning.sh "${CHROOT_DIR}/tmp/kernel-tuning.sh"
           sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"
+          sudo rm -rf "${CHROOT_DIR}/tmp/packages"
+          sudo cp -r iso-config/packages "${CHROOT_DIR}/tmp/packages"
           sudo chmod +x "${CHROOT_DIR}/tmp/desktop.sh"
-
+          
       # === 3) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
         run: |
