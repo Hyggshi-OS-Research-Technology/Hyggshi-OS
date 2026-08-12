@@ -719,9 +719,27 @@ exec > "$LOG" 2>&1
 echo "=== hyggshi-set-wallpaper.sh $(date) ==="
 
 # Nhận đường dẫn wallpaper qua tham số dòng lệnh (dùng bởi hyggshi-welcome
-# để đổi wallpaper theo theme Sáng/Tối đã chọn) — không truyền gì thì giữ
-# đúng hành vi cũ lúc login: dùng wallpaper.png mặc định.
-WALL="${1:-/usr/share/backgrounds/hyggshi/wallpaper.png}"
+# để đổi wallpaper theo theme Sáng/Tối đã chọn). Không truyền gì (trường hợp
+# autostart lúc login) -> RANDOM giữa các ảnh có sẵn trong
+# /usr/share/backgrounds/hyggshi/ (wallpaper.png, car-light.png...) thay vì
+# luôn cố định 1 ảnh — chỉ những file THẬT SỰ tồn tại mới được đưa vào pool.
+BG_DIR="/usr/share/backgrounds/hyggshi"
+if [ -n "$1" ]; then
+  WALL="$1"
+else
+  POOL=()
+  for CANDIDATE in wallpaper.png car-light.png; do
+    [ -f "$BG_DIR/$CANDIDATE" ] && POOL+=("$BG_DIR/$CANDIDATE")
+  done
+  if [ "${#POOL[@]}" -gt 0 ]; then
+    WALL="${POOL[$((RANDOM % ${#POOL[@]}))]}"
+    echo "Random pool (${#POOL[@]} ảnh): ${POOL[*]}"
+    echo "Đã chọn: $WALL"
+  else
+    WALL="$BG_DIR/wallpaper.png"
+  fi
+fi
+
 if [ ! -f "$WALL" ]; then
   echo "LỖI: không tìm thấy file wallpaper ($WALL), dừng."
   exit 0
