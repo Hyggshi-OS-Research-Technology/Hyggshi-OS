@@ -1,7 +1,16 @@
 #!/bin/bash
+# build.sh — chuẩn bị host + dispatch sang script bootstrap riêng của từng distro.
+# Chạy trên HOST (runner), không chạy trong chroot.
+#
+# Phần bootstrap/apt-sources riêng cho từng distro giờ nằm ở
+# scripts/distros/build-<distro>.sh (debian / ubuntu / linuxmint / alpine /
+# arch), file này chỉ còn lo phần dùng chung (cài dependency trên host, dọn
+# ổ đĩa) rồi source đúng script của $BASE_DISTRO.
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
+# GitHub Actions provides GITHUB_ENV automatically. Keep the same contract
+# for local/Docker builds so distro scripts can persist resolved variables.
 : "${GITHUB_ENV:=live-build/build.env}"
 export GITHUB_ENV
 mkdir -p "$(dirname "$GITHUB_ENV")"
@@ -22,13 +31,16 @@ sudo apt-get install -y \
 mkdir -p live-build/chroot
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DISTRO_SCRIPT="$SCRIPT_DIR/build-${BASE_DISTRO}.sh"
+DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
 
 if [ ! -f "$DISTRO_SCRIPT" ]; then
   echo "Distro không hợp lệ: $BASE_DISTRO (không tìm thấy $DISTRO_SCRIPT)"
+  echo "Các distro hỗ trợ: debian, ubuntu, linuxmint, alpine, arch"
   exit 1
 fi
 
-echo "===== Bootstrap rootfs: $BASE_DISTRO ====="
+echo "===== Bootstrap rootfs riêng cho: $BASE_DISTRO ====="
+# shellcheck source=/dev/null
 source "$DISTRO_SCRIPT"
+
 echo "===== build.sh xong ====="
