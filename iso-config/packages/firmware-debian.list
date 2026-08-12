@@ -1,0 +1,8 @@
+firmware-linux-free
+firmware-misc-nonfree
+firmware-realtek
+firmware-iwlwifi
+firmware-atheros
+os-prober
+pciutils
+usbutils

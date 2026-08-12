@@ -1,0 +1,8 @@
+# XFCE — desktop mặc định của Hyggshi OS.
+task-xfce-desktop
+lightdm
+lightdm-gtk-greeter
+xfce4-whiskermenu-plugin
+git
+libgtk-3-bin
+x11-xserver-utils

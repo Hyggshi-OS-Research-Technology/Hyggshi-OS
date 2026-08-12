@@ -15,6 +15,45 @@ source /tmp/kernel-tuning.sh
 : "${AUTOLOGIN:=true}"
 : "${AUTOSCALE_DISPLAY:=true}"
 
+# ===== Package manifest (iso-config/packages/*.list) =====
+# Danh sách gói "phẳng" (không có logic fallback/OR giữa các gói) được tách
+# ra khỏi desktop.sh để dễ maintain khi project lớn lên — xem
+# iso-config/packages/. Các script gọi desktop.sh (local-build.sh, workflow
+# Actions) chịu trách nhiệm copy thư mục này vào /tmp/packages trong chroot,
+# giống cách desktop.sh/kernel-tuning.sh đã được copy.
+#
+# CHỦ ĐÍCH KHÔNG dùng cho: gói có fallback (kernel generic/amd64, calamares
+# +settings-debian, fastfetch apt/GitHub) — những khối đó cần logic || / if
+# thật sự, gộp vào list phẳng sẽ mất đúng hành vi fallback, nên vẫn giữ
+# inline bên dưới.
+PKG_DIR="${PKG_DIR:-/tmp/packages}"
+
+# install_from_list <file.list> [--best-effort]
+# Đọc 1 gói/dòng, bỏ dòng trống và dòng bắt đầu bằng '#'. Mặc định: 1 gói
+# lỗi thì dừng build (exit 1) — dùng --best-effort để chỉ cảnh báo (giống
+# các khối devtools/fcitx5 trước đây).
+install_from_list() {
+  local list_file="$PKG_DIR/$1"
+  local best_effort="${2:-}"
+  if [ ! -f "$list_file" ]; then
+    echo "LỖI: không tìm thấy manifest '$list_file' (thiếu bước copy iso-config/packages/ vào chroot?)." >&2
+    exit 1
+  fi
+  while IFS= read -r package || [ -n "$package" ]; do
+    package="${package%%#*}"
+    package="$(echo "$package" | xargs)"
+    [ -z "$package" ] && continue
+    if ! apt-get install -y "$package"; then
+      if [ "$best_effort" = "--best-effort" ]; then
+        echo "CẢNH BÁO: cài gói '$package' (từ $1) thất bại — bỏ qua (best-effort)." >&2
+      else
+        echo "LỖI: cài gói '$package' (từ $1) thất bại." >&2
+        exit 1
+      fi
+    fi
+  done < "$list_file"
+}
+
 if [ "$BASE_DISTRO" = "alpine" ]; then
   echo "LỖI: desktop.sh này chỉ hỗ trợ apt/dpkg (Debian/Ubuntu/Mint)."
   echo "Alpine dùng apk + OpenRC nên cần một alpine-desktop.sh riêng (apk add xfce4 lightdm ...)."
@@ -84,35 +123,36 @@ echo "grub-pc grub-pc/install_devices_disks_changed multiselect" | debconf-set-s
 #
 # efibootmgr cần cho nhánh UEFI ghi boot entry vào NVRAM; parted/dosfstools
 # cần cho module partition (tạo/format phân vùng ESP/root).
-GRUB_INSTALL_FAILED=0
-for pkg in grub-pc grub-pc-bin grub-efi-amd64-bin grub-common efibootmgr parted dosfstools; do
-  if ! apt-get install -y "$pkg"; then
-    echo "LỖI: cài gói '$pkg' thất bại (xem log apt ở trên để biết lý do — hết mạng, gói bị transition tạm thời, debconf chưa preseed đúng, v.v.)." >&2
-    GRUB_INSTALL_FAILED=1
-  fi
-done
-if [ "$GRUB_INSTALL_FAILED" = "1" ]; then
-  echo "LỖI NGHIÊM TRỌNG: thiếu ít nhất 1 gói GRUB/partition ở trên." >&2
-  echo "Calamares bootloader/partition module CHẮC CHẮN sẽ lỗi khi cài đặt" >&2
-  echo "thật nếu tiếp tục đóng ISO với chroot thiếu gói này. Dừng build ở" >&2
-  echo "đây (thay vì chỉ cảnh báo rồi đóng ISO hỏng) để phát hiện sớm." >&2
+# Danh sách gói ở iso-config/packages/installer.list. Thiếu 1 gói ở đây là
+# fatal (không truyền --best-effort): Calamares bootloader/partition module
+# CHẮC CHẮN sẽ lỗi khi cài đặt thật nếu tiếp tục đóng ISO với chroot thiếu
+# gói này — dừng sớm thay vì đóng gói ISO hỏng.
+install_from_list installer.list
+
+echo "===== Cài Calamares (installer) — BẮT BUỘC, fail cả build nếu thiếu ====="
+# LỊCH SỬ BUG: trước đây khối này chỉ echo cảnh báo rồi tiếp tục, nên ISO có
+# thể build "thành công" (exit 0) nhưng KHÔNG có graphical installer — lỗi
+# chỉ lộ ra khi người dùng cuối boot thử ISO release. Đây là release ISO,
+# không có Calamares nghĩa là ISO không dùng được để cài đặt => phải coi là
+# lỗi build, dừng ngay tại đây thay vì đóng gói một ISO hỏng.
+#
+# calamares-settings-debian cung cấp cấu hình module cài đặt (partition,
+# unpackfs, bootloader...) cho mọi distro Debian-based — vẫn thử cài kèm
+# calamares core trước, fallback về calamares core một mình nếu
+# calamares-settings-debian không có trong repo (ví dụ trên Ubuntu/Mint).
+if ! apt-get install -y calamares calamares-settings-debian && \
+   ! apt-get install -y calamares; then
+  echo "LỖI NGHIÊM TRỌNG: không cài được gói calamares — dừng build." >&2
   exit 1
 fi
 
-echo "===== Cài Calamares (installer) — optional, không làm fail cả build ====="
-# calamares-settings-debian cung cấp cấu hình module cài đặt (partition, unpackfs,
-# bootloader...) cho mọi distro Debian-based. Thử cài cả hai; nếu settings không
-# có thì vẫn giữ calamares core; nếu cả hai đều không có thì ISO boot live được
-# nhưng không có graphical installer (không fatal).
-apt-get install -y calamares calamares-settings-debian || \
-apt-get install -y calamares || \
-echo "CẢNH BÁO: không cài được calamares/calamares-settings-debian — ISO sẽ không có graphical installer hoặc installer chưa được cấu hình."
-
-if command -v calamares >/dev/null 2>&1; then
-    echo "OK: calamares đã cài tại $(command -v calamares)"
-else
-    echo "CẢNH BÁO: calamares không có trong PATH — installer sẽ không khả dụng."
+# Xác nhận binary thật sự có mặt trong chroot (không chỉ tin vào exit code
+# của apt-get install — xem BUG CŨ tương tự với kernel image ở dưới).
+if ! command -v calamares >/dev/null 2>&1; then
+  echo "LỖI NGHIÊM TRỌNG: gói calamares báo cài xong nhưng binary 'calamares' không có trong PATH." >&2
+  exit 1
 fi
+echo "OK: calamares đã cài tại $(command -v calamares)"
 
 echo "===== Ghi đè packages.conf (Calamares) để khớp gói THỰC SỰ có trong chroot ====="
 # BUG (đã sửa SAI ở lần trước — file đúng KHÔNG PHẢI removelivepackages.conf,
@@ -226,11 +266,9 @@ echo "===== Firmware / driver phần cứng (wifi, GPU...) ====="
 # live USB không bắt được wifi hoặc không lên được giao diện đồ hoạ trên
 # máy thật (dù chạy tốt trên VM vì QEMU/VirtualBox không cần firmware này).
 if [ "$BASE_DISTRO" = "debian" ]; then
-  apt-get install -y firmware-linux-free firmware-misc-nonfree \
-    firmware-realtek firmware-iwlwifi firmware-atheros \
-    os-prober pciutils usbutils || true
+  install_from_list firmware-debian.list --best-effort
 else
-  apt-get install -y linux-firmware os-prober pciutils usbutils || true
+  install_from_list firmware-ubuntu.list --best-effort
 fi
 
 # hostname
@@ -278,9 +316,8 @@ case "$DE" in
     ;;
 
   *)
-    # mặc định: xfce
-    apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-      xfce4-whiskermenu-plugin git libgtk-3-bin x11-xserver-utils
+    # mặc định: xfce — danh sách gói ở iso-config/packages/desktop-xfce.list
+    install_from_list desktop-xfce.list
 
     # icon theme theo lựa chọn
     case "$ICON_THEME" in
@@ -291,11 +328,24 @@ case "$DE" in
     esac
 
     # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
+    # PIN COMMIT (reproducible input): "--depth=1" trên nhánh mặc định vẫn
+    # kéo commit MỚI NHẤT tại thời điểm build — hai lần build cách nhau vài
+    # tháng có thể ra theme khác nhau dù cùng script. Ghim vào 1 SHA cụ thể
+    # qua WINDOWS10_THEME_REF (override được từ ngoài); mặc định trỏ tới
+    # tag release "3.2.1" (bản ổn định mới nhất tại thời điểm viết script
+    # này — https://github.com/B00merang-Project/Windows-10/releases).
+    : "${WINDOWS10_THEME_REF:=b2ca252}"
     # BUG CŨ: clone không có fallback -> nếu GitHub rate-limit/timeout, `set -e`
     # sẽ abort NGUYÊN build ở bước này (dù DE/package chính đã cài xong).
-    if ! git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
-        /usr/share/themes/Windows-10; then
-      echo "⚠️  Clone theme Windows-10 thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
+    mkdir -p /usr/share/themes/Windows-10
+    if git -C /usr/share/themes/Windows-10 init -q && \
+       git -C /usr/share/themes/Windows-10 fetch -q --depth=1 \
+         https://github.com/B00merang-Project/Windows-10 "$WINDOWS10_THEME_REF" && \
+       git -C /usr/share/themes/Windows-10 checkout -q FETCH_HEAD; then
+      rm -rf /usr/share/themes/Windows-10/.git
+    else
+      echo "⚠️  Clone/checkout theme Windows-10 (ref=$WINDOWS10_THEME_REF) thất bại (mạng/rate-limit/ref không tồn tại) — bỏ qua, giữ GTK theme mặc định."
+      rm -rf /usr/share/themes/Windows-10
     fi
     ;;
 esac
@@ -350,11 +400,7 @@ echo "===== Công cụ dev cơ bản (cmake, gcc) ====="
 # đặt (hyggshi-welcome, hyggshi-theme-daemon — xem scripts/make-welcome.sh,
 # make-theme-daemon.sh), không chỉ lúc build ISO trên CI. Best-effort (không
 # fatal): thiếu 1 trong 2 gói này không nên làm hỏng cả build ISO.
-for pkg in cmake gcc; do
-  if ! apt-get install -y "$pkg"; then
-    echo "CẢNH BÁO: cài gói '$pkg' thất bại — không fatal, nhưng build C++ trên máy đích sẽ thiếu công cụ này." >&2
-  fi
-done
+install_from_list devtools.list --best-effort
 
 echo "===== Bộ gõ tiếng Việt (Fcitx5 + engine Unikey) ====="
 # fcitx5-unikey: engine gõ tiếng Việt kiểu Telex/VNI quen thuộc (tương đương
@@ -366,11 +412,7 @@ echo "===== Bộ gõ tiếng Việt (Fcitx5 + engine Unikey) ====="
 # thức từ Debian 12/Ubuntu 22.04 trở lên — distro cũ hơn sẽ báo "Unable to
 # locate package" cho 1 vài gói, giống cách xử lý fastfetch ở trên, không
 # nên làm fail cả build ISO chỉ vì thiếu bộ gõ.
-for pkg in fcitx5 fcitx5-unikey fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5; do
-  if ! apt-get install -y "$pkg"; then
-    echo "CẢNH BÁO: cài gói '$pkg' (Fcitx5) thất bại — bỏ qua gói này." >&2
-  fi
-done
+install_from_list vietnamese-input.list --best-effort
 
 if command -v fcitx5 > /dev/null 2>&1; then
   echo "OK: đã cài fcitx5."

@@ -52,6 +52,8 @@ source "$GITHUB_ENV"
 
 sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
 sudo cp scripts/kernel-tuning.sh live-build/chroot/tmp/kernel-tuning.sh
+sudo rm -rf live-build/chroot/tmp/packages
+sudo cp -r iso-config/packages live-build/chroot/tmp/packages
 sudo chmod +x live-build/chroot/tmp/desktop.sh
 sudo chroot live-build/chroot env \
   BASE_DISTRO="$BASE_DISTRO" DE="$DE" EDITION="$EDITION" DEBUG_MODE="$DEBUG_MODE" \

@@ -1,0 +1,9 @@
+# Gói GRUB + công cụ partition cho Calamares bootloader/partition module.
+# Xem lịch sử bug trong scripts/desktop.sh (grub-pc cần preseed debconf).
+grub-pc
+grub-pc-bin
+grub-efi-amd64-bin
+grub-common
+efibootmgr
+parted
+dosfstools
