@@ -64,34 +64,6 @@ else
   fi
 fi
 
-if [ "$WALLPAPER_APPLIED" = "true" ]; then
-  echo "===== Ghi đè default wallpaper qua update-alternatives (KHÔNG phụ thuộc"
-  echo "     tên monitor hay script chạy lúc login — đây là cơ chế Debian dùng"
-  echo "     để chọn ảnh nền mặc định, ổn định hơn nhiều so với xfconf runtime) ====="
-  for LINK in "$CHROOT/etc/alternatives/desktop-background" \
-              "$CHROOT/usr/share/backgrounds/desktop-background" \
-              "$CHROOT/usr/share/images/desktop-base/desktop-background"; do
-    if [ -e "$LINK" ] || [ -L "$LINK" ]; then
-      sudo rm -f "$LINK"
-      sudo ln -sf /usr/share/backgrounds/hyggshi/wallpaper.png "$LINK"
-      echo "Đã trỏ $LINK -> wallpaper.png"
-    fi
-  done
-
-  # "desktop-background" thực ra do update-alternatives QUẢN LÝ (đã xác nhận
-  # qua log build: gói desktop-base đăng ký nó với auto mode), nên chỉ rm+ln
-  # tay có thể không "chính chủ" / dễ bị coi là lỗi bởi dpkg. Đăng ký đàng
-  # hoàng qua update-alternatives để chắc chắn được công nhận là active:
-  if sudo chroot "$CHROOT" bash -c 'command -v update-alternatives' > /dev/null 2>&1; then
-    sudo chroot "$CHROOT" update-alternatives --install \
-      /usr/share/images/desktop-base/desktop-background desktop-background \
-      /usr/share/backgrounds/hyggshi/wallpaper.png 100 2>&1 || true
-    sudo chroot "$CHROOT" update-alternatives --set \
-      desktop-background /usr/share/backgrounds/hyggshi/wallpaper.png 2>&1 || true
-    echo "--- update-alternatives --display desktop-background ---"
-    sudo chroot "$CHROOT" update-alternatives --display desktop-background 2>&1 || true
-  fi
-
   echo "===== Patch trực tiếp mọi xfce4-desktop.xml có sẵn trong hệ thống (không"
   echo "     phải file skel do ta tạo) — phòng trường hợp gói cài sẵn ghi đè lại ====="
   FOUND_XMLS=$(sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" -name "xfce4-desktop.xml" 2>/dev/null || true)
