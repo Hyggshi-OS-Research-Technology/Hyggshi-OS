@@ -64,6 +64,7 @@ else
   fi
 fi
 
+if [ "$WALLPAPER_APPLIED" = "true" ]; then
   echo "===== Patch trực tiếp mọi xfce4-desktop.xml có sẵn trong hệ thống (không"
   echo "     phải file skel do ta tạo) — phòng trường hợp gói cài sẵn ghi đè lại ====="
   FOUND_XMLS=$(sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" -name "xfce4-desktop.xml" 2>/dev/null || true)
