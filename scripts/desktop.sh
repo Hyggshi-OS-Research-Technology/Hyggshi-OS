@@ -463,6 +463,37 @@ useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
 [ "$DEBUG_MODE" = "true" ] && set -x
 
+echo "===== sudo không hỏi mật khẩu cho user live (terminal, apt, v.v.) ====="
+# Giống lý do bỏ password prompt cho Calamares ở trên: đây là LIVE SESSION,
+# user đã autologin thẳng vào desktop (không hề nhập mật khẩu để vào máy),
+# nên mỗi lần gõ "sudo ..." trong terminal lại bị hỏi password của chính
+# user đó là thừa/khó chịu, không tăng thêm bảo mật thực sự nào (ai ngồi
+# trước máy live cũng coi như đã có toàn quyền root rồi, xem ISO này chạy
+# hoàn toàn trong RAM). CHỈ áp dụng đúng 1 user live ($OS_USERNAME), không
+# đụng tới nhóm sudo nói chung (không ảnh hưởng user khác nếu có ai đó tự
+# tạo thêm sau này).
+#
+# QUAN TRỌNG: đây là tiện lợi CHỈ DÀNH CHO LIVE SESSION — hệ thống THẬT sau
+# khi Calamares cài đặt xong PHẢI bị gỡ bỏ, không thì máy cài xong ai đăng
+# nhập được cũng sudo tự do không cần mật khẩu (lỗ hổng bảo mật nghiêm
+# trọng). Việc gỡ nằm chung trong shellprocess@removeautologin bên dưới
+# (đã đổi tên ý nghĩa thành "dọn các tiện lợi chỉ dành cho live session",
+# xem chú thích ở khối Calamares users.conf).
+mkdir -p /etc/sudoers.d
+cat <<EOF > /etc/sudoers.d/90-hyggshi-live-nopasswd
+$OS_USERNAME ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 440 /etc/sudoers.d/90-hyggshi-live-nopasswd
+# visudo -c kiểm tra cú pháp TRƯỚC khi tin file này — sudoers.d lỗi cú pháp
+# có thể làm sudo NGỪNG hoạt động hoàn toàn cho MỌI user, kể cả root qua
+# sudo (không phải lỗi "chỉ live user", mà lỗi phá cả hệ thống quyền).
+if visudo -c -f /etc/sudoers.d/90-hyggshi-live-nopasswd >/dev/null 2>&1; then
+  echo "OK: đã ghi /etc/sudoers.d/90-hyggshi-live-nopasswd (chỉ áp dụng cho user '$OS_USERNAME')."
+else
+  echo "LỖI: cú pháp sai trong sudoers.d vừa ghi — xoá ngay để không phá sudo trên toàn hệ thống." >&2
+  rm -f /etc/sudoers.d/90-hyggshi-live-nopasswd
+fi
+
 echo "===== Autologin cho live session (AUTOLOGIN=$AUTOLOGIN) ====="
 # QUAN TRỌNG: nếu không bật autologin, live ISO sẽ dừng ở màn hình đăng
 # nhập LightDM/SDDM. Không ai chạm tới thì KHÔNG session desktop nào được
@@ -644,11 +675,15 @@ hostname: $OS_HOSTNAME
 EOF
   echo "OK: đã ghi /etc/calamares/modules/users.conf (tắt autologin cho hệ thống thật, không ép mật khẩu mạnh)."
 
-  echo "===== Calamares: xoá cấu hình autologin của LIVE SESSION khỏi hệ thống thật ====="
+  echo "===== Calamares: xoá các tiện lợi CHỈ DÀNH CHO LIVE SESSION khỏi hệ thống thật ====="
   # shellprocess@removeautologin — job Calamares chạy TRONG chroot của hệ
   # thống đích (dontChroot: false), ngay trước lúc umount, để dọn sạch mọi
-  # file cấu hình autologin mà desktop.sh đã ghi cho live session (khối
-  # AUTOLOGIN phía trên) nhưng bị unpackfs chép nhầm sang cài đặt thật.
+  # cấu hình chỉ hợp lý cho LIVE SESSION (autologin + sudo không mật khẩu)
+  # mà desktop.sh đã ghi ở trên nhưng bị unpackfs chép nhầm sang cài đặt
+  # thật. Giữ nguyên tên job "removeautologin" (đã được chèn vào
+  # settings.conf từ trước, đổi tên sẽ phải sửa lại sed anchor phía dưới
+  # không cần thiết) dù giờ dọn thêm cả sudoers — về bản chất vẫn là 1 việc:
+  # "dọn mọi thứ live-only trước khi giao máy cho user thật".
   # Xoá/an toàn cho MỌI display manager (mate/cinnamon/xfce dùng lightdm,
   # kde/lxqt dùng sddm, gnome dùng gdm3) — lệnh nào không áp dụng cho DE
   # đang build thì đơn giản là no-op (file không tồn tại, "|| true").
@@ -661,6 +696,7 @@ exec:
   - "rm -f /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf"
   - "rm -f /etc/sddm.conf.d/hyggshi-autologin.conf"
   - "sh -c \"[ -f /etc/gdm3/custom.conf ] && sed -i -E 's/^#?AutomaticLoginEnable[[:space:]]*=.*/AutomaticLoginEnable = false/' /etc/gdm3/custom.conf; true\""
+  - "rm -f /etc/sudoers.d/90-hyggshi-live-nopasswd"
 EOF
   echo "OK: đã ghi /etc/calamares/modules/shellprocess-removeautologin.conf"
 

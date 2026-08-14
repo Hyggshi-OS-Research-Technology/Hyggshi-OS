@@ -190,16 +190,23 @@ mkdir -p live-build/image/boot/grub
   echo "  initrd /live/initrd"
   echo "}"
   echo ""
-  # "Chế độ đồ hoạ an toàn" — nomodeset tắt kernel mode-setting của driver
-  # GPU, dùng khi màn hình đen/lỗi hiển thị lúc boot bình thường (driver
-  # GPU độc quyền/không tương thích) — mục chuẩn có trên hầu hết live ISO
-  # Debian/Ubuntu.
-  echo "menuentry \"$DISTRO_NAME Live (chế độ đồ hoạ an toàn / nomodeset)\" {"
+  # Chữ hiển thị trong GRUB PHẢI là tiếng Anh thuần ASCII — font console mặc
+  # định grub-mkrescue dùng (không nạp unicode.pf2 + gfxterm) không có dấu
+  # tiếng Việt, chữ có dấu bị vỡ thành "ch? ?? ??" như ảnh chụp thực tế.
+  # Nạp font Unicode riêng cho GRUB text-mode là khả thi nhưng tốn thêm
+  # module/font vào ISO chỉ để đổi mấy dòng menu — không đáng, giữ tiếng Anh
+  # cho toàn bộ chữ hiển thị ở đây (comment trong script vẫn tiếng Việt bình
+  # thường, không liên quan tới font GRUB).
+  #
+  # "Safe graphics / nomodeset" — tắt kernel mode-setting của driver GPU,
+  # dùng khi màn hình đen/lỗi hiển thị lúc boot bình thường (driver GPU độc
+  # quyền/không tương thích) — mục chuẩn có trên hầu hết live ISO Debian/Ubuntu.
+  echo "menuentry \"$DISTRO_NAME Live (safe graphics / nomodeset)\" {"
   echo "  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA nomodeset"
   echo "  initrd /live/initrd"
   echo "}"
   echo ""
-  # Chỉ thêm mục Kiểm tra RAM nếu iso.sh thực sự tìm/chép được binary
+  # Chỉ thêm mục Memory test nếu iso.sh thực sự tìm/chép được binary
   # memtest86+ ở bước trên — tránh 1 mục GRUB trỏ tới file không tồn tại.
   # LƯU Ý: linux16 dùng boot protocol 16-bit real-mode — CHỈ chạy được khi
   # máy boot GRUB ở chế độ BIOS/legacy. Máy boot UEFI (kể cả Secure Boot đã
@@ -207,7 +214,7 @@ mkdir -p live-build/image/boot/grub
   # chỉ đơn giản không chạy) — muốn hỗ trợ cả UEFI cần thêm biến thể .efi
   # riêng (memtest86+x64.efi) qua chainloader, nằm ngoài phạm vi sửa lần này.
   if [ -f live-build/image/live/memtest86+.bin ]; then
-    echo "menuentry \"Kiểm tra RAM (Memtest86+)\" {"
+    echo "menuentry \"Memory test (Memtest86+)\" {"
     echo "  linux16 /live/memtest86+.bin"
     echo "}"
     echo ""
@@ -215,7 +222,7 @@ mkdir -p live-build/image/boot/grub
   # "Boot from first hard disk" — mục chuẩn trên live ISO Debian/Ubuntu để
   # thoát sang ổ cứng đã cài (hữu ích khi máy để USB live cắm sẵn nhưng
   # người dùng chỉ muốn boot bình thường vào hệ điều hành đã cài).
-  echo "menuentry \"Boot từ ổ cứng đầu tiên (thoát live, vào hệ điều hành đã cài)\" {"
+  echo "menuentry \"Boot from first hard disk\" {"
   echo "  set root=(hd0)"
   echo "  chainloader +1"
   echo "}"
