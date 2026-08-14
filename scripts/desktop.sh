@@ -323,6 +323,66 @@ case "$DE" in
 
   cinnamon)
     apt-get install -y cinnamon-desktop-environment lightdm lightdm-gtk-greeter
+
+    echo "===== Theme Cinnamon: GTK/Shell Orchis, Icons Tela, Cursor Bibata ====="
+    apt-get install -y git curl sassc libglib2.0-dev-bin > /dev/null 2>&1 || true
+
+    # Orchis: cùng 1 repo cài cả GTK theme lẫn Cinnamon shell theme (--tweaks
+    # compact chỉ để bớt bo góc quá to trên panel nhỏ, có thể bỏ nếu không thích).
+    if git clone --depth=1 https://github.com/vinceliuice/Orchis-theme.git /tmp/Orchis-theme; then
+      /tmp/Orchis-theme/install.sh --tweaks compact -d /usr/share/themes \
+        || echo "⚠️  Cài Orchis theme thất bại — giữ theme mặc định."
+      rm -rf /tmp/Orchis-theme
+    else
+      echo "⚠️  Clone Orchis-theme thất bại (mạng/rate-limit) — bỏ qua, giữ theme mặc định."
+    fi
+
+    # Tela icon theme
+    if git clone --depth=1 https://github.com/vinceliuice/Tela-icon-theme.git /tmp/Tela-icon-theme; then
+      /tmp/Tela-icon-theme/install.sh -d /usr/share/icons \
+        || echo "⚠️  Cài Tela icon theme thất bại — giữ icon mặc định."
+      rm -rf /tmp/Tela-icon-theme
+    else
+      echo "⚠️  Clone Tela-icon-theme thất bại — bỏ qua, giữ icon mặc định."
+    fi
+
+    # Bibata cursor theme — tải bản release .tar.xz build sẵn, không cần build
+    # từ source (nhanh hơn nhiều so với clone repo + npm build).
+    BIBATA_VER=$(curl -fsSL https://api.github.com/repos/ful1e5/Bibata_Cursor/releases/latest \
+      | grep -m1 '"tag_name"' | cut -d'"' -f4)
+    if [ -n "$BIBATA_VER" ] && curl -fsSL -o /tmp/bibata.tar.xz \
+        "https://github.com/ful1e5/Bibata_Cursor/releases/download/${BIBATA_VER}/Bibata-Modern-Classic.tar.xz"; then
+      mkdir -p /usr/share/icons
+      tar -xf /tmp/bibata.tar.xz -C /usr/share/icons
+      rm -f /tmp/bibata.tar.xz
+      echo "OK: đã cài Bibata-Modern-Classic ($BIBATA_VER)"
+    else
+      echo "⚠️  Tải Bibata cursor thất bại (mạng/rate-limit) — giữ cursor mặc định."
+    fi
+
+    command -v gtk-update-icon-cache > /dev/null 2>&1 \
+      && gtk-update-icon-cache -f /usr/share/icons/Tela 2>/dev/null || true
+
+    # Đặt làm mặc định qua dconf system-db — áp dụng cho MỌI user tạo sau này
+    # (kể cả user do Calamares tạo lúc cài thật), không chỉ user live-session.
+    mkdir -p /etc/dconf/profile /etc/dconf/db/local.d
+    cat <<EOF > /etc/dconf/profile/user
+user-db:user
+system-db:local
+EOF
+    cat <<EOF > /etc/dconf/db/local.d/01-hyggshi-theme
+[org/cinnamon/desktop/interface]
+gtk-theme='Orchis'
+icon-theme='Tela'
+cursor-theme='Bibata-Modern-Classic'
+
+[org/cinnamon/desktop/wm/preferences]
+theme='Orchis'
+
+[org/cinnamon/theme]
+name='Orchis'
+EOF
+    dconf update || echo "⚠️  dconf update thất bại — có thể do chạy trong chroot thiếu D-Bus, kiểm tra lại lúc boot thật."
     ;;
 
   *)

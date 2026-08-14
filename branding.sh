@@ -144,6 +144,16 @@ if [ -n "$LOGO_FILE" ]; then
     sudo cp "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
   done
   sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+
+  # Nhiều tool "System Info" (cinnamon-control-center info panel, mintinfo,
+  # hardinfo, gnome-system-monitor...) KHÔNG tra icon theme hicolor như trên,
+  # mà đọc thẳng 1 file cố định tại /usr/share/pixmaps/distributor-logo.png
+  # (quy ước lâu đời từ Debian/Ubuntu). Thiếu file này là lý do logo không
+  # hiện ra trong "System Settings" dù icon hicolor đã cài đủ ở trên.
+  sudo mkdir -p "$CHROOT/usr/share/pixmaps"
+  convert "$LOGO_FILE" -resize 256x256 "/tmp/logo-pixmap.png"
+  sudo cp "/tmp/logo-pixmap.png" "$CHROOT/usr/share/pixmaps/distributor-logo.png"
+
   echo "Đã áp logo custom: $LOGO_FILE"
   fi
 else
