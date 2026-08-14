@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Hyggshi Welcome
+Exec=hyggshi-welcome
+Icon=hyggshi-welcome
+Terminal=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Comment=Hiện wizard chào mừng ở lần đăng nhập đầu tiên (tự thoát nếu đã chạy rồi)

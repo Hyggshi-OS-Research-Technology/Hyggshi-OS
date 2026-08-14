@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Hyggshi Welcome
+Name[vi]=Chào mừng Hyggshi
+Comment=Cấu hình nhanh Hyggshi OS lần đầu sử dụng
+Exec=hyggshi-welcome
+Icon=hyggshi-welcome
+Terminal=false
+Categories=System;Settings;

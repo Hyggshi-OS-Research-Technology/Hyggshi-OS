@@ -718,86 +718,168 @@ if [ ! -f "$WALL" ]; then
   exit 0
 fi
 
-# Chờ xfdesktop thật sự chạy (tối đa 20s), tránh race condition lúc login
-for i in $(seq 1 20); do
-  if pgrep -x xfdesktop >/dev/null; then
-    echo "xfdesktop đã chạy sau ${i}s"
-    break
-  fi
-  sleep 1
-done
-
-# Chờ THÊM để xfdesktop tự tạo xong cây property /backdrop của nó (lần đầu
-# boot có thể chậm hơn hẳn so với chỉ chờ process xuất hiện — nếu ta đọc
-# property quá sớm, danh sách sẽ RỖNG và script sẽ rơi vào fallback
-# monitor0, trong khi tên monitor thật (vd "Virtual-1", "eDP-1"...) không
-# khớp -> wallpaper không hề đổi trên màn hình dù bước "verify" bên dưới
-# vẫn báo khớp, vì lúc đó nó chỉ đang so khớp với chính property fallback
-# mà script tự tạo ra.
-PROPS=""
-for i in $(seq 1 20); do
-  PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
-  if [ -n "$PROPS" ]; then
-    echo "Tìm thấy property sau ${i}s chờ"
-    break
-  fi
-  sleep 1
-done
-
-apply_wallpaper() {
-  # liệt kê MỌI property last-image mà xfdesktop đang thực sự dùng (tên
-  # monitor như "monitor0" không đúng trên mọi máy/VM, QEMU thường đặt tên
-  # khác như "Virtual-1")
-  PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
-  if [ -z "$PROPS" ]; then
-    echo "Chưa có property nào — dò tên monitor thật qua xrandr, cộng thêm fallback monitor0"
-    REAL_MONITORS=$(xrandr --query 2>/dev/null | awk '/ connected/{print $1}')
-    PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
-    for m in $REAL_MONITORS; do
-      PROPS="$PROPS
-/backdrop/screen0/monitor${m}/workspace0/last-image"
-    done
-  fi
-  echo "PROPS tìm được:"
-  echo "$PROPS"
-
-  while read -r PROP; do
-    [ -z "$PROP" ] && continue
-    STYLE="${PROP%last-image}image-style"
-    xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
-      || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
-    xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
-      || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
-    echo "Set $PROP -> $WALL"
-  done <<< "$PROPS"
+# ---------------------------------------------------------------------------
+# Dò desktop environment đang chạy — KHÔNG hardcode XFCE. Ưu tiên biến môi
+# trường chuẩn (XDG_CURRENT_DESKTOP/DESKTOP_SESSION), vì script này cũng
+# được hyggshi-welcome (session của user, biến môi trường đầy đủ) gọi trực
+# tiếp. Khi chạy qua hyggshi-auto-theme (systemd SYSTEM service, gọi bằng
+# `sudo -u <user> DISPLAY=... DBUS_SESSION_BUS_ADDRESS=...`) các biến XDG_*
+# KHÔNG được kế thừa, nên phải có fallback dò qua tiến trình phiên đồ hoạ
+# (pgrep) — mỗi DE có 1 process "chủ" đặc trưng luôn chạy khi có phiên đó.
+detect_de() {
+  local raw="${XDG_CURRENT_DESKTOP:-}${DESKTOP_SESSION:+ $DESKTOP_SESSION}"
+  raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]')
+  case "$raw" in
+    *cinnamon*) echo "cinnamon"; return ;;
+    *xfce*)     echo "xfce";     return ;;
+    *gnome*)    echo "gnome";    return ;;
+    *mate*)     echo "mate";     return ;;
+    *lxqt*)     echo "lxqt";     return ;;
+    *kde*|*plasma*) echo "kde";  return ;;
+  esac
+  # Không có/không nhận diện được biến môi trường -> dò qua tiến trình.
+  if pgrep -x cinnamon >/dev/null 2>&1; then echo "cinnamon"; return; fi
+  if pgrep -x xfdesktop >/dev/null 2>&1; then echo "xfce"; return; fi
+  if pgrep -x gnome-shell >/dev/null 2>&1; then echo "gnome"; return; fi
+  if pgrep -x mate-session >/dev/null 2>&1; then echo "mate"; return; fi
+  if pgrep -x pcmanfm-qt >/dev/null 2>&1; then echo "lxqt"; return; fi
+  if pgrep -x plasmashell >/dev/null 2>&1; then echo "kde"; return; fi
+  echo "unknown"
 }
 
-apply_wallpaper
-xfdesktop --reload 2>>"$LOG"
-sleep 1
-
-# LUÔN restart hẳn xfdesktop (không chỉ gọi --reload) sau khi set property,
-# vì lần đầu TẠO property mới (-n) xfdesktop đang chạy thường không tự
-# "nhìn thấy" giá trị vừa tạo chỉ bằng --reload — phải khởi động lại tiến
-# trình để nó đọc lại toàn bộ cấu hình từ xfconf.
-killall xfdesktop 2>>"$LOG" || true
-sleep 1
-nohup xfdesktop >>"$LOG" 2>&1 &
-sleep 1
-
-echo "--- verify sau khi set (chỉ để ghi log, không quyết định có restart hay không) ---"
-CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
-if [ -n "$CHECK" ]; then
-  VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
-  echo "verify: $CHECK = $VAL"
-  if [ "$VAL" != "$WALL" ]; then
-    echo "Verify không khớp, retry lần 2"
-    apply_wallpaper
-    killall xfdesktop 2>>"$LOG" || true
+# Chờ tiến trình "chủ" của DE thật sự chạy (tối đa 20s), tránh race
+# condition lúc login — trước đây chỉ chờ mỗi xfdesktop.
+wait_for_de_process() {
+  local proc="$1"
+  [ -z "$proc" ] && return 0
+  for i in $(seq 1 20); do
+    if pgrep -x "$proc" >/dev/null 2>&1; then
+      echo "$proc đã chạy sau ${i}s"
+      return 0
+    fi
     sleep 1
-    nohup xfdesktop >>"$LOG" 2>&1 &
+  done
+  echo "CẢNH BÁO: không thấy tiến trình $proc sau 20s — vẫn thử áp wallpaper."
+}
+
+apply_wallpaper_xfce() {
+  wait_for_de_process xfdesktop
+
+  _do_set() {
+    PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
+    if [ -z "$PROPS" ]; then
+      echo "Chưa có property nào — dò tên monitor thật qua xrandr, cộng thêm fallback monitor0"
+      REAL_MONITORS=$(xrandr --query 2>/dev/null | awk '/ connected/{print $1}')
+      PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
+      for m in $REAL_MONITORS; do
+        PROPS="$PROPS
+/backdrop/screen0/monitor${m}/workspace0/last-image"
+      done
+    fi
+    echo "PROPS tìm được:"
+    echo "$PROPS"
+
+    while read -r PROP; do
+      [ -z "$PROP" ] && continue
+      STYLE="${PROP%last-image}image-style"
+      xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
+        || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
+      xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
+        || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
+      echo "Set $PROP -> $WALL"
+    done <<< "$PROPS"
+  }
+
+  _do_set
+  xfdesktop --reload 2>>"$LOG"
+  sleep 1
+  # LUÔN restart hẳn xfdesktop (không chỉ --reload): lần đầu TẠO property
+  # mới (-n), xfdesktop đang chạy thường không tự "nhìn thấy" giá trị vừa
+  # tạo chỉ bằng --reload.
+  killall xfdesktop 2>>"$LOG" || true
+  sleep 1
+  nohup xfdesktop >>"$LOG" 2>&1 &
+  sleep 1
+
+  CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
+  if [ -n "$CHECK" ]; then
+    VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
+    echo "verify: $CHECK = $VAL"
+    if [ "$VAL" != "$WALL" ]; then
+      echo "Verify không khớp, retry lần 2"
+      _do_set
+      killall xfdesktop 2>>"$LOG" || true
+      sleep 1
+      nohup xfdesktop >>"$LOG" 2>&1 &
+    fi
   fi
-fi
+}
+
+apply_wallpaper_cinnamon() {
+  # Cinnamon dùng dconf/GSettings, không có "process reload" như xfdesktop —
+  # cinnamon-settings-daemon tự áp ngay khi property đổi.
+  gsettings set org.cinnamon.desktop.background picture-uri "file://$WALL" 2>>"$LOG"
+  gsettings set org.cinnamon.desktop.background picture-options 'zoom' 2>>"$LOG"
+  echo "Đã set wallpaper Cinnamon (gsettings org.cinnamon.desktop.background) -> $WALL"
+}
+
+apply_wallpaper_gnome() {
+  gsettings set org.gnome.desktop.background picture-uri "file://$WALL" 2>>"$LOG"
+  gsettings set org.gnome.desktop.background picture-uri-dark "file://$WALL" 2>>"$LOG"
+  gsettings set org.gnome.desktop.background picture-options 'zoom' 2>>"$LOG"
+  echo "Đã set wallpaper GNOME (gsettings org.gnome.desktop.background) -> $WALL"
+}
+
+apply_wallpaper_mate() {
+  gsettings set org.mate.background picture-filename "$WALL" 2>>"$LOG"
+  gsettings set org.mate.background picture-options 'zoom' 2>>"$LOG"
+  echo "Đã set wallpaper MATE (gsettings org.mate.background) -> $WALL"
+}
+
+apply_wallpaper_lxqt() {
+  wait_for_de_process pcmanfm-qt
+  if command -v pcmanfm-qt >/dev/null 2>&1; then
+    pcmanfm-qt --set-wallpaper="$WALL" --wallpaper-mode=fit 2>>"$LOG"
+    echo "Đã set wallpaper LXQt (pcmanfm-qt --set-wallpaper) -> $WALL"
+  else
+    echo "CẢNH BÁO: không tìm thấy pcmanfm-qt — bỏ qua set wallpaper LXQt." >&2
+  fi
+}
+
+apply_wallpaper_kde() {
+  wait_for_de_process plasmashell
+  if command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
+    plasma-apply-wallpaperimage "$WALL" 2>>"$LOG"
+    echo "Đã set wallpaper KDE Plasma (plasma-apply-wallpaperimage) -> $WALL"
+  else
+    echo "CẢNH BÁO: không có plasma-apply-wallpaperimage (Plasma < 5.27?) — bỏ qua set wallpaper KDE." >&2
+  fi
+}
+
+apply_wallpaper_fallback() {
+  # DE không nhận diện được (hoặc window manager trần không có desktop
+  # shell riêng) — thử feh nếu có sẵn, đây là công cụ set wallpaper X11
+  # generic phổ biến nhất, không phụ thuộc DE nào.
+  if command -v feh >/dev/null 2>&1; then
+    DISPLAY="${DISPLAY:-:0}" feh --bg-fill "$WALL" 2>>"$LOG"
+    echo "Đã set wallpaper qua feh --bg-fill (fallback, DE không xác định) -> $WALL"
+  else
+    echo "CẢNH BÁO: DE không xác định được và không có feh — không set được wallpaper tự động." >&2
+    echo "Cài đặt thủ công wallpaper tại: $WALL" >&2
+  fi
+}
+
+DE_DETECTED=$(detect_de)
+echo "DE dò được: $DE_DETECTED"
+case "$DE_DETECTED" in
+  xfce)     apply_wallpaper_xfce ;;
+  cinnamon) apply_wallpaper_cinnamon ;;
+  gnome)    apply_wallpaper_gnome ;;
+  mate)     apply_wallpaper_mate ;;
+  lxqt)     apply_wallpaper_lxqt ;;
+  kde)      apply_wallpaper_kde ;;
+  *)        apply_wallpaper_fallback ;;
+esac
 
 echo "=== xong ==="
 SCRIPT
