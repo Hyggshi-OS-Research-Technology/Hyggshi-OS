@@ -765,7 +765,7 @@ EOF
     if grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
       echo "settings.conf đã có 'shellprocess@removeautologin' trong sequence từ trước — bỏ qua, không chèn trùng."
     else
-      # Anchor vào "- packages": module này CHẮC CHẮN có trong sequence vì
+      # Anchor chính vào "- packages": module này CHẮC CHẮN có trong sequence vì
       # chính desktop.sh vừa ghi /etc/calamares/modules/packages.conf ở
       # trên (mục "Ghi đè packages.conf"). Chèn SAU "packages" (job purge
       # gói live chạy gần cuối exec sequence) để đảm bảo job xoá autologin
@@ -774,15 +774,40 @@ EOF
       # tránh lỗi YAML fold dòng khi indent gốc khác 2 space.
       sed -i -E 's/^([[:space:]]*)-[[:space:]]*packages[[:space:]]*$/&\n\1- shellprocess@removeautologin/' /etc/calamares/settings.conf
 
+      # FALLBACK: nếu calamares-settings-debian trên nhánh trixie hiện tại
+      # đổi format/tên job "packages" (khác version, khác cấu trúc YAML) thì
+      # anchor trên sẽ không khớp và KHÔNG được chèn — trước đây trường hợp
+      # này chỉ in CẢNH BÁO rồi build vẫn tiếp tục, kết quả là ISO xuất xưởng
+      # với sudoers NOPASSWD + autologin sống sót nguyên vẹn sau khi cài thật
+      # (đây chính là bug đã gặp: sau Calamares + reboot, "sudo apt update"
+      # không hỏi mật khẩu và cũng không có màn hình đăng nhập). Anchor dự
+      # phòng vào "- umount" (job gần như luôn có, luôn là bước chroot cuối
+      # cùng) và chèn TRƯỚC nó để job vẫn chạy trong lúc còn chroot.
+      if ! grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
+        echo "CẢNH BÁO: không tìm thấy pattern '- packages', thử anchor dự phòng '- umount'..." >&2
+        sed -i -E 's/^([[:space:]]*)-[[:space:]]*umount[[:space:]]*$/\1- shellprocess@removeautologin\n&/' /etc/calamares/settings.conf
+      fi
+
       if grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
         echo "OK: đã chèn 'shellprocess@removeautologin' vào sequence."
+        echo "--- settings.conf (đoạn sequence, để kiểm tra trong build log) ---"
+        grep -A 30 '^sequence:' /etc/calamares/settings.conf || true
       else
-        echo "CẢNH BÁO: không tìm thấy pattern '- packages' để chèn 'shellprocess@removeautologin' —" >&2
-        echo "hệ thống thật có thể vẫn bị autologin dù users.conf đã tắt. Kiểm tra thủ công /etc/calamares/settings.conf." >&2
+        # KHÔNG chỉ warn rồi cho qua nữa: đây là lỗ hổng bảo mật thật sự
+        # (NOPASSWD sudo + autologin sống sót sang hệ thống đã cài đặt thật)
+        # nên phải làm FAIL cả build để không lỡ tay xuất xưởng ISO lỗi.
+        echo "LỖI NGHIÊM TRỌNG: không tìm được cả 2 anchor ('packages' và 'umount') trong" >&2
+        echo "/etc/calamares/settings.conf để chèn 'shellprocess@removeautologin'. Nếu build tiếp" >&2
+        echo "tục, ISO xuất ra sẽ để lại sudoers NOPASSWD + autologin trên hệ thống cài thật." >&2
+        echo "--- settings.conf hiện tại (để debug) ---" >&2
+        cat /etc/calamares/settings.conf >&2
+        exit 1
       fi
     fi
   else
-    echo "CẢNH BÁO: /etc/calamares/settings.conf không tồn tại — bỏ qua chèn shellprocess@removeautologin." >&2
+    echo "LỖI NGHIÊM TRỌNG: /etc/calamares/settings.conf không tồn tại — không thể chèn" >&2
+    echo "shellprocess@removeautologin, ISO sẽ để lại sudoers NOPASSWD + autologin sau khi cài thật." >&2
+    exit 1
   fi
 else
   echo "Calamares chưa được cài (xem cảnh báo phía trên) — bỏ qua bước ghi users.conf."
