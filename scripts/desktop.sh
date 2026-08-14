@@ -109,9 +109,57 @@ apt-get install -y calamares || \
 echo "CẢNH BÁO: không cài được calamares/calamares-settings-debian — ISO sẽ không có graphical installer hoặc installer chưa được cấu hình."
 
 if command -v calamares >/dev/null 2>&1; then
-    echo "OK: calamares đã cài tại $(command -v calamares)"
+    echo "OK: đã cài calamares tại $(command -v calamares)"
 else
     echo "CẢNH BÁO: calamares không có trong PATH — installer sẽ không khả dụng."
+fi
+
+echo "===== Polkit: cho phép user live mở Calamares KHÔNG cần nhập mật khẩu ====="
+# Icon "Install Debian/Hyggshi OS" trên desktop live gọi launcher của
+# calamares-settings-debian, mặc định Exec=pkexec calamares — pkexec luôn
+# hỏi xác thực qua polkit trước khi cho chạy quyền root, kể cả với user
+# trong nhóm sudo (khác hẳn lệnh "sudo" thường, polkit không tự suy ra
+# quyền từ nhóm sudo). Kết quả: user live thấy dialog "Authentication
+# Required" mỗi lần bấm "Install" dù chính họ đang ngồi trước máy — không
+# cần thiết cho live session (không có gì bí mật để bảo vệ ở đây).
+#
+# Fix: thêm 1 polkit JS rule (polkit >= 0.106, dùng /etc/polkit-1/rules.d/,
+# format .pkla cũ đã deprecated) cho phép ĐÚNG user live ($OS_USERNAME)
+# chạy calamares qua pkexec mà không cần mật khẩu. Match theo 2 điều kiện
+# (không hardcode 1 action id cụ thể, vì action id chính xác của calamares
+# khác nhau tuỳ gói: org.debian.pkexec.calamares, org.calamares.pkexec...):
+#   1. action.id chứa "calamares" -> khớp mọi action id riêng do
+#      calamares-settings-debian/calamares đăng ký.
+#   2. action.id là action pkexec chung "org.freedesktop.policykit.exec" VÀ
+#      chương trình được exec có chứa "calamares" -> khớp trường hợp không
+#      có action riêng nào được đăng ký, pkexec rơi về action mặc định.
+# Chỉ áp dụng cho ĐÚNG username live, không phải "mọi user trong nhóm sudo"
+# — phạm vi hẹp nhất có thể để không mở rộng bypass mật khẩu sang việc khác.
+if command -v pkexec >/dev/null 2>&1; then
+  mkdir -p /etc/polkit-1/rules.d
+  cat <<EOF > /etc/polkit-1/rules.d/45-hyggshi-calamares-noauth.rules
+// Cho phép user live "$OS_USERNAME" mở Calamares (installer) qua pkexec mà
+// không cần nhập mật khẩu — sinh tự động bởi scripts/desktop.sh.
+polkit.addRule(function(action, subject) {
+    if (subject.user != "$OS_USERNAME") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (action.id.indexOf("calamares") !== -1) {
+        return polkit.Result.YES;
+    }
+    if (action.id == "org.freedesktop.policykit.exec") {
+        var program = action.lookup("program");
+        if (program && program.indexOf("calamares") !== -1) {
+            return polkit.Result.YES;
+        }
+    }
+    return polkit.Result.NOT_HANDLED;
+});
+EOF
+  chmod 644 /etc/polkit-1/rules.d/45-hyggshi-calamares-noauth.rules
+  echo "OK: đã ghi /etc/polkit-1/rules.d/45-hyggshi-calamares-noauth.rules (chỉ áp dụng cho user '$OS_USERNAME')."
+else
+  echo "CẢNH BÁO: không tìm thấy pkexec — bỏ qua bước ghi polkit rule (không nên xảy ra nếu calamares cài thành công, vì polkitd là dependency)." >&2
 fi
 
 echo "===== Ghi đè packages.conf (Calamares) để khớp gói THỰC SỰ có trong chroot ====="
@@ -344,6 +392,13 @@ if command -v fastfetch > /dev/null 2>&1; then
 else
   echo "CẢNH BÁO: fastfetch KHÔNG được cài — build vẫn tiếp tục, chỉ là thiếu tool này." >&2
 fi
+
+echo "===== Memtest86+ (cho mục 'Kiểm tra RAM' trong menu GRUB, xem scripts/iso.sh) ====="
+# Best-effort, không fatal: thiếu gói này chỉ làm mất 1 mục GRUB tuỳ chọn
+# (iso.sh tự bỏ qua mục đó nếu không tìm thấy binary trong chroot), không
+# ảnh hưởng tới việc ISO boot được hay không.
+apt-get install -y memtest86+ || \
+  echo "CẢNH BÁO: không cài được memtest86+ — mục 'Kiểm tra RAM' trong GRUB sẽ bị bỏ qua." >&2
 
 echo "===== Công cụ dev cơ bản (cmake, gcc) ====="
 # Cần để build các component C++ tự sinh trong repo ngay TRÊN máy đã cài

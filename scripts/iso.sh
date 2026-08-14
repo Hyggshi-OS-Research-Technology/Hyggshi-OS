@@ -52,6 +52,37 @@ INITRD_FILE=$(sudo ls -t live-build/chroot/boot/initrd.img-* | head -n1)
 sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
 sudo cp "$INITRD_FILE" live-build/image/live/initrd
 
+echo "===== Dò memtest86+ trong chroot (cho mục 'Kiểm tra RAM' trong GRUB, best-effort) ====="
+# Tên file binary memtest86+ đổi khác nhau tuỳ version đóng gói (Debian
+# 12/bookworm dùng bản 5.x -> /boot/memtest86+.bin; Debian 13/trixie+ dùng
+# bản 6.x/7.x rebrand từ PCMemTest -> /boot/memtest86+x64.bin, có khi nằm ở
+# /usr/lib/memtest86+/ thay vì /boot/). KHÔNG hardcode 1 tên duy nhất — dò
+# theo pattern rồi lấy file đầu tiên khớp, bỏ qua hẳn mục GRUB này nếu
+# desktop.sh không cài được gói (không fatal, xem ghi chú trong desktop.sh).
+MEMTEST_BIN=""
+for CANDIDATE in \
+  live-build/chroot/boot/memtest86+x64.bin \
+  live-build/chroot/boot/memtest86+.bin \
+  live-build/chroot/usr/lib/memtest86+/memtest86+x64.bin \
+  live-build/chroot/usr/lib/memtest86+/memtest86+.bin; do
+  if sudo test -f "$CANDIDATE"; then
+    MEMTEST_BIN="$CANDIDATE"
+    break
+  fi
+done
+if [ -z "$MEMTEST_BIN" ]; then
+  FOUND=$(sudo find live-build/chroot/boot live-build/chroot/usr/lib/memtest86+ \
+    -maxdepth 1 -iname 'memtest86+*.bin' 2>/dev/null | sort | head -n1)
+  [ -n "$FOUND" ] && MEMTEST_BIN="$FOUND"
+fi
+if [ -n "$MEMTEST_BIN" ]; then
+  sudo cp "$MEMTEST_BIN" live-build/image/live/memtest86+.bin
+  sudo chown "$(id -u)":"$(id -g)" live-build/image/live/memtest86+.bin
+  echo "OK: đã chép memtest86+ ($MEMTEST_BIN) -> live-build/image/live/memtest86+.bin"
+else
+  echo "CẢNH BÁO: không tìm thấy binary memtest86+ trong chroot — bỏ qua mục 'Kiểm tra RAM' trong GRUB." >&2
+fi
+
 echo "===== UEFI Secure Boot: cài shim + GRUB đã ký (chain of trust Microsoft/Canonical) ====="
 # VẤN ĐỀ CŨ: grub-mkrescue tự build core.efi CHO CHÍNH NÓ, và core.efi đó
 # KHÔNG hề được ký — firmware bật Secure Boot chặn ngay ở bước nạp
@@ -150,14 +181,45 @@ if [ "$BASE_DISTRO" = "debian" ]; then
 fi
 
 mkdir -p live-build/image/boot/grub
-cat <<EOF > live-build/image/boot/grub/grub.cfg
-set timeout=10
-set default=0
-menuentry "$DISTRO_NAME Live" {
-  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA
-  initrd /live/initrd
-}
-EOF
+{
+  echo "set timeout=10"
+  echo "set default=0"
+  echo ""
+  echo "menuentry \"$DISTRO_NAME Live\" {"
+  echo "  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA"
+  echo "  initrd /live/initrd"
+  echo "}"
+  echo ""
+  # "Chế độ đồ hoạ an toàn" — nomodeset tắt kernel mode-setting của driver
+  # GPU, dùng khi màn hình đen/lỗi hiển thị lúc boot bình thường (driver
+  # GPU độc quyền/không tương thích) — mục chuẩn có trên hầu hết live ISO
+  # Debian/Ubuntu.
+  echo "menuentry \"$DISTRO_NAME Live (chế độ đồ hoạ an toàn / nomodeset)\" {"
+  echo "  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA nomodeset"
+  echo "  initrd /live/initrd"
+  echo "}"
+  echo ""
+  # Chỉ thêm mục Kiểm tra RAM nếu iso.sh thực sự tìm/chép được binary
+  # memtest86+ ở bước trên — tránh 1 mục GRUB trỏ tới file không tồn tại.
+  # LƯU Ý: linux16 dùng boot protocol 16-bit real-mode — CHỈ chạy được khi
+  # máy boot GRUB ở chế độ BIOS/legacy. Máy boot UEFI (kể cả Secure Boot đã
+  # vá ở trên) chọn mục này sẽ không vào được Memtest86+ (không có gì hỏng,
+  # chỉ đơn giản không chạy) — muốn hỗ trợ cả UEFI cần thêm biến thể .efi
+  # riêng (memtest86+x64.efi) qua chainloader, nằm ngoài phạm vi sửa lần này.
+  if [ -f live-build/image/live/memtest86+.bin ]; then
+    echo "menuentry \"Kiểm tra RAM (Memtest86+)\" {"
+    echo "  linux16 /live/memtest86+.bin"
+    echo "}"
+    echo ""
+  fi
+  # "Boot from first hard disk" — mục chuẩn trên live ISO Debian/Ubuntu để
+  # thoát sang ổ cứng đã cài (hữu ích khi máy để USB live cắm sẵn nhưng
+  # người dùng chỉ muốn boot bình thường vào hệ điều hành đã cài).
+  echo "menuentry \"Boot từ ổ cứng đầu tiên (thoát live, vào hệ điều hành đã cài)\" {"
+  echo "  set root=(hd0)"
+  echo "  chainloader +1"
+  echo "}"
+} > live-build/image/boot/grub/grub.cfg
 
 sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image \
   --compress=xz -- -volid "HYGGSHI_OS"
