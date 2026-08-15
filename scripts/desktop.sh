@@ -322,7 +322,19 @@ case "$DE" in
     ;;
 
   cinnamon)
-    apt-get install -y cinnamon-desktop-environment lightdm lightdm-gtk-greeter
+    # Luôn kéo FULL Cinnamon qua metapackage, không tự chọn từng gói con lẻ
+    # (cinnamon-core, nemo, cjs, muffin... riêng lẻ) — vì nếu 1 gói lẻ nào
+    # đó lỗi/thiếu, hệ thống dễ thiếu app quan trọng mà không biết ngay lúc
+    # build. cinnamon-desktop-environment là metapackage "full desktop with
+    # extra components" có trên cả Debian lẫn Ubuntu (universe). Fallback
+    # theo thứ tự nếu tên gói không có: task-cinnamon-desktop (task package
+    # của tasksel, cũng kéo đủ cinnamon-desktop-environment) -> cinnamon-core
+    # (chỉ desktop lõi, không kèm app phụ trợ — phương án cuối để build không
+    # fail hoàn toàn nếu 2 lựa chọn trên đều không có trong repo/mirror).
+    apt-get install -y cinnamon-desktop-environment lightdm lightdm-gtk-greeter || \
+    apt-get install -y task-cinnamon-desktop lightdm lightdm-gtk-greeter || \
+    { echo "CẢNH BÁO: cinnamon-desktop-environment/task-cinnamon-desktop không cài được — fallback cinnamon-core (thiếu một số app phụ trợ so với bản full)." >&2; \
+      apt-get install -y cinnamon-core lightdm lightdm-gtk-greeter; }
 
     echo "===== Theme Cinnamon: GTK/Shell Orchis, Icons Tela, Cursor Bibata ====="
     apt-get install -y git curl sassc libglib2.0-dev-bin > /dev/null 2>&1 || true
