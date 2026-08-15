@@ -805,10 +805,33 @@ script:
 EOF
   echo "OK: đã ghi /etc/calamares/modules/removeautologin.conf (tên file PHẢI khớp instance id, không phải module-instance)."
 
-  echo "===== Chèn 'shellprocess@removeautologin' vào sequence (settings.conf) — sau packages ====="
+  echo "===== Đăng ký instance shellprocess@removeautologin + chèn vào sequence ====="
   if [ -f /etc/calamares/settings.conf ]; then
+    # Calamares KHÔNG tự suy ra config của custom shellprocess instance từ
+    # tên file. Instance phải được khai báo rõ trong settings.conf:
+    #   id: removeautologin
+    #   module: shellprocess
+    #   config: removeautologin.conf
+    # Nếu thiếu block này, shellprocess@removeautologin có thể không dùng
+    # removeautologin.conf và cleanup user/autologin/sudoers sẽ không chạy.
+    if ! grep -Eq '^\s*-\s*id:[[:space:]]*removeautologin[[:space:]]*$' /etc/calamares/settings.conf; then
+      if grep -Eq '^instances:[[:space:]]*$' /etc/calamares/settings.conf; then
+        sed -i '/^instances:[[:space:]]*$/a - id: removeautologin\n  module: shellprocess\n  config: removeautologin.conf' /etc/calamares/settings.conf
+      else
+        sed -i '/^sequence:[[:space:]]*$/i instances:\n- id: removeautologin\n  module: shellprocess\n  config: removeautologin.conf\n' /etc/calamares/settings.conf
+      fi
+    fi
+
+    if grep -Eq '^\s*-\s*id:[[:space:]]*removeautologin[[:space:]]*$' /etc/calamares/settings.conf; then
+      echo "OK: đã đăng ký instance removeautologin -> shellprocess / removeautologin.conf."
+    else
+      echo "LỖI NGHIÊM TRỌNG: không đăng ký được instance removeautologin trong settings.conf." >&2
+      cat /etc/calamares/settings.conf >&2
+      exit 1
+    fi
+
     if grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
-      echo "settings.conf đã có 'shellprocess@removeautologin' trong sequence từ trước — bỏ qua, không chèn trùng."
+      echo "settings.conf đã có shellprocess@removeautologin trong sequence — bỏ qua, không chèn trùng."
     else
       # Anchor chính vào "- packages": module này CHẮC CHẮN có trong sequence vì
       # chính desktop.sh vừa ghi /etc/calamares/modules/packages.conf ở
@@ -835,7 +858,8 @@ EOF
 
       if grep -Eq '^\s*-\s*shellprocess@removeautologin\s*$' /etc/calamares/settings.conf; then
         echo "OK: đã chèn 'shellprocess@removeautologin' vào sequence."
-        echo "--- settings.conf (đoạn sequence, để kiểm tra trong build log) ---"
+        echo "--- settings.conf (instance + sequence, để kiểm tra trong build log) ---"
+        grep -A 8 '^instances:' /etc/calamares/settings.conf || true
         grep -A 30 '^sequence:' /etc/calamares/settings.conf || true
       else
         # KHÔNG chỉ warn rồi cho qua nữa: đây là lỗ hổng bảo mật thật sự
