@@ -747,16 +747,49 @@ EOF
   # Xoá/an toàn cho MỌI display manager (mate/cinnamon/xfce dùng lightdm,
   # kde/lxqt dùng sddm, gnome dùng gdm3) — lệnh nào không áp dụng cho DE
   # đang build thì đơn giản là no-op (file không tồn tại, "|| true").
+  #
+  # BUG VỪA PHÁT HIỆN (regression): job này TRƯỚC ĐÂY còn có tên
+  # "shellprocess@removeuser" và có xoá luôn tài khoản + home của user live
+  # (comment cũ đã nói vậy), nhưng lúc gộp vào "removeautologin" thì lệnh
+  # userdel bị RỚT MẤT — kết quả: user live ($OS_USERNAME, vd "hyggshi")
+  # cùng /home/$OS_USERNAME của nó sống sót nguyên vẹn trên hệ thống đã cài,
+  # song song với tài khoản thật user tự tạo trong Calamares (nếu họ gõ
+  # username khác, vd "my") -> 2 thư mục trong /home, folder mới bị chặn
+  # quyền truy cập vì đang login bằng account live cũ.
+  # Ghi 1 script cleanup riêng (thay vì nhét hết vào 1 dòng exec YAML) để dễ
+  # đọc/debug, và AN TOÀN: chỉ xoá user live nếu phát hiện có ÍT NHẤT 1 user
+  # thật KHÁC (uid 1000-59999, khác $OS_USERNAME) đã được Calamares tạo —
+  # tức là user đã đổi username khi cài. Nếu user giữ nguyên username cũ
+  # (gõ lại đúng "$OS_USERNAME" ở bước Create your account) thì KHÔNG xoá,
+  # vì lúc đó chính tài khoản đó là tài khoản thật.
   mkdir -p /etc/calamares/modules
+  cat <<EOF > /usr/local/sbin/hyggshi-cleanup-live-user.sh
+#!/bin/sh
+set -e
+LIVE_USER="$OS_USERNAME"
+OTHER_USER=\$(awk -F: -v lu="\$LIVE_USER" '\$3>=1000 && \$3<60000 && \$1!=lu {print \$1; exit}' /etc/passwd)
+if [ -n "\$OTHER_USER" ] && id "\$LIVE_USER" >/dev/null 2>&1; then
+  echo "hyggshi-cleanup-live-user: phat hien user that '\$OTHER_USER' khac user live '\$LIVE_USER' -> xoa user live."
+  userdel -r "\$LIVE_USER" 2>/dev/null || userdel "\$LIVE_USER" 2>/dev/null || true
+  rm -rf "/home/\$LIVE_USER" 2>/dev/null || true
+else
+  echo "hyggshi-cleanup-live-user: khong co user that nao khac '\$LIVE_USER' -> giu nguyen, khong xoa."
+fi
+EOF
+  chmod 755 /usr/local/sbin/hyggshi-cleanup-live-user.sh
+  echo "OK: đã ghi /usr/local/sbin/hyggshi-cleanup-live-user.sh (LIVE_USER=$OS_USERNAME)."
+
   cat <<'EOF' > /etc/calamares/modules/shellprocess-removeautologin.conf
 ---
 dontChroot: false
-timeout: 15
+timeout: 30
 exec:
   - "rm -f /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf"
   - "rm -f /etc/sddm.conf.d/hyggshi-autologin.conf"
   - "sh -c \"[ -f /etc/gdm3/custom.conf ] && sed -i -E 's/^#?AutomaticLoginEnable[[:space:]]*=.*/AutomaticLoginEnable = false/' /etc/gdm3/custom.conf; true\""
   - "rm -f /etc/sudoers.d/90-hyggshi-live-nopasswd"
+  - "sh -c \"[ -x /usr/local/sbin/hyggshi-cleanup-live-user.sh ] && /usr/local/sbin/hyggshi-cleanup-live-user.sh; true\""
+  - "rm -f /usr/local/sbin/hyggshi-cleanup-live-user.sh"
 EOF
   echo "OK: đã ghi /etc/calamares/modules/shellprocess-removeautologin.conf"
 
