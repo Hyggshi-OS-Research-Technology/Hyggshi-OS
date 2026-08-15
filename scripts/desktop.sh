@@ -779,7 +779,18 @@ EOF
   chmod 755 /usr/local/sbin/hyggshi-cleanup-live-user.sh
   echo "OK: đã ghi /usr/local/sbin/hyggshi-cleanup-live-user.sh (LIVE_USER=$OS_USERNAME)."
 
-  cat <<'EOF' > /etc/calamares/modules/shellprocess-removeautologin.conf
+  # QUAN TRỌNG (đây là root cause thật sự của toàn bộ bug sudoers/autologin
+  # sống sót, xác nhận qua session.log lúc cài thật):
+  # Calamares tra config của 1 job INSTANCE (dạng "module@instance") theo
+  # TÊN INSTANCE, tức phải là "<instance>.conf" (ở đây là
+  # "removeautologin.conf") — KHÔNG PHẢI "<module>-<instance>.conf". Bản cũ
+  # ghi nhầm thành "shellprocess-removeautologin.conf" nên Calamares không
+  # tìm thấy config, fallback tìm theo tên MODULE gốc "shellprocess.conf"
+  # (cũng không có luôn), rồi load job với "No commands to execute" — job
+  # chạy "thành công" trong log nhưng thực chất KHÔNG LÀM GÌ CẢ. Đây là lý
+  # do 90-hyggshi-live-nopasswd và autologin sống sót nguyên vẹn dù mọi thứ
+  # khác (ghi file, chèn vào sequence) đều đúng.
+  cat <<'EOF' > /etc/calamares/modules/removeautologin.conf
 ---
 dontChroot: false
 timeout: 30
@@ -791,7 +802,7 @@ exec:
   - "sh -c \"[ -x /usr/local/sbin/hyggshi-cleanup-live-user.sh ] && /usr/local/sbin/hyggshi-cleanup-live-user.sh; true\""
   - "rm -f /usr/local/sbin/hyggshi-cleanup-live-user.sh"
 EOF
-  echo "OK: đã ghi /etc/calamares/modules/shellprocess-removeautologin.conf"
+  echo "OK: đã ghi /etc/calamares/modules/removeautologin.conf (tên file PHẢI khớp instance id, không phải module-instance)."
 
   echo "===== Chèn 'shellprocess@removeautologin' vào sequence (settings.conf) — sau packages ====="
   if [ -f /etc/calamares/settings.conf ]; then
