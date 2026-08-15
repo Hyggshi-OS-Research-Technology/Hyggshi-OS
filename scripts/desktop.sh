@@ -794,13 +794,14 @@ EOF
 ---
 dontChroot: false
 timeout: 30
-exec:
+script:
   - "rm -f /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf"
   - "rm -f /etc/sddm.conf.d/hyggshi-autologin.conf"
-  - "sh -c \"[ -f /etc/gdm3/custom.conf ] && sed -i -E 's/^#?AutomaticLoginEnable[[:space:]]*=.*/AutomaticLoginEnable = false/' /etc/gdm3/custom.conf; true\""
+  - "sh -c \"if [ -f /etc/gdm3/custom.conf ]; then sed -i -E 's/^#?[[:space:]]*AutomaticLoginEnable[[:space:]]*=.*/AutomaticLoginEnable = false/' /etc/gdm3/custom.conf; sed -i -E 's/^#?[[:space:]]*AutomaticLogin[[:space:]]*=.*/#AutomaticLogin =/' /etc/gdm3/custom.conf; fi; true\""
   - "rm -f /etc/sudoers.d/90-hyggshi-live-nopasswd"
-  - "sh -c \"[ -x /usr/local/sbin/hyggshi-cleanup-live-user.sh ] && /usr/local/sbin/hyggshi-cleanup-live-user.sh; true\""
+  - "sh -c \"[ -x /usr/local/sbin/hyggshi-cleanup-live-user.sh ] && /usr/local/sbin/hyggshi-cleanup-live-user.sh || true\""
   - "rm -f /usr/local/sbin/hyggshi-cleanup-live-user.sh"
+  - "sh -c \"! test -e /etc/sudoers.d/90-hyggshi-live-nopasswd && ! test -e /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf && ! test -e /etc/sddm.conf.d/hyggshi-autologin.conf\""
 EOF
   echo "OK: đã ghi /etc/calamares/modules/removeautologin.conf (tên file PHẢI khớp instance id, không phải module-instance)."
 
