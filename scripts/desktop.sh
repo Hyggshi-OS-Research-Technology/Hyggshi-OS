@@ -426,33 +426,6 @@ else
   echo "Checkpoint kernel SAU autoremove: $(ls /boot/vmlinuz-* 2>/dev/null || echo 'KHÔNG CÓ FILE — autoremove chính là thủ phạm')"
 fi
 
-echo "===== Fastfetch (system info khi mở terminal) ====="
-# fastfetch CHỈ có sẵn trong repo apt chính thức từ Debian 13 (trixie) trở
-# đi — Debian bookworm/bullseye, Ubuntu (kể cả noble) và Linux Mint (dựa
-# trên Ubuntu) KHÔNG đóng gói fastfetch, apt-get install sẽ báo "Unable to
-# locate package". Thử apt trước (có update tự động qua apt sau này ở
-# distro đã hỗ trợ), fail thì tải .deb build sẵn (amd64) thẳng từ GitHub
-# Releases của chính dự án — luôn khớp kiến trúc vì ISO builder này chỉ
-# nhắm amd64.
-if ! apt-get install -y fastfetch; then
-  echo "apt không có fastfetch (bình thường trên Debian < 13 / Ubuntu / Mint)."
-  echo "Tải .deb trực tiếp từ GitHub Releases (fastfetch-cli/fastfetch)..."
-  FASTFETCH_VER=$(curl -fsSL https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest \
-    | grep -m1 '"tag_name"' | cut -d'"' -f4)
-  if [ -n "$FASTFETCH_VER" ] && curl -fsSL -o /tmp/fastfetch.deb \
-      "https://github.com/fastfetch-cli/fastfetch/releases/download/${FASTFETCH_VER}/fastfetch-linux-amd64.deb"; then
-    apt-get install -y /tmp/fastfetch.deb || echo "CẢNH BÁO: cài fastfetch.deb thất bại (thiếu dependency?)."
-    rm -f /tmp/fastfetch.deb
-  else
-    echo "CẢNH BÁO: không lấy được bản fastfetch mới nhất từ GitHub (mạng/rate-limit) — bỏ qua." >&2
-  fi
-fi
-if command -v fastfetch > /dev/null 2>&1; then
-  echo "OK: đã cài fastfetch ($(fastfetch --version 2>/dev/null | head -n1))"
-else
-  echo "CẢNH BÁO: fastfetch KHÔNG được cài — build vẫn tiếp tục, chỉ là thiếu tool này." >&2
-fi
-
 echo "===== Memtest86+ (cho mục 'Kiểm tra RAM' trong menu GRUB, xem scripts/iso.sh) ====="
 # Best-effort, không fatal: thiếu gói này chỉ làm mất 1 mục GRUB tuỳ chọn
 # (iso.sh tự bỏ qua mục đó nếu không tìm thấy binary trong chroot), không
