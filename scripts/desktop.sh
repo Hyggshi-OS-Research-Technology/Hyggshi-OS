@@ -420,6 +420,63 @@ EOF
     ;;
 esac
 
+# ===== Fix "đơ" khi Restart/Shut Down/Suspend từ menu power (greeter hoặc
+# trong session) =====
+# NGUYÊN NHÂN PHỔ BIẾN NHẤT: task-*-desktop không đảm bảo cài kèm
+# policykit-1 + 1 polkit authentication agent (mỗi DE có agent riêng: XFCE
+# dùng xfce-polkit, MATE dùng mate-polkit, Cinnamon có agent tích hợp sẵn).
+# Khi bấm Restart, lightdm-gtk-greeter/xfce4-session gọi thẳng
+# org.freedesktop.login1.Reboot qua D-Bus -> polkit chặn lại hỏi xác thực ->
+# KHÔNG có agent nào chạy để hiện hộp thoại nhập mật khẩu -> yêu cầu treo
+# vô thời hạn, nhìn giống hệt "màn hình đơ" dù máy không hề crash.
+# Fix gồm 2 phần: (1) cài agent đúng theo DE, (2) thêm polkit rule cho phép
+# LUÔN thực hiện các hành động login1 (reboot/poweroff/suspend/hibernate,
+# kể cả khi còn phiên khác đang mở) mà KHÔNG cần hỏi mật khẩu — hợp lý cho
+# máy cá nhân/live session, không phải máy chia sẻ nhiều người dùng.
+echo "===== Cài polkit agent + rule cho phép Restart/Shut Down không bị treo ====="
+apt-get install -y policykit-1 || true
+case "$DE" in
+  xfce)     apt-get install -y xfce-polkit || apt-get install -y policykit-1-gnome || true ;;
+  mate)     apt-get install -y mate-polkit || true ;;
+  lxqt)     apt-get install -y lxqt-policykit || true ;;
+  gnome)    : ;; # gnome-shell tự có agent tích hợp
+  cinnamon) : ;; # cinnamon-settings-daemon tự có agent tích hợp
+  kde)      : ;; # plasma-workspace tự có agent tích hợp (polkit-kde-agent)
+esac
+
+mkdir -p /etc/polkit-1/rules.d
+cat <<'EOF' > /etc/polkit-1/rules.d/46-hyggshi-power-noauth.rules
+// Hyggshi OS — cho phép reboot/poweroff/suspend/hibernate không cần mật
+// khẩu (áp dụng cho user thuộc nhóm sudo, tức user cài đặt qua Calamares
+// hoặc user mặc định live session). Nếu KHÔNG có rule này, thiếu polkit
+// agent (xem desktop.sh) sẽ khiến nút Restart/Shut Down treo vô thời hạn
+// thay vì báo lỗi rõ ràng.
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("sudo") &&
+        (action.id == "org.freedesktop.login1.reboot" ||
+         action.id == "org.freedesktop.login1.reboot-multiple-sessions" ||
+         action.id == "org.freedesktop.login1.power-off" ||
+         action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+         action.id == "org.freedesktop.login1.suspend" ||
+         action.id == "org.freedesktop.login1.suspend-multiple-sessions" ||
+         action.id == "org.freedesktop.login1.hibernate" ||
+         action.id == "org.freedesktop.login1.hibernate-multiple-sessions")) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+chmod 644 /etc/polkit-1/rules.d/46-hyggshi-power-noauth.rules
+echo "OK: đã ghi /etc/polkit-1/rules.d/46-hyggshi-power-noauth.rules"
+
+# systemd-logind là service socket-activated, không cần enable thủ công,
+# nhưng chắc chắn có D-Bus policy cho phép gọi (mặc định Debian/Ubuntu đã
+# đúng — chỉ log lại để dễ debug nếu vẫn còn bị treo sau khi build).
+if command -v systemctl > /dev/null 2>&1; then
+  systemctl status systemd-logind > /dev/null 2>&1 \
+    && echo "systemd-logind: OK" \
+    || echo "⚠️  Không thấy systemd-logind — kiểm tra lại nếu Restart vẫn treo sau khi build."
+fi
+
 # trình duyệt / office (tùy chọn)
 if [ "$INCLUDE_BROWSER" = "true" ]; then
   apt-get install -y firefox-esr || apt-get install -y firefox

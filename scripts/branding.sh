@@ -198,6 +198,41 @@ window {
 #login_window .error {
   color: #ff8a8a;
 }
+
+/* Menu power (Suspend/Hibernate/Restart/Shut Down) bung ra từ #panel_window
+   khi bấm icon nguồn — mặc định GTK vẽ menu này trơ trọi, chỉ chữ đen trên
+   nền trắng/xám (xem ảnh mô tả trong issue). Style lại thành khối tối bo
+   góc đồng bộ với #login_window, có highlight khi rê chuột, thay vì nhìn
+   như 1 tooltip lạc lõng giữa màn hình. */
+menu,
+GtkMenu {
+  background-color: rgba(15, 23, 38, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+menu menuitem,
+GtkMenu GtkMenuItem {
+  color: #f2f5f7;
+  border-radius: 8px;
+  padding: 8px 14px;
+  min-width: 200px;
+}
+menu menuitem:hover,
+GtkMenu GtkMenuItem:hover {
+  background-color: rgba(127, 216, 200, 0.22);
+}
+/* Phím tắt (Alt+Delete, Alt+F4...) hiển thị mờ hơn chữ chính, đỡ rối mắt */
+menu menuitem accelerator,
+GtkMenu GtkMenuItem GtkAccelLabel {
+  color: rgba(242, 245, 247, 0.55);
+}
+menu separator,
+GtkMenu GtkSeparatorMenuItem {
+  background-color: rgba(255, 255, 255, 0.12);
+  margin: 4px 6px;
+}
 CSS
 
 # Icon theme cho greeter: map theo $ICON_THEME đã chọn ở desktop.sh (mặc định papirus)
