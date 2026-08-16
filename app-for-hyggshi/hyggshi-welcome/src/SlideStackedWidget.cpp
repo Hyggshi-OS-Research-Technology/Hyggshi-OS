@@ -1,6 +1,7 @@
 #include "SlideStackedWidget.h"
-#include <QPropertyAnimation>
+
 #include <QParallelAnimationGroup>
+#include <QPropertyAnimation>
 #include <QEasingCurve>
 #include <QGraphicsOpacityEffect>
 
@@ -12,42 +13,53 @@ void SlideStackedWidget::slideToIndex(int index) {
     return;
   }
 
-  const bool forward = index > currentIndex();
+  if (m_reducedMotion) {
+    setCurrentIndex(index);
+    emit animationFinished();
+    return;
+  }
+
   QWidget *current = currentWidget();
   QWidget *next = widget(index);
-  if (!current || !next) return;
+  if (!current || !next || width() <= 0 || height() <= 0) {
+    setCurrentIndex(index);
+    emit animationFinished();
+    return;
+  }
 
+  const bool forward = index > currentIndex();
   const int w = width();
   const QPoint startPos(forward ? w : -w, 0);
   const QPoint endPosCurrent(forward ? -w : w, 0);
 
-  next->setGeometry(0, 0, w, height());
+  next->setGeometry(rect());
   next->move(startPos);
   next->show();
   next->raise();
 
-  // Fade nhẹ trên trang mới để chuyển động mềm hơn, không chỉ trượt cứng.
   auto *fx = new QGraphicsOpacityEffect(next);
   next->setGraphicsEffect(fx);
-  auto *fadeAnim = new QPropertyAnimation(fx, "opacity", this);
+
+  auto *fadeAnim = new QPropertyAnimation(fx, "opacity");
   fadeAnim->setDuration(m_durationMs);
   fadeAnim->setStartValue(0.35);
   fadeAnim->setEndValue(1.0);
   fadeAnim->setEasingCurve(QEasingCurve::OutCubic);
 
-  auto *slideNext = new QPropertyAnimation(next, "pos", this);
+  auto *slideNext = new QPropertyAnimation(next, "pos");
   slideNext->setDuration(m_durationMs);
-  slideNext->setEasingCurve(QEasingCurve::OutCubic);
   slideNext->setStartValue(startPos);
   slideNext->setEndValue(QPoint(0, 0));
+  slideNext->setEasingCurve(QEasingCurve::OutCubic);
 
-  auto *slideCurrent = new QPropertyAnimation(current, "pos", this);
+  auto *slideCurrent = new QPropertyAnimation(current, "pos");
   slideCurrent->setDuration(m_durationMs);
-  slideCurrent->setEasingCurve(QEasingCurve::OutCubic);
   slideCurrent->setStartValue(QPoint(0, 0));
   slideCurrent->setEndValue(endPosCurrent);
+  slideCurrent->setEasingCurve(QEasingCurve::OutCubic);
 
   m_animating = true;
+
   auto *group = new QParallelAnimationGroup(this);
   group->addAnimation(fadeAnim);
   group->addAnimation(slideNext);
@@ -56,10 +68,12 @@ void SlideStackedWidget::slideToIndex(int index) {
   connect(group, &QParallelAnimationGroup::finished, this,
           [this, index, current, next]() {
             next->setGraphicsEffect(nullptr);
-            setCurrentIndex(index);
             current->move(0, 0);
+            next->move(0, 0);
+            setCurrentIndex(index);
             m_animating = false;
             emit animationFinished();
           });
+
   group->start(QAbstractAnimation::DeleteWhenStopped);
 }

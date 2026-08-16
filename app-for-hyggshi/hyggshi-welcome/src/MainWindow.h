@@ -1,15 +1,19 @@
 #pragma once
-#include <QMainWindow>
-#include <QVector>
-#include <QLabel>
-#include <QPushButton>
+
 #include <QButtonGroup>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QLabel>
+#include <QMainWindow>
+#include <QPushButton>
 #include <QTimer>
+#include <QVector>
+
 #include "SlideStackedWidget.h"
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
+
  public:
   explicit MainWindow(QWidget *parent = nullptr);
 
@@ -20,17 +24,37 @@ class MainWindow : public QMainWindow {
     QString desc;
   };
 
+  struct ThemeOpt {
+    QString id;
+    QString label;
+    QString wallpaper;
+  };
+
   SlideStackedWidget *m_stack = nullptr;
   QVector<QLabel *> m_dots;
   QPushButton *m_backBtn = nullptr;
   QPushButton *m_skipBtn = nullptr;
   QPushButton *m_nextBtn = nullptr;
+
   QButtonGroup *m_themeGroup = nullptr;
-  QString m_selectedTheme = "auto";
-  // Đường dẫn wallpaper thật (đã cài ở /usr/share/backgrounds/hyggshi/) ứng
-  // với theme đang chọn — rỗng nếu theme đó không có wallpaper riêng.
-  QString m_selectedWallpaper = "/usr/share/backgrounds/hyggshi/car-light.png";
+  QComboBox *m_languageBox = nullptr;
+  QComboBox *m_keyboardBox = nullptr;
   QCheckBox *m_dontAskAgainChk = nullptr;
+  QCheckBox *m_reducedMotionChk = nullptr;
+  QCheckBox *m_highContrastChk = nullptr;
+  QCheckBox *m_largeTextChk = nullptr;
+  QLabel *m_networkStatus = nullptr;
+  QLabel *m_updateStatus = nullptr;
+  QLabel *m_systemStatus = nullptr;
+  QPushButton *m_updateCheckBtn = nullptr;
+
+  QString m_selectedLanguage = "vi";
+  QString m_selectedKeyboard = "vn-telex";
+  QString m_selectedTheme = "auto";
+  QString m_selectedWallpaper;
+  bool m_reducedMotion = false;
+  bool m_highContrast = false;
+  bool m_largeText = false;
 
   QTimer *m_carouselTimer = nullptr;
   QVector<FeatureSlide> m_features;
@@ -42,10 +66,23 @@ class MainWindow : public QMainWindow {
 
   QWidget *buildWelcomePage();
   QWidget *buildLanguagePage();
+  QWidget *buildNetworkPage();
   QWidget *buildThemePage();
+  QWidget *buildAccessibilityPage();
+  QWidget *buildSystemCheckPage();
+  QWidget *buildUpdatePage();
   QWidget *buildFeaturesPage();
   QWidget *buildFinishPage();
   QWidget *buildNavBar();
+
+  void loadPreferences();
+  void savePreferences() const;
+  void applyLanguageAndKeyboard();
+  void applyAccessibility();
+  void refreshNetworkStatus();
+  void refreshSystemStatus();
+  void checkForUpdates();
+  void setUpdateStatus(const QString &text);
 
   void updateNavState();
   void updateDots(int index);
@@ -53,6 +90,8 @@ class MainWindow : public QMainWindow {
   void goBack();
   void finishSetup();
   void applyWallpaper(const QString &wallpaperPath);
+  QString resolveAutoWallpaper() const;
   void showFeatureSlide(int index);
   void advanceCarousel();
+  void saveFirstRunState(bool completed);
 };

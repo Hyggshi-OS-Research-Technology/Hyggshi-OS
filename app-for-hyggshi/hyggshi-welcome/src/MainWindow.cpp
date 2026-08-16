@@ -1,32 +1,82 @@
 #include "MainWindow.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QFrame>
-#include <QComboBox>
-#include <QRadioButton>
-#include <QGraphicsOpacityEffect>
-#include <QPropertyAnimation>
+
 #include <QApplication>
-#include <QScreen>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
-#include <QStandardPaths>
+#include <QFileInfo>
+#include <QFont>
+#include <QFrame>
+#include <QGuiApplication>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QProcess>
+#include <QPixmap>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QScreen>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QSysInfo>
 #include <QToolButton>
-#include <QTextStream>
+#include <QUrl>
+#include <QVBoxLayout>
 
-static QLabel *makeDot(bool active) {
+namespace {
+
+constexpr int kPageCount = 9;
+constexpr int kPreferredWidth = 860;
+constexpr int kPreferredHeight = 560;
+
+QLabel *makeDot(bool active) {
   auto *dot = new QLabel;
   dot->setFixedSize(9, 9);
-  dot->setStyleSheet(QString(
-      "border-radius:4px; background:%1;")
-      .arg(active ? "#5aa9ff" : "#3a3f4b"));
+  dot->setStyleSheet(QString("border-radius:4px; background:%1;")
+                         .arg(active ? "#5aa9ff" : "#3a3f4b"));
   return dot;
 }
 
+QString configDirectory() {
+  return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
+         "/hyggshi";
+}
+
+QString preferencesPath() { return configDirectory() + "/welcome.conf"; }
+
+bool hasExecutable(const QString &name) {
+  return !QStandardPaths::findExecutable(name).isEmpty();
+}
+
+void setGsettings(const QString &schema, const QString &key, const QString &value) {
+  if (!hasExecutable("gsettings")) return;
+  QProcess::execute("gsettings", {"set", schema, key, value});
+}
+
+QStringList commandOutput(const QString &program, const QStringList &args, int timeout = 1400) {
+  QProcess process;
+  process.start(program, args);
+  if (!process.waitForFinished(timeout)) {
+    process.kill();
+    process.waitForFinished(200);
+    return {};
+  }
+  const QByteArray output = process.readAllStandardOutput();
+  return QString::fromLocal8Bit(output).split('\n', Qt::SkipEmptyParts);
+}
+
+}  // namespace
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
   setWindowTitle(tr("Chào mừng đến với Hyggshi OS"));
-  setFixedSize(860, 560);
+  setMinimumSize(720, 480);
+  resize(kPreferredWidth, kPreferredHeight);
+
+  loadPreferences();
+
+  QFont initialFont = qApp->font();
+  initialFont.setPointSize(m_largeText ? 12 : 10);
+  qApp->setFont(initialFont);
 
   auto *central = new QWidget;
   auto *rootLayout = new QVBoxLayout(central);
@@ -36,23 +86,64 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
   m_stack = new SlideStackedWidget;
   m_stack->addWidget(buildWelcomePage());
   m_stack->addWidget(buildLanguagePage());
+  m_stack->addWidget(buildNetworkPage());
   m_stack->addWidget(buildThemePage());
+  m_stack->addWidget(buildAccessibilityPage());
+  m_stack->addWidget(buildSystemCheckPage());
+  m_stack->addWidget(buildUpdatePage());
   m_stack->addWidget(buildFeaturesPage());
   m_stack->addWidget(buildFinishPage());
 
   rootLayout->addWidget(m_stack, 1);
   rootLayout->addWidget(buildNavBar(), 0);
-
   setCentralWidget(central);
-  updateNavState();
 
-  if (QScreen *scr = QGuiApplication::primaryScreen()) {
-    const QRect r = scr->availableGeometry();
-    move(r.center() - rect().center());
+  connect(m_stack, &SlideStackedWidget::animationFinished, this,
+          &MainWindow::updateNavState);
+  updateNavState();
+  refreshNetworkStatus();
+  refreshSystemStatus();
+
+  if (QScreen *screen = QGuiApplication::primaryScreen()) {
+    const QRect available = screen->availableGeometry();
+    const int width = qMin(kPreferredWidth, available.width() - 40);
+    const int height = qMin(kPreferredHeight, available.height() - 40);
+    if (width >= minimumWidth() && height >= minimumHeight()) resize(width, height);
+    move(available.center() - rect().center());
   }
 }
 
-// ---- Trang 1: Welcome ------------------------------------------------------
+void MainWindow::loadPreferences() {
+  QSettings settings(preferencesPath(), QSettings::IniFormat);
+  m_selectedLanguage = settings.value("language", "vi").toString();
+  m_selectedKeyboard = settings.value("keyboard", "vn-telex").toString();
+  m_selectedTheme = settings.value("theme", "auto").toString();
+  m_reducedMotion = settings.value("accessibility/reduced_motion", false).toBool();
+  m_highContrast = settings.value("accessibility/high_contrast", false).toBool();
+  m_largeText = settings.value("accessibility/large_text", false).toBool();
+
+  if (m_selectedLanguage.isEmpty()) m_selectedLanguage = "vi";
+  if (m_selectedKeyboard.isEmpty()) m_selectedKeyboard = "vn-telex";
+  if (m_selectedTheme != "light" && m_selectedTheme != "dark" && m_selectedTheme != "auto") {
+    m_selectedTheme = "auto";
+  }
+  m_selectedWallpaper = m_selectedTheme == "dark"
+                            ? "/usr/share/backgrounds/hyggshi/car-Dark.png"
+                            : "/usr/share/backgrounds/hyggshi/car-light.png";
+}
+
+void MainWindow::savePreferences() const {
+  QDir().mkpath(configDirectory());
+  QSettings settings(preferencesPath(), QSettings::IniFormat);
+  settings.setValue("language", m_selectedLanguage);
+  settings.setValue("keyboard", m_selectedKeyboard);
+  settings.setValue("theme", m_selectedTheme);
+  settings.setValue("accessibility/reduced_motion", m_reducedMotion);
+  settings.setValue("accessibility/high_contrast", m_highContrast);
+  settings.setValue("accessibility/large_text", m_largeText);
+  settings.sync();
+}
+
 QWidget *MainWindow::buildWelcomePage() {
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
@@ -60,17 +151,16 @@ QWidget *MainWindow::buildWelcomePage() {
   layout->setSpacing(14);
 
   auto *logo = new QLabel;
-  logo->setPixmap(QPixmap(":/icons/logo.png").scaled(
-      96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  logo->setPixmap(QPixmap(":/icons/logo.png").scaled(96, 96, Qt::KeepAspectRatio,
+                                                        Qt::SmoothTransformation));
   logo->setAlignment(Qt::AlignCenter);
 
   auto *title = new QLabel(tr("Chào mừng đến với Hyggshi OS"));
   title->setAlignment(Qt::AlignCenter);
   title->setStyleSheet("font-size:24px; font-weight:600; color:#f2f3f5;");
 
-  auto *subtitle = new QLabel(
-      tr("Chỉ mất vài bước để cấu hình nhanh máy của bạn.\n"
-         "Bạn có thể đổi lại bất cứ lúc nào trong Cài đặt."));
+  auto *subtitle = new QLabel(tr("Thiết lập nhanh máy của bạn trong vài bước.\n"
+                                "Mọi lựa chọn đều có thể đổi lại trong Cài đặt."));
   subtitle->setAlignment(Qt::AlignCenter);
   subtitle->setStyleSheet("font-size:13px; color:#9aa0ab;");
   subtitle->setWordWrap(true);
@@ -83,47 +173,102 @@ QWidget *MainWindow::buildWelcomePage() {
   return page;
 }
 
-// ---- Trang 2: Ngôn ngữ & Bàn phím ------------------------------------------
 QWidget *MainWindow::buildLanguagePage() {
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
-  layout->setContentsMargins(70, 60, 70, 40);
-  layout->setSpacing(18);
+  layout->setContentsMargins(70, 55, 70, 40);
+  layout->setSpacing(16);
 
   auto *title = new QLabel(tr("Ngôn ngữ & Bàn phím"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
 
   auto *langLabel = new QLabel(tr("Ngôn ngữ hiển thị"));
   langLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
-  auto *langBox = new QComboBox;
-  langBox->addItems({tr("Tiếng Việt"), tr("English"), tr("日本語"), tr("한국어")});
+  m_languageBox = new QComboBox;
+  m_languageBox->addItem(tr("Tiếng Việt"), "vi");
+  m_languageBox->addItem(tr("English"), "en");
+  m_languageBox->addItem(tr("日本語"), "ja");
+  m_languageBox->addItem(tr("한국어"), "ko");
+  const int langIndex = m_languageBox->findData(m_selectedLanguage);
+  m_languageBox->setCurrentIndex(langIndex >= 0 ? langIndex : 0);
+  connect(m_languageBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int index) {
+            if (index >= 0) m_selectedLanguage = m_languageBox->itemData(index).toString();
+          });
 
   auto *kbLabel = new QLabel(tr("Bố cục bàn phím"));
-  kbLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:10px;");
-  auto *kbBox = new QComboBox;
-  kbBox->addItems({"Vietnamese (TELEX)", "English (US)", "English (UK)"});
+  kbLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:8px;");
+  m_keyboardBox = new QComboBox;
+  m_keyboardBox->addItem("Vietnamese (TELEX)", "vn-telex");
+  m_keyboardBox->addItem("English (US)", "us");
+  m_keyboardBox->addItem("English (UK)", "gb");
+  const int kbIndex = m_keyboardBox->findData(m_selectedKeyboard);
+  m_keyboardBox->setCurrentIndex(kbIndex >= 0 ? kbIndex : 0);
+  connect(m_keyboardBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int index) {
+            if (index >= 0) m_selectedKeyboard = m_keyboardBox->itemData(index).toString();
+          });
 
-  auto *note = new QLabel(
-      tr("Có thể đổi lại trong Cài đặt hệ thống > Vùng & Ngôn ngữ."));
-  note->setStyleSheet("color:#6f7480; font-size:11px; margin-top:14px;");
+  auto *note = new QLabel(tr("Các lựa chọn được lưu cho tài khoản hiện tại."));
+  note->setStyleSheet("color:#6f7480; font-size:11px;");
   note->setWordWrap(true);
 
   layout->addWidget(title);
   layout->addSpacing(8);
   layout->addWidget(langLabel);
-  layout->addWidget(langBox);
+  layout->addWidget(m_languageBox);
   layout->addWidget(kbLabel);
-  layout->addWidget(kbBox);
+  layout->addWidget(m_keyboardBox);
   layout->addWidget(note);
   layout->addStretch(1);
   return page;
 }
 
-// ---- Trang 3: Giao diện (Light/Dark/Auto) ----------------------------------
+QWidget *MainWindow::buildNetworkPage() {
+  auto *page = new QWidget;
+  auto *layout = new QVBoxLayout(page);
+  layout->setContentsMargins(70, 55, 70, 40);
+  layout->setSpacing(14);
+
+  auto *title = new QLabel(tr("Kết nối mạng"));
+  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
+  auto *desc = new QLabel(tr("Kiểm tra nhanh kết nối hiện tại. Hyggshi Welcome không tự quản lý Wi-Fi, mà mở công cụ hệ thống khi cần."));
+  desc->setWordWrap(true);
+  desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
+
+  m_networkStatus = new QLabel(tr("Đang kiểm tra..."));
+  m_networkStatus->setStyleSheet("font-size:14px; color:#d8dbe1; padding:14px; border:1px solid #2c2f38; border-radius:8px;");
+  m_networkStatus->setWordWrap(true);
+
+  auto *row = new QHBoxLayout;
+  auto *refresh = new QPushButton(tr("Kiểm tra lại"));
+  auto *settings = new QPushButton(tr("Mở Network Settings"));
+  refresh->setCursor(Qt::PointingHandCursor);
+  settings->setCursor(Qt::PointingHandCursor);
+  connect(refresh, &QPushButton::clicked, this, &MainWindow::refreshNetworkStatus);
+  connect(settings, &QPushButton::clicked, this, [this]() {
+    if (hasExecutable("nm-connection-editor")) QProcess::startDetached("nm-connection-editor");
+    else if (hasExecutable("gnome-control-center")) QProcess::startDetached("gnome-control-center", {"network"});
+    else if (hasExecutable("systemsettings5")) QProcess::startDetached("systemsettings5");
+    else if (hasExecutable("systemsettings")) QProcess::startDetached("systemsettings");
+  });
+  row->addWidget(refresh);
+  row->addWidget(settings);
+  row->addStretch(1);
+
+  layout->addWidget(title);
+  layout->addWidget(desc);
+  layout->addSpacing(8);
+  layout->addWidget(m_networkStatus);
+  layout->addLayout(row);
+  layout->addStretch(1);
+  return page;
+}
+
 QWidget *MainWindow::buildThemePage() {
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
-  layout->setContentsMargins(70, 60, 70, 40);
+  layout->setContentsMargins(70, 55, 70, 40);
   layout->setSpacing(18);
 
   auto *title = new QLabel(tr("Chọn giao diện"));
@@ -132,47 +277,35 @@ QWidget *MainWindow::buildThemePage() {
   auto *cardsRow = new QHBoxLayout;
   cardsRow->setSpacing(16);
   m_themeGroup = new QButtonGroup(page);
+  m_themeGroup->setExclusive(true);
 
-  // "background" dùng khi ảnh preview không nhúng được lúc build (file rỗng
-  // placeholder — xem phần copy resource phía trên) — fallback về swatch
-  // màu phẳng để card không bị vỡ layout.
-  // "wallpaper" là đường dẫn THẬT trên đĩa (được CMake install() vào
-  // /usr/share/backgrounds/hyggshi/) — dùng làm fallback áp 1 lần lúc
-  // finishSetup() khi hyggshi-theme-daemon CHƯA được cài (xem finishSetup()
-  // + scripts/make-theme-daemon.sh); khi daemon có sẵn, việc áp wallpaper
-  // theo giờ (cho "auto") hay theo theme (cho "light"/"dark") do daemon lo,
-  // welcome chỉ cần ghi lựa chọn vào xfconf channel "hyggshi".
-  struct ThemeOpt { QString id, label, background, wallpaper; };
   const QVector<ThemeOpt> opts = {
-      {"light", tr("Sáng"), "#f4f5f7",
-       "/usr/share/backgrounds/hyggshi/car-light.png"},
-      {"dark", tr("Tối"), "#1b1d23",
-       "/usr/share/backgrounds/hyggshi/car-Dark.png"},
-      {"auto", tr("Tự động"),
-       "qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #f4f5f7, stop:1 #1b1d23)",
-       "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"light", tr("Sáng"), "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"dark", tr("Tối"), "/usr/share/backgrounds/hyggshi/car-Dark.png"},
+      {"auto", tr("Tự động"), "/usr/share/backgrounds/hyggshi/car-light.png"},
   };
 
   for (int i = 0; i < opts.size(); ++i) {
-    const auto &opt = opts[i];
+    const auto opt = opts.at(i);
     auto *card = new QPushButton;
     card->setCheckable(true);
-    card->setChecked(opt.id == "auto");
     card->setFixedSize(150, 110);
     card->setCursor(Qt::PointingHandCursor);
     card->setText("\n\n" + opt.label);
 
-    // Cả 3 thẻ đều hiện thumbnail wallpaper thật (car-light/car-Dark/car-auto)
-    // làm nền qua border-image, chữ trắng cho dễ đọc trên ảnh.
-    const QString bodyStyle =
-        QString("border-image: url(:/icons/theme-%1.png) 0 0 0 0 stretch stretch;"
-                 " color:#ffffff;").arg(opt.id);
-
+    const QString imageName = QString("theme-%1.png").arg(opt.id);
     card->setStyleSheet(QString(
         "QPushButton { border-radius:10px; border:2px solid #2c2f38;"
-        " font-weight:600; %1 }"
+        " color:#ffffff; font-weight:600;"
+        " border-image:url(:/icons/%1) 0 0 0 0 stretch stretch; }"
         "QPushButton:checked { border:2px solid #5aa9ff; }")
-        .arg(bodyStyle));
+        .arg(imageName));
+
+    if (opt.id == m_selectedTheme) {
+      card->setChecked(true);
+      m_selectedWallpaper = opt.wallpaper;
+    }
+
     m_themeGroup->addButton(card, i);
     connect(card, &QPushButton::clicked, this, [this, opt]() {
       m_selectedTheme = opt.id;
@@ -181,9 +314,12 @@ QWidget *MainWindow::buildThemePage() {
     cardsRow->addWidget(card);
   }
 
-  auto *note = new QLabel(
-      tr("Áp dụng cho toàn hệ thống sau khi hoàn tất — hình nền sẽ tự đổi theo giao diện bạn chọn."
-         " Chế độ Tự động chuyển Sáng/Tối theo giờ (mặc định 6:00 và 18:00)."));
+  if (!m_themeGroup->checkedButton()) {
+    if (QAbstractButton *button = m_themeGroup->button(2)) button->setChecked(true);
+    m_selectedTheme = "auto";
+  }
+
+  auto *note = new QLabel(tr("Tự động sẽ bám theo theme hiện tại của desktop khi hoàn tất thiết lập."));
   note->setWordWrap(true);
   note->setStyleSheet("color:#6f7480; font-size:11px; margin-top:10px;");
 
@@ -195,18 +331,116 @@ QWidget *MainWindow::buildThemePage() {
   return page;
 }
 
-// ---- Trang 4: Tính năng nổi bật (carousel tự chạy) -------------------------
+QWidget *MainWindow::buildAccessibilityPage() {
+  auto *page = new QWidget;
+  auto *layout = new QVBoxLayout(page);
+  layout->setContentsMargins(70, 55, 70, 40);
+  layout->setSpacing(12);
+
+  auto *title = new QLabel(tr("Trợ năng"));
+  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
+  auto *desc = new QLabel(tr("Các lựa chọn dưới đây được lưu cho tài khoản hiện tại và có thể được thay đổi sau này."));
+  desc->setWordWrap(true);
+  desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
+
+  m_reducedMotionChk = new QCheckBox(tr("Giảm chuyển động và animation"));
+  m_highContrastChk = new QCheckBox(tr("Tăng tương phản giao diện"));
+  m_largeTextChk = new QCheckBox(tr("Chữ lớn hơn"));
+  m_reducedMotionChk->setChecked(m_reducedMotion);
+  m_highContrastChk->setChecked(m_highContrast);
+  m_largeTextChk->setChecked(m_largeText);
+  for (QCheckBox *check : {m_reducedMotionChk, m_highContrastChk, m_largeTextChk}) {
+    check->setCursor(Qt::PointingHandCursor);
+  }
+
+  connect(m_reducedMotionChk, &QCheckBox::toggled, this, [this](bool value) { m_reducedMotion = value; savePreferences(); });
+  connect(m_highContrastChk, &QCheckBox::toggled, this, [this](bool value) { m_highContrast = value; savePreferences(); });
+  connect(m_largeTextChk, &QCheckBox::toggled, this, [this](bool value) { m_largeText = value; savePreferences(); });
+
+  layout->addWidget(title);
+  layout->addWidget(desc);
+  layout->addSpacing(8);
+  layout->addWidget(m_reducedMotionChk);
+  layout->addWidget(m_highContrastChk);
+  layout->addWidget(m_largeTextChk);
+  layout->addStretch(1);
+  return page;
+}
+
+QWidget *MainWindow::buildSystemCheckPage() {
+  auto *page = new QWidget;
+  auto *layout = new QVBoxLayout(page);
+  layout->setContentsMargins(70, 45, 70, 35);
+  layout->setSpacing(12);
+
+  auto *title = new QLabel(tr("Kiểm tra hệ thống"));
+  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
+
+  m_systemStatus = new QLabel;
+  m_systemStatus->setWordWrap(true);
+  m_systemStatus->setTextFormat(Qt::RichText);
+  m_systemStatus->setStyleSheet("font-size:12px; color:#d8dbe1; padding:14px; border:1px solid #2c2f38; border-radius:8px;");
+
+  auto *refresh = new QPushButton(tr("Kiểm tra lại"));
+  refresh->setCursor(Qt::PointingHandCursor);
+  connect(refresh, &QPushButton::clicked, this, &MainWindow::refreshSystemStatus);
+
+  layout->addWidget(title);
+  layout->addWidget(m_systemStatus, 1);
+  layout->addWidget(refresh, 0, Qt::AlignLeft);
+  return page;
+}
+
+QWidget *MainWindow::buildUpdatePage() {
+  auto *page = new QWidget;
+  auto *layout = new QVBoxLayout(page);
+  layout->setContentsMargins(70, 55, 70, 40);
+  layout->setSpacing(12);
+
+  auto *title = new QLabel(tr("Cập nhật hệ thống"));
+  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
+  auto *desc = new QLabel(tr("Chỉ kiểm tra trạng thái cập nhật; Welcome không tự cài package hay yêu cầu quyền quản trị."));
+  desc->setWordWrap(true);
+  desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
+
+  m_updateStatus = new QLabel(tr("Chưa kiểm tra."));
+  m_updateStatus->setWordWrap(true);
+  m_updateStatus->setStyleSheet("font-size:13px; color:#d8dbe1; padding:14px; border:1px solid #2c2f38; border-radius:8px;");
+
+  m_updateCheckBtn = new QPushButton(tr("Kiểm tra cập nhật"));
+  m_updateCheckBtn->setCursor(Qt::PointingHandCursor);
+  connect(m_updateCheckBtn, &QPushButton::clicked, this, &MainWindow::checkForUpdates);
+
+  auto *open = new QPushButton(tr("Mở System Updater"));
+  open->setCursor(Qt::PointingHandCursor);
+  connect(open, &QPushButton::clicked, this, []() {
+    if (hasExecutable("update-manager")) QProcess::startDetached("update-manager");
+    else if (hasExecutable("gnome-software")) QProcess::startDetached("gnome-software");
+    else if (hasExecutable("discover")) QProcess::startDetached("discover");
+    else if (hasExecutable("software-manager")) QProcess::startDetached("software-manager");
+  });
+
+  layout->addWidget(title);
+  layout->addWidget(desc);
+  layout->addSpacing(8);
+  layout->addWidget(m_updateStatus);
+  layout->addWidget(m_updateCheckBtn, 0, Qt::AlignLeft);
+  layout->addWidget(open, 0, Qt::AlignLeft);
+  layout->addStretch(1);
+  return page;
+}
+
 QWidget *MainWindow::buildFeaturesPage() {
   m_features = {
-      {"🚀", tr("Khởi động nhanh"), tr("Hyggshi OS tối ưu boot time và tài nguyên nền cho trải nghiệm mượt mà.")},
-      {"🎨", tr("Giao diện tuỳ biến"), tr("Đổi theme, icon, panel dễ dàng ngay trong Cài đặt hệ thống.")},
-      {"🧩", tr("Hệ sinh thái riêng"), tr("nexfetch, HOSC, HyggshiDE — được xây dựng riêng cho Hyggshi OS.")},
-      {"🔒", tr("An toàn theo mặc định"), tr("Cấu hình bảo mật hợp lý sẵn có, không cần chỉnh tay.")},
+      {"🚀", tr("Khởi động nhanh"), tr("Hyggshi OS tối ưu trải nghiệm và tài nguyên nền cho sử dụng hằng ngày.")},
+      {"🎨", tr("Giao diện tuỳ biến"), tr("Đổi theme, icon và panel dễ dàng ngay trong Cài đặt hệ thống.")},
+      {"🧩", tr("Hệ sinh thái riêng"), tr("nexfetch, HOSC và các thành phần Hyggshi được tích hợp theo hướng đồng bộ.")},
+      {"🔒", tr("An toàn theo mặc định"), tr("Các thiết lập nền tảng hợp lý được chuẩn bị sẵn để bắt đầu.")},
   };
 
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
-  layout->setContentsMargins(70, 50, 70, 30);
+  layout->setContentsMargins(70, 45, 70, 30);
   layout->setSpacing(10);
   layout->setAlignment(Qt::AlignCenter);
 
@@ -226,14 +460,13 @@ QWidget *MainWindow::buildFeaturesPage() {
   m_featureDesc->setAlignment(Qt::AlignCenter);
   m_featureDesc->setWordWrap(true);
   m_featureDesc->setStyleSheet("font-size:12px; color:#9aa0ab;");
-  m_featureDesc->setFixedWidth(420);
+  m_featureDesc->setMaximumWidth(520);
 
   auto *navRow = new QHBoxLayout;
   navRow->setAlignment(Qt::AlignCenter);
   navRow->setSpacing(6);
   auto *prevArrow = new QToolButton;
   prevArrow->setText("◀");
-  prevArrow->setAutoRaise(true);
   auto *dotsRow = new QHBoxLayout;
   dotsRow->setSpacing(6);
   for (int i = 0; i < m_features.size(); ++i) {
@@ -243,18 +476,18 @@ QWidget *MainWindow::buildFeaturesPage() {
   }
   auto *nextArrow = new QToolButton;
   nextArrow->setText("▶");
-  nextArrow->setAutoRaise(true);
 
   navRow->addWidget(prevArrow);
   navRow->addLayout(dotsRow);
   navRow->addWidget(nextArrow);
-
   connect(prevArrow, &QToolButton::clicked, this, [this]() {
+    if (m_features.isEmpty()) return;
     m_carouselTimer->stop();
     showFeatureSlide((m_featureIndex - 1 + m_features.size()) % m_features.size());
     m_carouselTimer->start();
   });
   connect(nextArrow, &QToolButton::clicked, this, [this]() {
+    if (m_features.isEmpty()) return;
     m_carouselTimer->stop();
     showFeatureSlide((m_featureIndex + 1) % m_features.size());
     m_carouselTimer->start();
@@ -267,47 +500,33 @@ QWidget *MainWindow::buildFeaturesPage() {
   layout->addWidget(m_featureDesc, 0, Qt::AlignHCenter);
   layout->addSpacing(10);
   layout->addLayout(navRow);
-
   showFeatureSlide(0);
 
   m_carouselTimer = new QTimer(this);
   m_carouselTimer->setInterval(3800);
   connect(m_carouselTimer, &QTimer::timeout, this, &MainWindow::advanceCarousel);
   m_carouselTimer->start();
-
   return page;
 }
 
 void MainWindow::showFeatureSlide(int index) {
+  if (m_features.isEmpty() || index < 0 || index >= m_features.size() || !m_featureDesc ||
+      !m_featureIcon || !m_featureTitle) return;
   m_featureIndex = index;
-  const auto &f = m_features[index];
-
-  // Crossfade nội dung slide bằng QGraphicsOpacityEffect thay vì đổi đột ngột.
-  auto *fx = new QGraphicsOpacityEffect(m_featureDesc);
-  m_featureDesc->setGraphicsEffect(fx);
-  m_featureIcon->setText(f.icon);
-  m_featureTitle->setText(f.title);
-  m_featureDesc->setText(f.desc);
-
-  auto *anim = new QPropertyAnimation(fx, "opacity", this);
-  anim->setDuration(300);
-  anim->setStartValue(0.0);
-  anim->setEndValue(1.0);
-  anim->setEasingCurve(QEasingCurve::OutCubic);
-  anim->start(QAbstractAnimation::DeleteWhenStopped);
-
+  const FeatureSlide &feature = m_features.at(index);
+  m_featureIcon->setText(feature.icon);
+  m_featureTitle->setText(feature.title);
+  m_featureDesc->setText(feature.desc);
   for (int i = 0; i < m_featureDots.size(); ++i) {
-    m_featureDots[i]->setStyleSheet(QString(
-        "border-radius:4px; background:%1;")
-        .arg(i == index ? "#5aa9ff" : "#3a3f4b"));
+    m_featureDots[i]->setStyleSheet(QString("border-radius:4px; background:%1;")
+                                        .arg(i == index ? "#5aa9ff" : "#3a3f4b"));
   }
 }
 
 void MainWindow::advanceCarousel() {
-  showFeatureSlide((m_featureIndex + 1) % m_features.size());
+  if (!m_features.isEmpty()) showFeatureSlide((m_featureIndex + 1) % m_features.size());
 }
 
-// ---- Trang 5: Hoàn tất ------------------------------------------------------
 QWidget *MainWindow::buildFinishPage() {
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
@@ -317,12 +536,10 @@ QWidget *MainWindow::buildFinishPage() {
   auto *icon = new QLabel("🎉");
   icon->setAlignment(Qt::AlignCenter);
   icon->setStyleSheet("font-size:48px;");
-
   auto *title = new QLabel(tr("Đã sẵn sàng!"));
   title->setAlignment(Qt::AlignCenter);
   title->setStyleSheet("font-size:22px; font-weight:600; color:#f2f3f5;");
-
-  auto *desc = new QLabel(tr("Cấu hình ban đầu đã xong. Chúc bạn dùng Hyggshi OS vui vẻ."));
+  auto *desc = new QLabel(tr("Hyggshi OS đã sẵn sàng. Các lựa chọn của bạn đã được lưu."));
   desc->setAlignment(Qt::AlignCenter);
   desc->setStyleSheet("font-size:13px; color:#9aa0ab;");
   desc->setWordWrap(true);
@@ -330,11 +547,6 @@ QWidget *MainWindow::buildFinishPage() {
   m_dontAskAgainChk = new QCheckBox(tr("Không hỏi lại lần sau"));
   m_dontAskAgainChk->setChecked(true);
   m_dontAskAgainChk->setCursor(Qt::PointingHandCursor);
-  m_dontAskAgainChk->setStyleSheet(
-      "QCheckBox { color:#9aa0ab; font-size:12px; spacing:8px; }"
-      "QCheckBox::indicator { width:16px; height:16px; border-radius:4px;"
-      " border:1px solid #3a3f4b; background:#1e2027; }"
-      "QCheckBox::indicator:checked { background:#5aa9ff; border:1px solid #5aa9ff; }");
 
   layout->addStretch(1);
   layout->addWidget(icon);
@@ -346,40 +558,33 @@ QWidget *MainWindow::buildFinishPage() {
   return page;
 }
 
-// ---- Thanh điều hướng dưới cùng ---------------------------------------------
 QWidget *MainWindow::buildNavBar() {
   auto *bar = new QFrame;
   bar->setStyleSheet("background:#1a1c22; border-top:1px solid #2a2d35;");
   bar->setFixedHeight(64);
-
   auto *layout = new QHBoxLayout(bar);
   layout->setContentsMargins(24, 0, 24, 0);
 
   m_backBtn = new QPushButton(tr("Quay lại"));
-  m_backBtn->setFlat(true);
   m_backBtn->setCursor(Qt::PointingHandCursor);
   connect(m_backBtn, &QPushButton::clicked, this, &MainWindow::goBack);
 
   auto *dotsRow = new QHBoxLayout;
   dotsRow->setSpacing(7);
   dotsRow->setAlignment(Qt::AlignCenter);
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < kPageCount; ++i) {
     auto *dot = makeDot(i == 0);
     m_dots.push_back(dot);
     dotsRow->addWidget(dot);
   }
 
   m_skipBtn = new QPushButton(tr("Bỏ qua"));
-  m_skipBtn->setFlat(true);
   m_skipBtn->setCursor(Qt::PointingHandCursor);
   connect(m_skipBtn, &QPushButton::clicked, this, &MainWindow::finishSetup);
 
   m_nextBtn = new QPushButton(tr("Tiếp tục"));
   m_nextBtn->setCursor(Qt::PointingHandCursor);
-  m_nextBtn->setStyleSheet(
-      "QPushButton { background:#5aa9ff; color:#0d1017; font-weight:600;"
-      " border-radius:8px; padding:8px 22px; }"
-      "QPushButton:hover { background:#77b9ff; }");
+  m_nextBtn->setStyleSheet("QPushButton { background:#5aa9ff; color:#0d1017; font-weight:600; border-radius:8px; padding:8px 22px; } QPushButton:hover { background:#77b9ff; } QPushButton:disabled { background:#33465b; color:#66717f; }");
   connect(m_nextBtn, &QPushButton::clicked, this, &MainWindow::goNext);
 
   layout->addWidget(m_backBtn);
@@ -393,195 +598,287 @@ QWidget *MainWindow::buildNavBar() {
 
 void MainWindow::updateDots(int index) {
   for (int i = 0; i < m_dots.size(); ++i) {
-    m_dots[i]->setStyleSheet(QString(
-        "border-radius:4px; background:%1;")
-        .arg(i == index ? "#5aa9ff" : "#3a3f4b"));
+    m_dots[i]->setStyleSheet(QString("border-radius:4px; background:%1;")
+                                  .arg(i == index ? "#5aa9ff" : "#3a3f4b"));
   }
 }
 
 void MainWindow::updateNavState() {
+  if (!m_stack || !m_backBtn || !m_skipBtn || !m_nextBtn) return;
   const int index = m_stack->currentIndex();
   const bool isLast = index == m_stack->count() - 1;
-  m_backBtn->setEnabled(index > 0);
+  const bool busy = m_stack->isAnimating();
+  m_backBtn->setEnabled(index > 0 && !busy);
   m_backBtn->setVisible(index > 0);
   m_skipBtn->setVisible(!isLast);
+  m_skipBtn->setEnabled(!busy);
+  m_nextBtn->setEnabled(!busy);
   m_nextBtn->setText(isLast ? tr("Bắt đầu sử dụng") : tr("Tiếp tục"));
   updateDots(index);
+
+  m_stack->setReducedMotion(m_reducedMotion);
 }
 
 void MainWindow::goNext() {
+  if (!m_stack || m_stack->isAnimating()) return;
   const int index = m_stack->currentIndex();
   if (index == m_stack->count() - 1) {
     finishSetup();
     return;
   }
+  if (index == 2) refreshNetworkStatus();
+  if (index == 5) refreshSystemStatus();
+  if (index == 6) setUpdateStatus(tr("Bạn có thể kiểm tra cập nhật ngay hoặc tiếp tục."));
   m_stack->slideToIndex(index + 1);
-  QTimer::singleShot(0, this, &MainWindow::updateNavState);
+  updateNavState();
 }
 
 void MainWindow::goBack() {
+  if (!m_stack || m_stack->isAnimating()) return;
   const int index = m_stack->currentIndex();
-  if (index == 0) return;
+  if (index <= 0) return;
   m_stack->slideToIndex(index - 1);
-  QTimer::singleShot(0, this, &MainWindow::updateNavState);
+  updateNavState();
+}
+
+void MainWindow::applyLanguageAndKeyboard() {
+  savePreferences();
+  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
+  QString xkbLayout = m_selectedKeyboard;
+  if (xkbLayout == "vn-telex") xkbLayout = "vn";
+  if (hasExecutable("gsettings")) {
+    if (desktop.contains("gnome")) {
+      setGsettings("org.gnome.desktop.input-sources", "sources", QString("[( 'xkb', '%1' )]").arg(xkbLayout));
+    } else if (desktop.contains("cinnamon")) {
+      setGsettings("org.cinnamon.desktop.input-sources", "sources", QString("[( 'xkb', '%1' )]").arg(xkbLayout));
+    }
+  }
+}
+
+void MainWindow::applyAccessibility() {
+  savePreferences();
+  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
+  if (m_reducedMotion && hasExecutable("gsettings")) {
+    if (desktop.contains("gnome")) setGsettings("org.gnome.desktop.interface", "enable-animations", "false");
+    else if (desktop.contains("cinnamon")) setGsettings("org.cinnamon.desktop.interface", "enable-animations", "false");
+  }
+  if (!m_reducedMotion && hasExecutable("gsettings")) {
+    if (desktop.contains("gnome")) setGsettings("org.gnome.desktop.interface", "enable-animations", "true");
+    else if (desktop.contains("cinnamon")) setGsettings("org.cinnamon.desktop.interface", "enable-animations", "true");
+  }
+  if (m_highContrast && hasExecutable("gsettings") && desktop.contains("gnome")) {
+    setGsettings("org.gnome.desktop.a11y", "always-show-universal-access-status", "true");
+  }
+
+  QFont font = qApp->font();
+  font.setPointSize(m_largeText ? 12 : 10);
+  qApp->setFont(font);
+}
+
+void MainWindow::refreshNetworkStatus() {
+  if (!m_networkStatus) return;
+  QString text;
+  bool connected = false;
+  QString interfaceName;
+  QString type;
+
+  if (hasExecutable("nmcli")) {
+    const QStringList state = commandOutput("nmcli", {"-t", "-f", "general.state", "general"});
+    connected = !state.isEmpty() && state.first().toLower().contains("connected");
+    const QStringList devices = commandOutput("nmcli", {"-t", "-f", "device,type,state", "device"});
+    for (const QString &line : devices) {
+      const QStringList p = line.split(':');
+      if (p.size() >= 3 && p.at(2).toLower().contains("connected")) {
+        interfaceName = p.at(0);
+        type = p.at(1);
+        break;
+      }
+    }
+    text = connected ? tr("✓ Đang kết nối\nThiết bị: %1%2").arg(interfaceName, type.isEmpty() ? QString() : " (" + type + ")")
+                     : tr("⚠ Chưa có kết nối mạng hoạt động.");
+  } else {
+    const QStringList route = commandOutput("sh", {"-c", "ip route get 1.1.1.1 2>/dev/null"});
+    connected = !route.isEmpty();
+    text = connected ? tr("✓ Có route mạng đang hoạt động.") : tr("⚠ Không xác định được trạng thái mạng.");
+  }
+  if (!hasExecutable("nmcli")) text += tr("\nNetworkManager/nmcli chưa có; hãy kiểm tra bằng công cụ desktop.");
+  m_networkStatus->setText(text);
+}
+
+void MainWindow::refreshSystemStatus() {
+  if (!m_systemStatus) return;
+  QString cpu = QSysInfo::currentCpuArchitecture();
+  QString kernel = QSysInfo::kernelType() + " " + QSysInfo::kernelVersion();
+  QString os = QSysInfo::prettyProductName();
+  const QString config = configDirectory();
+  const bool configWritable = QDir().mkpath(config) && QFileInfo(config).isWritable();
+  const bool desktopDetected = !qEnvironmentVariable("XDG_CURRENT_DESKTOP").isEmpty();
+  const bool settings = hasExecutable("gsettings") || hasExecutable("xfconf-query");
+  const bool wallpaperTools = hasExecutable("gsettings") || hasExecutable("xfconf-query") || QFile::exists("/usr/local/bin/hyggshi-set-wallpaper.sh");
+
+  QString memoryInfo = tr("Không đọc được RAM");
+  QFile memFile("/proc/meminfo");
+  if (memFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    const QString data = QString::fromLocal8Bit(memFile.readAll());
+    const QRegularExpression re("MemTotal\\s*:\\s*(\\d+)");
+    const auto match = re.match(data);
+    if (match.hasMatch()) {
+      const double gb = match.captured(1).toLongLong() / 1024.0 / 1024.0;
+      memoryInfo = tr("%1 GB RAM").arg(QString::number(gb, 'f', 1));
+    }
+  }
+
+  QString html;
+  html += tr("<b>OS:</b> %1<br>").arg(os.toHtmlEscaped());
+  html += tr("<b>Kernel:</b> %1<br>").arg(kernel.toHtmlEscaped());
+  html += tr("<b>Architecture:</b> %1<br>").arg(cpu.toHtmlEscaped());
+  html += tr("<b>Memory:</b> %1<br><br>").arg(memoryInfo.toHtmlEscaped());
+  html += tr("%1 Cấu hình người dùng ghi được<br>").arg(configWritable ? "✓" : "✗");
+  html += tr("%1 Desktop environment phát hiện được<br>").arg(desktopDetected ? "✓" : "⚠");
+  html += tr("%1 Công cụ theme/settings khả dụng<br>").arg(settings ? "✓" : "⚠");
+  html += tr("%1 Công cụ wallpaper khả dụng").arg(wallpaperTools ? "✓" : "⚠");
+  m_systemStatus->setText(html);
+}
+
+void MainWindow::setUpdateStatus(const QString &text) {
+  if (m_updateStatus) m_updateStatus->setText(text);
+}
+
+void MainWindow::checkForUpdates() {
+  if (!m_updateCheckBtn || !m_updateStatus) return;
+  m_updateCheckBtn->setEnabled(false);
+  setUpdateStatus(tr("Đang kiểm tra..."));
+
+  auto *process = new QProcess(this);
+  QString program;
+  QStringList args;
+  if (hasExecutable("checkupdates")) { program = "checkupdates"; }
+  else if (hasExecutable("apt-get")) { program = "apt-get"; args = {"-s", "upgrade"}; }
+  else if (hasExecutable("dnf")) { program = "dnf"; args = {"-q", "check-update"}; }
+  else if (hasExecutable("zypper")) { program = "zypper"; args = {"--non-interactive", "list-updates"}; }
+  else if (hasExecutable("pacman") && hasExecutable("checkupdates")) { program = "checkupdates"; }
+
+  if (program.isEmpty()) {
+    setUpdateStatus(tr("Không tìm thấy công cụ kiểm tra cập nhật. Hãy dùng System Updater của desktop."));
+    m_updateCheckBtn->setEnabled(true);
+    process->deleteLater();
+    return;
+  }
+
+  connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+          [this, process](int exitCode, QProcess::ExitStatus status) {
+            const QString out = QString::fromLocal8Bit(process->readAllStandardOutput()).trimmed();
+            const QString err = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
+            m_updateCheckBtn->setEnabled(true);
+            if (status != QProcess::NormalExit) setUpdateStatus(tr("Không thể hoàn tất kiểm tra cập nhật."));
+            else if (exitCode == 0) setUpdateStatus(out.isEmpty() ? tr("✓ Không phát hiện package cần cập nhật.") : tr("✓ Công cụ cập nhật đã trả kết quả:\n%1").arg(out.left(1200)));
+            else if (exitCode == 100 && err.isEmpty()) setUpdateStatus(tr("Có package cần cập nhật. Hãy mở System Updater để xem chi tiết."));
+            else setUpdateStatus(err.isEmpty() ? tr("Không thể xác định trạng thái cập nhật.") : err.left(1200));
+            process->deleteLater();
+          });
+  process->start(program, args);
+}
+
+QString MainWindow::resolveAutoWallpaper() const {
+  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
+  if (hasExecutable("gsettings")) {
+    QString theme;
+    if (desktop.contains("gnome")) {
+      QProcess process;
+      process.start("gsettings", {"get", "org.gnome.desktop.interface", "gtk-theme"});
+      if (process.waitForFinished(1000)) theme = QString::fromLocal8Bit(process.readAllStandardOutput());
+    } else if (desktop.contains("cinnamon")) {
+      QProcess process;
+      process.start("gsettings", {"get", "org.cinnamon.desktop.interface", "gtk-theme"});
+      if (process.waitForFinished(1000)) theme = QString::fromLocal8Bit(process.readAllStandardOutput());
+    }
+    if (theme.toLower().contains("dark")) return "/usr/share/backgrounds/hyggshi/car-Dark.png";
+  }
+  if (hasExecutable("xfconf-query") && desktop.contains("xfce")) {
+    QProcess process;
+    process.start("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName"});
+    if (process.waitForFinished(1000)) {
+      const QString theme = QString::fromLocal8Bit(process.readAllStandardOutput());
+      if (theme.toLower().contains("dark")) return "/usr/share/backgrounds/hyggshi/car-Dark.png";
+    }
+  }
+  return "/usr/share/backgrounds/hyggshi/car-light.png";
+}
+
+void MainWindow::saveFirstRunState(bool completed) {
+  QDir().mkpath(configDirectory());
+  const QString marker = configDirectory() + "/welcome-shown";
+  if (completed) {
+    QFile markerFile(marker);
+    if (markerFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+      markerFile.write("1\n");
+      markerFile.close();
+    }
+  } else {
+    QFile::remove(marker);
+  }
 }
 
 void MainWindow::finishSetup() {
-  // Áp GTK theme (light/dark) đã chọn — best-effort, dò đúng cơ chế theo DE
-  // đang chạy thay vì hardcode xfconf/XFCE. gsettings dùng chung schema
-  // "interface" trên GNOME/Cinnamon/MATE (đều nền GSettings/dconf); XFCE
-  // dùng riêng xfconf channel "xsettings".
-  const QString xdgDesktop =
-      qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
-  QString themeName = m_selectedTheme == "dark" ? "Adwaita-dark"
-                     : m_selectedTheme == "light" ? "Adwaita"
-                     : "Adwaita"; // "auto" tạm map về theme sáng mặc định
+  if (!m_stack || m_stack->isAnimating()) return;
 
-  if (xdgDesktop.contains("xfce")) {
-    if (QStandardPaths::findExecutable("xfconf-query") != "") {
-      QProcess::execute("xfconf-query",
-          {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
-    }
-  } else if (QStandardPaths::findExecutable("gsettings") != "") {
-    // GNOME/Cinnamon/MATE đều đọc gtk-theme qua gsettings, chỉ khác schema
-    // "interface". Best-effort: gọi cả hai nhánh phổ biến nhất, nhánh nào
-    // schema không tồn tại thì gsettings tự lặng lẽ trả lỗi (không fail app).
-    if (xdgDesktop.contains("cinnamon")) {
-      QProcess::execute("gsettings",
-          {"set", "org.cinnamon.desktop.interface", "gtk-theme", themeName});
-    } else if (xdgDesktop.contains("mate")) {
-      QProcess::execute("gsettings",
-          {"set", "org.mate.interface", "gtk-theme", themeName});
-    } else {
-      QProcess::execute("gsettings",
-          {"set", "org.gnome.desktop.interface", "gtk-theme", themeName});
-    }
+  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
+  const QString themeName = m_selectedTheme == "dark" ? "Adwaita-dark" : "Adwaita";
+
+  if (m_selectedTheme != "auto" && desktop.contains("xfce")) {
+    if (hasExecutable("xfconf-query")) QProcess::execute("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
+  } else if (m_selectedTheme != "auto" && hasExecutable("gsettings")) {
+    if (desktop.contains("cinnamon")) setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
+    else if (desktop.contains("mate")) setGsettings("org.mate.interface", "gtk-theme", themeName);
+    else if (desktop.contains("gnome")) setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
   }
 
-  // Ghi lựa chọn (Sáng/Tối/Tự động) vào 2 nơi để KHỚP với cả 2 cơ chế đổi
-  // theme tự động đang có trong repo, dùng cơ chế nào tại thời điểm build
-  // (WELCOME_WIZARD có thể đi kèm THEME_DAEMON hoặc AUTO_THEME) không quan
-  // trọng, welcome không cần biết:
-  //  1) xfconf channel "hyggshi" — đọc bởi hyggshi-theme-daemon (C++/xfconf,
-  //     scripts/make-theme-daemon.sh), best-effort nếu có xfconf-query.
-  //  2) ~/.config/hyggshi/theme.conf (KEY=VALUE, MODE=...) — đọc bởi
-  //     hyggshi-auto-theme (bash + systemd timer, scripts/make-auto-theme.sh,
-  //     phương án nhẹ mặc định). BUG CŨ: welcome trước đây CHỈ ghi qua
-  //     xfconf, nên lựa chọn trong welcome không hề tới được
-  //     hyggshi-auto-theme (script đó chỉ source theme.conf, không đọc
-  //     xfconf) — chọn "Tối" trong welcome nhưng auto-theme vẫn tự đổi theo
-  //     giờ như thể user chưa chọn gì.
-  if (QStandardPaths::findExecutable("xfconf-query") != "") {
-    QProcess::execute("xfconf-query",
-        {"-c", "hyggshi", "-p", "/theme/mode", "-n", "-t", "string",
-         "-s", m_selectedTheme});
-  }
+  applyLanguageAndKeyboard();
+  applyAccessibility();
+  savePreferences();
 
-  const QString userCfgDir = QStandardPaths::writableLocation(
-      QStandardPaths::GenericConfigLocation) + "/hyggshi";
-  QDir().mkpath(userCfgDir);
-  QFile userThemeConf(userCfgDir + "/theme.conf");
-  if (userThemeConf.open(QIODevice::WriteOnly | QIODevice::Text)) {
-    QTextStream out(&userThemeConf);
-    out << "# Ghi tự động bởi hyggshi-welcome — xem /etc/hyggshi/theme.conf"
-           " cho mô tả đầy đủ các key.\n";
-    out << "MODE=" << m_selectedTheme << "\n";
+  const QString themeCfg = configDirectory() + "/theme.conf";
+  QFile userThemeConf(themeCfg);
+  if (userThemeConf.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+    userThemeConf.write("# Generated by hyggshi-welcome\n");
+    userThemeConf.write("MODE=" + m_selectedTheme.toUtf8() + "\n");
     userThemeConf.close();
   }
 
-  // LUÔN áp wallpaper MỘT LẦN ngay tại đây, bất kể hyggshi-theme-daemon đã
-  // được cài hay chưa. Trước đây chỗ này chỉ gọi applyWallpaper() khi
-  // KHÔNG tìm thấy binary daemon trên đĩa (QFile::exists), với giả định
-  // "nếu daemon có cài thì tự nó sẽ đổi wallpaper qua property-changed".
-  // Vấn đề: daemon chạy qua systemd --user (WantedBy=graphical-session.
-  // target), khởi động gần như SONG SONG với autostart của hyggshi-welcome
-  // — không có gì đảm bảo nó đã start + kết nối signal xong đúng lúc
-  // welcome ghi property, nhất là khi người dùng bấm "Bỏ qua"/"Tiếp tục"
-  // rất nhanh để hoàn tất welcome ngay (start nhanh). Nếu daemon chưa kịp
-  // chạy tại thời điểm đó, hình nền sẽ KHÔNG đổi ngay như mong đợi — chỉ
-  // đổi (nếu có) khi daemon khởi động xong và tự áp state ban đầu, không
-  // đáng tin cậy 100% ở mọi thứ tự session/DE.
-  //
-  // Gọi applyWallpaper() vô điều kiện là an toàn: nếu daemon cũng đang
-  // chạy, nó sẽ ghi lại đúng giá trị tương ứng với mode vừa lưu (không
-  // xung đột) và tiếp quản việc tự đổi theo giờ cho chế độ "auto" sau đó.
-  applyWallpaper(m_selectedWallpaper);
+  const QString wallpaper = m_selectedTheme == "auto" ? resolveAutoWallpaper() : m_selectedWallpaper;
+  applyWallpaper(wallpaper);
 
-  // Đánh dấu đã hoàn tất welcome để autostart không hiện lại lần sau —
-  // CHỈ khi người dùng đã tick "Không hỏi lại lần sau" ở trang Xong.
-  // Nếu m_dontAskAgainChk == nullptr (người dùng bấm "Bỏ qua" trước khi
-  // vào tới trang Xong) thì coi như đồng ý mặc định, giống hành vi cũ.
-  const bool dontAskAgain =
-      m_dontAskAgainChk == nullptr || m_dontAskAgainChk->isChecked();
-
-  const QString cfgDir = QStandardPaths::writableLocation(
-      QStandardPaths::GenericConfigLocation) + "/hyggshi";
-  QDir().mkpath(cfgDir);
-  QFile marker(cfgDir + "/welcome-shown");
-  if (dontAskAgain) {
-    if (marker.open(QIODevice::WriteOnly)) {
-      marker.write("1");
-      marker.close();
-    }
-  } else if (marker.exists()) {
-    // Người dùng bỏ tick -> xoá marker cũ (nếu có) để welcome hiện lại
-    // ở lần đăng nhập kế tiếp.
-    marker.remove();
-  }
-
+  const bool dontAskAgain = m_dontAskAgainChk == nullptr || m_dontAskAgainChk->isChecked();
+  saveFirstRunState(dontAskAgain);
   qApp->quit();
 }
 
-// Áp wallpaper theo theme đã chọn — best-effort, không fail nếu thiếu file
-// hoặc thiếu xfconf-query, giống style của finishSetup() ở trên.
-//
-// Ưu tiên gọi lại /usr/local/bin/hyggshi-set-wallpaper.sh (do branding.sh
-// cài lúc build ISO) thay vì tự dò tên monitor trong C++, vì script đó đã
-// xử lý sẵn race condition lúc login + dò đúng tên monitor thật qua xrandr
-// (monitor0 không đúng trên mọi máy/VM, xem ghi chú trong branding.sh).
-// Script nhận tham số đường dẫn wallpaper tuỳ chọn, mặc định vẫn là
-// wallpaper.png nếu gọi không kèm tham số (không phá hành vi cũ ở lúc login).
 void MainWindow::applyWallpaper(const QString &wallpaperPath) {
-  if (wallpaperPath.isEmpty() || !QFile::exists(wallpaperPath)) {
-    return;
-  }
-
+  if (wallpaperPath.isEmpty() || !QFile::exists(wallpaperPath)) return;
   const QString wallScript = "/usr/local/bin/hyggshi-set-wallpaper.sh";
-  if (QFile::exists(wallScript)) {
-    QProcess::startDetached(wallScript, {wallpaperPath});
-    return;
-  }
+  if (QFile::exists(wallScript)) { QProcess::startDetached(wallScript, {wallpaperPath}); return; }
 
-  // Fallback tối giản khi chạy ngoài ISO đã build đầy đủ (vd. build tay
-  // bằng --install để test riêng app hyggshi-welcome, không có
-  // hyggshi-set-wallpaper.sh của branding.sh trong hệ thống): set thẳng
-  // property mặc định, KHÔNG hardcode chỉ XFCE — dò theo XDG_CURRENT_DESKTOP
-  // giống logic trong hyggshi-set-wallpaper.sh (scripts/branding.sh).
-  const QString xdgDesktop =
-      qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
-  const QString fileUri = "file://" + wallpaperPath;
-
-  if (xdgDesktop.contains("cinnamon") &&
-      QStandardPaths::findExecutable("gsettings") != "") {
-    QProcess::execute("gsettings",
-        {"set", "org.cinnamon.desktop.background", "picture-uri", fileUri});
-  } else if (xdgDesktop.contains("mate") &&
-             QStandardPaths::findExecutable("gsettings") != "") {
-    QProcess::execute("gsettings",
-        {"set", "org.mate.background", "picture-filename", wallpaperPath});
-  } else if (xdgDesktop.contains("gnome") &&
-             QStandardPaths::findExecutable("gsettings") != "") {
-    QProcess::execute("gsettings",
-        {"set", "org.gnome.desktop.background", "picture-uri", fileUri});
-  } else if (xdgDesktop.contains("xfce") &&
-             QStandardPaths::findExecutable("xfconf-query") != "") {
-    QProcess::execute("xfconf-query",
-        {"-c", "xfce4-desktop", "-p",
-         "/backdrop/screen0/monitor0/workspace0/last-image",
-         "-n", "-t", "string", "-s", wallpaperPath});
-    QProcess::execute("xfconf-query",
-        {"-c", "xfce4-desktop", "-p",
-         "/backdrop/screen0/monitor0/workspace0/image-style",
-         "-n", "-t", "int", "-s", "5"});
+  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
+  const QString fileUri = QUrl::fromLocalFile(wallpaperPath).toString();
+  if (desktop.contains("cinnamon") && hasExecutable("gsettings")) setGsettings("org.cinnamon.desktop.background", "picture-uri", fileUri);
+  else if (desktop.contains("mate") && hasExecutable("gsettings")) setGsettings("org.mate.background", "picture-filename", wallpaperPath);
+  else if (desktop.contains("gnome") && hasExecutable("gsettings")) {
+    setGsettings("org.gnome.desktop.background", "picture-uri", fileUri);
+    setGsettings("org.gnome.desktop.background", "picture-uri-dark", fileUri);
+  } else if (desktop.contains("xfce") && hasExecutable("xfconf-query")) {
+    QProcess process;
+    process.start("xfconf-query", {"-c", "xfce4-desktop", "-l"});
+    if (process.waitForFinished(1200)) {
+      const QStringList properties = QString::fromLocal8Bit(process.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts);
+      bool changed = false;
+      for (const QString &property : properties) {
+        if (!property.endsWith("/last-image")) continue;
+        QProcess::execute("xfconf-query", {"-c", "xfce4-desktop", "-p", property, "-s", wallpaperPath});
+        const QString styleProperty = property.left(property.size() - QString("/last-image").size()) + "/image-style";
+        QProcess::execute("xfconf-query", {"-c", "xfce4-desktop", "-p", styleProperty, "-n", "-t", "int", "-s", "5"});
+        changed = true;
+      }
+      if (!changed) QProcess::execute("xfconf-query", {"-c", "xfce4-desktop", "-p", "/backdrop/screen0/monitor0/workspace0/last-image", "-s", wallpaperPath});
+    }
   }
 }

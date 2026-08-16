@@ -1,20 +1,50 @@
-# hyggshi-welcome
+# Hyggshi Welcome
 
-App chào mừng đầu tiên cho Hyggshi OS — C++/Qt Widgets, có animation trượt
-trang (slide + fade) giữa các bước cấu hình nhanh, phong cách giống GNOME
-Initial Setup (Fedora) / Ubuntu Welcome.
+Hyggshi Welcome is the first-run onboarding wizard for Hyggshi OS. It is a native Qt application with Qt 6/Qt 5 fallback support.
 
-Build tay:
+## Setup flow
 
-```bash
-cmake -B build -S .
-cmake --build build -j
-./build/hyggshi-welcome
+1. Welcome
+2. Language and keyboard
+3. Network status
+4. Appearance
+5. Accessibility
+6. System check
+7. Update check
+8. Hyggshi OS features
+9. Ready
+
+## Persistence
+
+User preferences are stored in:
+
+```text
+~/.config/hyggshi/welcome.conf
+~/.config/hyggshi/theme.conf
 ```
 
-Sinh lại app cùng lần chạy tiếp theo dù đã đánh dấu "đã xem" (marker file
-`~/.config/hyggshi/welcome-shown`):
+The first-run marker is:
+
+```text
+~/.config/hyggshi/welcome-shown
+```
+
+Set `HYGGSHI_WELCOME_FORCE=1` to run the wizard again without deleting the marker.
+
+## Build
+
+Requirements:
+
+- CMake 3.16+
+- C++17 compiler
+- Qt 6 Widgets, or Qt 5 Widgets
+
+Build:
 
 ```bash
-HYGGSHI_WELCOME_FORCE=1 ./build/hyggshi-welcome
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+sudo cmake --install build
 ```
+
+The update page only checks package availability and never installs packages or asks for administrator privileges. Network setup is delegated to the desktop's existing network tools.
