@@ -1,22 +1,18 @@
 #!/bin/bash
-# welcome.sh — build (cmake) + cài hyggshi-welcome (Qt wizard chào mừng lần
-# đầu, xem scripts/make-welcome.sh) TỪ SOURCE đã được workflow copy vào
-# $SRC_DIR. Chạy BÊN TRONG chroot (giống desktop.sh/
-# install-ecosystem-for-hyggshi.sh) vì app cần nằm trong rootfs của ISO,
-# không phải máy runner CI.
+# welcome.sh — build + install Hyggshi Welcome từ SOURCE ĐÃ COMMIT tại
+# app-for-hyggshi/hyggshi-welcome/. Chạy BÊN TRONG chroot để binary được
+# build bằng đúng glibc/Qt của ISO cuối cùng, sau đó install vào rootfs.
 #
-# Nguồn được sinh sẵn ở HOST bằng `scripts/make-welcome.sh` (không cần Qt
-# trên runner, chỉ ghi file .cpp/.h/CMakeLists) rồi workflow copy nguyên cây
-# app-for-hyggshi/hyggshi-welcome/ vào $SRC_DIR — script này chỉ lo phần
-# build + install THẬT bên trong chroot, đúng glibc/Qt của ISO cuối cùng.
+# Không có bước source generation ở đây: source versioned trong repo là
+# canonical và không được phép bị ghi đè bởi generator legacy.
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 export DEBIAN_FRONTEND=noninteractive
 : "${SRC_DIR:=/tmp/hyggshi-welcome-src}"
 
 if [ ! -f "$SRC_DIR/CMakeLists.txt" ]; then
-  echo "LỖI: không thấy $SRC_DIR/CMakeLists.txt — welcome.sh cần source đã" >&2
-  echo "được sinh bằng scripts/make-welcome.sh và copy vào chroot trước." >&2
+  echo "LỖI: không thấy $SRC_DIR/CMakeLists.txt — welcome.sh cần source" >&2
+  echo "đã commit tại app-for-hyggshi/hyggshi-welcome/ và được copy vào chroot." >&2
   exit 1
 fi
 
