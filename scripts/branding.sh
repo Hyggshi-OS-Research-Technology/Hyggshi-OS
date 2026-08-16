@@ -1072,6 +1072,34 @@ case "$DE_DETECTED" in
   *)        apply_wallpaper_fallback ;;
 esac
 
+# === HYGGSHI WELCOME AUTOSTART GUARD ===
+# welcome.sh chạy trước branding.sh và cài Hyggshi Welcome. Giữ một guard
+# ở bước branding cuối để đảm bảo file autostart vẫn tồn tại trong rootfs
+# sau khi toàn bộ desktop/branding đã hoàn tất. Không build lại và không
+# ghi đè source; chỉ bảo vệ entry runtime.
+if [ -x "$CHROOT/usr/bin/hyggshi-welcome" ] && [ -x "$CHROOT/usr/bin/hyggshi-welcome-autostart" ]; then
+  sudo mkdir -p "$CHROOT/etc/xdg/autostart"
+  cat <<'WELCOME_AUTOSTART' | sudo tee "$CHROOT/etc/xdg/autostart/hyggshi-welcome-autostart.desktop" > /dev/null
+[Desktop Entry]
+Type=Application
+Name=Hyggshi Welcome
+Comment=Hiện wizard chào mừng ở lần đăng nhập đầu tiên
+Exec=/usr/bin/hyggshi-welcome-autostart
+TryExec=/usr/bin/hyggshi-welcome-autostart
+Icon=hyggshi-welcome
+Terminal=false
+NoDisplay=true
+Hidden=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3
+X-KDE-autostart-after=panel
+WELCOME_AUTOSTART
+  sudo chmod 644 "$CHROOT/etc/xdg/autostart/hyggshi-welcome-autostart.desktop"
+  echo "OK: Hyggshi Welcome autostart được bảo vệ trong rootfs cuối."
+else
+  echo "CẢNH BÁO: không tìm thấy hyggshi-welcome binary/wrapper — bỏ qua autostart guard." >&2
+fi
+
 echo "=== xong ==="
 SCRIPT
 sudo chmod +x "$CHROOT/usr/local/bin/hyggshi-set-wallpaper.sh"
