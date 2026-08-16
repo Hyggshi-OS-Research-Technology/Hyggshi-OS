@@ -319,16 +319,11 @@ jobs:
             APP_DIR="/tmp/app-for-hyggshi" \
             /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
 
-      # === 4.5) WELCOME: sinh source (host, không cần Qt) rồi build+cài THẬT
-      # bên trong chroot (welcome.sh — cần đúng glibc/Qt của ISO cuối cùng,
-      # không phải của runner). Tách 2 bước: make-welcome.sh không cần
-      # root/Qt nên chạy thẳng trên host cho nhanh, chỉ phần build mới cần
-      # chroot — giống lý do install-ecosystem-for-hyggshi.sh phải chroot.
-      - name: "[make-welcome.sh] Sinh source code Hyggshi Welcome (C++/Qt)"
-        if: ${{ env.WELCOME_WIZARD == 'true' }}
-        run: bash scripts/make-welcome.sh
-
-      - name: "[welcome.sh] Build & cài Hyggshi Welcome (trong chroot)"
+      # === 4.5) WELCOME: build trực tiếp source đã commit trong
+      # app-for-hyggshi/hyggshi-welcome/. KHÔNG chạy make-welcome.sh vì
+      # script generator cũ có thể ghi đè source versioned (ví dụ 1.2.0).
+      # welcome.sh chỉ build + install source đã được commit vào chroot.
+      - name: "[welcome.sh] Build & cài Hyggshi Welcome từ source đã commit (trong chroot)"
         if: ${{ env.WELCOME_WIZARD == 'true' }}
         run: |
           set -o pipefail
