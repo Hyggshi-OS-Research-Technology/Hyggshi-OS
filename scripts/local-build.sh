@@ -21,6 +21,7 @@ set -Eeuo pipefail
 : "${EXTRA_PACKAGES:=}"
 : "${DEBUG_MODE:=false}"
 : "${ISO_FILENAME:=hyggshi-os-local.iso}"
+: "${WELCOME_WIZARD:=true}"
 : "${WALLPAPER_URL:=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true}"
 : "${LOGO_URL:=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true}"
 : "${PLYMOUTH_LOGO_URL:=}"
@@ -41,7 +42,7 @@ fi
 export BASE_DISTRO DEBIAN_VERSION UBUNTU_VERSION MINT_VERSION DISTRO_NAME EDITION
 export DE PANEL_STYLE ICON_THEME OS_USERNAME OS_PASSWORD OS_HOSTNAME OS_TIMEZONE
 export INCLUDE_BROWSER INCLUDE_OFFICE EXTRA_PACKAGES DEBUG_MODE ISO_FILENAME
-export WALLPAPER_URL LOGO_URL PLYMOUTH_LOGO_URL
+export WALLPAPER_URL LOGO_URL PLYMOUTH_LOGO_URL WELCOME_WIZARD
 export GITHUB_ENV="$PWD/live-build/build.env"
 
 bash scripts/build.sh
@@ -59,6 +60,31 @@ sudo chroot live-build/chroot env \
   OS_HOSTNAME="$OS_HOSTNAME" OS_TIMEZONE="$OS_TIMEZONE" \
   INCLUDE_BROWSER="$INCLUDE_BROWSER" INCLUDE_OFFICE="$INCLUDE_OFFICE" \
   EXTRA_PACKAGES="$EXTRA_PACKAGES" /tmp/desktop.sh
+
+# ===== WELCOME: build + cài Hyggshi Welcome (wizard chào mừng lần đầu đăng
+# nhập) từ source đã commit tại app-for-hyggshi/hyggshi-welcome/ =====
+# TRƯỚC ĐÂY: bước này chỉ tồn tại trong workflow GitHub Actions
+# (.github/workflows/Build-Hyggshi-OS-ISO.yml, job "[welcome.sh]"), nên ISO
+# build qua local-build.sh/Docker KHÔNG BAO GIỜ có Hyggshi Welcome — app tự
+# thoát nếu chưa cài, nên user build local sẽ không bao giờ thấy màn hình
+# chào mừng dù binary hyggshi-welcome đã autostart-guard đúng logic
+# first-boot (marker $XDG_CONFIG_HOME/hyggshi/welcome-shown, xem
+# app-for-hyggshi/hyggshi-welcome/src/main.cpp). Copy + chạy welcome.sh
+# giống hệt bước tương ứng trong workflow để 2 đường build cho ra cùng 1
+# kết quả.
+if [ "$WELCOME_WIZARD" = "true" ]; then
+  echo "===== Build & cài Hyggshi Welcome (chạy trong chroot) ====="
+  sudo mkdir -p live-build/chroot/tmp/hyggshi-welcome-src
+  sudo cp -r app-for-hyggshi/hyggshi-welcome/. live-build/chroot/tmp/hyggshi-welcome-src/
+  sudo cp app-for-hyggshi/welcome.sh live-build/chroot/tmp/welcome.sh
+  sudo chmod +x live-build/chroot/tmp/welcome.sh
+  sudo chroot live-build/chroot env \
+    DEBUG_MODE="$DEBUG_MODE" \
+    SRC_DIR="/tmp/hyggshi-welcome-src" \
+    /tmp/welcome.sh
+else
+  echo "WELCOME_WIZARD=false — bỏ qua cài Hyggshi Welcome."
+fi
 
 bash scripts/branding.sh
 bash scripts/iso.sh

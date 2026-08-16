@@ -855,12 +855,34 @@ cat <<XML | sudo tee "$SKEL/xsettings.xml" > /dev/null
 </channel>
 XML
 
+# FIX "khung UI vỡ" ở hộp thoại Restart/Shut Down (xfce4-session-logout):
+# khi có compositor, xfce4-session-logout KHÔNG vẽ như 1 GtkDialog thường
+# (không có panel nền, không được xfwm4 canh giữa màn hình) — nó tự vẽ 1
+# overlay toàn màn hình (icon + chữ + nút dạng link) đè lên backdrop đã làm
+# mờ/tối, đây là hành vi ĐÚNG-THIẾT-KẾ của xfce4-session bản mới. Overlay
+# này CHỈ được vẽ đúng khi compositor của xfwm4 (use_compositing) đang BẬT.
+# Trước đây channel này không hề set use_compositing -> phụ thuộc default
+# của gói xfwm4 trên distro nền (thường TẮT trên môi trường live-build) ->
+# xfce4-session-logout rơi về chế độ fallback: cửa sổ KHÔNG có nền, KHÔNG
+# được xfwm4 canh giữa, KHÔNG có lớp làm mờ phía sau — đúng y hệt ảnh chụp
+# lỗi (chữ/nút nổi lệch trái, không khung, không nền). Bật tường minh ở đây
+# để 2 đường build (Actions vs local-build.sh) không lệ thuộc default khác
+# nhau giữa các phiên bản xfwm4/distro nền.
 cat <<XML | sudo tee "$SKEL/xfwm4.xml" > /dev/null
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfwm4" version="1.0">
   <property name="general" type="empty">
     <property name="theme" type="string" value="Windows-10"/>
     <property name="button_layout" type="string" value="O|SHMC"/>
+    <property name="use_compositing" type="bool" value="true"/>
+    <property name="show_frame_shadow" type="bool" value="true"/>
+    <property name="show_popup_shadow" type="bool" value="true"/>
+    <property name="show_dock_shadow" type="bool" value="true"/>
+    <property name="frame_opacity" type="int" value="100"/>
+    <property name="popup_opacity" type="int" value="100"/>
+    <property name="inactive_opacity" type="int" value="100"/>
+    <property name="move_opacity" type="int" value="100"/>
+    <property name="resize_opacity" type="int" value="100"/>
   </property>
 </channel>
 XML
