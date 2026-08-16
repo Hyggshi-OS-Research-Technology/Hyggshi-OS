@@ -79,6 +79,162 @@ else
   echo "===== Bỏ qua update-alternatives / patch xfce4-desktop.xml (không có wallpaper.png thật) ====="
 fi
 
+echo "===== Custom màn hình đăng nhập (LightDM GTK Greeter) ====="
+# Mặc định lightdm-gtk-greeter dùng theme GTK gốc của hệ thống -> ra cái hộp
+# thoại trắng vuông vức, avatar xám xịt như ảnh mô tả trong issue. Ở đây ta
+# tự viết 1 GTK3 theme riêng CHỈ áp cho greeter (không đụng tới GTK theme
+# của desktop bên trong phiên đăng nhập), nên không phụ thuộc Windows-10/
+# Orchis theme có clone được hay không (xem khối clone theme trong desktop.sh).
+GREETER_THEME_DIR="$CHROOT/usr/share/themes/Hyggshi-Greeter/gtk-3.0"
+sudo mkdir -p "$GREETER_THEME_DIR"
+
+sudo tee "$CHROOT/usr/share/themes/Hyggshi-Greeter/index.theme" > /dev/null <<EOF
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=Hyggshi-Greeter
+Comment=Giao diện đăng nhập tuỳ chỉnh cho Hyggshi OS
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=Hyggshi-Greeter
+IconTheme=Papirus-Dark
+CursorTheme=Bibata-Modern-Classic
+EOF
+
+sudo tee "$GREETER_THEME_DIR/gtk.css" > /dev/null <<'CSS'
+/* Hyggshi OS — theme riêng cho lightdm-gtk-greeter, viết từ đầu để không
+   phụ thuộc theme nào khác. Chỉ nhắm tới các widget-id mà lightdm-gtk-greeter
+   đặt sẵn (#login_window, #panel_window...) nên không ảnh hưởng theme GTK
+   của desktop session bên trong. */
+
+* {
+  font-family: "Ubuntu", "Noto Sans", sans-serif;
+}
+
+window {
+  background-color: transparent;
+}
+
+/* Thanh panel trên cùng: đồng hồ, chọn session/ngôn ngữ, nút tắt máy */
+#panel_window {
+  background-color: rgba(13, 18, 32, 0.55);
+  color: #f2f5f7;
+}
+#panel_window button,
+#panel_window menuitem,
+#panel_window GtkLabel {
+  color: #f2f5f7;
+}
+
+/* Hộp đăng nhập chính — thay cho ô vuông trắng mặc định */
+#login_window {
+  background-color: rgba(15, 23, 38, 0.85);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  padding: 28px 32px;
+  color: #f2f5f7;
+}
+#login_window GtkLabel { color: #f2f5f7; }
+
+/* Ô nhập username / password */
+#login_window entry,
+#login_window GtkEntry {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-height: 22px;
+}
+#login_window entry:focus {
+  border-color: #7fd8c8;
+  box-shadow: 0 0 0 2px rgba(127, 216, 200, 0.25);
+}
+
+/* Nút Cancel / Log In */
+#login_window button,
+#login_window GtkButton {
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 8px 18px;
+}
+#login_window button:hover,
+#login_window GtkButton:hover {
+  background-color: rgba(127, 216, 200, 0.22);
+  border-color: #7fd8c8;
+}
+#login_window #button_login,
+#login_window #login_button {
+  background-color: #2fae94;
+  border-color: #2fae94;
+  font-weight: 600;
+}
+#login_window #button_login:hover,
+#login_window #login_button:hover {
+  background-color: #37c6a8;
+  border-color: #37c6a8;
+}
+
+/* Dropdown chọn user / session / ngôn ngữ */
+#login_window combobox,
+#login_window GtkComboBox {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* Avatar user bo tròn thay vì vuông xám */
+#login_window GtkImage {
+  border-radius: 50%;
+}
+
+/* Text lỗi khi gõ sai mật khẩu */
+#login_window #message_label,
+#login_window .error {
+  color: #ff8a8a;
+}
+CSS
+
+# Icon theme cho greeter: map theo $ICON_THEME đã chọn ở desktop.sh (mặc định papirus)
+case "${ICON_THEME:-papirus}" in
+  numix)   GREETER_ICON_THEME="Numix" ;;
+  breeze)  GREETER_ICON_THEME="Breeze-Dark" ;;
+  adwaita) GREETER_ICON_THEME="Adwaita" ;;
+  *)       GREETER_ICON_THEME="Papirus-Dark" ;;
+esac
+
+# Background cho greeter: dùng wallpaper thật nếu có, không thì fallback về
+# màu nền gradient tối (lightdm-gtk-greeter nhận cả path ảnh lẫn mã màu hex
+# trong key "background").
+if [ "$WALLPAPER_APPLIED" = "true" ]; then
+  GREETER_BACKGROUND="/usr/share/backgrounds/hyggshi/wallpaper.png"
+else
+  GREETER_BACKGROUND="#0d1220"
+fi
+
+sudo mkdir -p "$CHROOT/etc/lightdm"
+sudo tee "$CHROOT/etc/lightdm/lightdm-gtk-greeter.conf" > /dev/null <<EOF
+[greeter]
+background=$GREETER_BACKGROUND
+theme-name=Hyggshi-Greeter
+icon-theme-name=$GREETER_ICON_THEME
+font-name=Ubuntu 11
+xft-antialias=true
+xft-hintstyle=slight
+xft-rgba=rgb
+xft-dpi=96
+indicators=~host;~spacer;~clock;~spacer;~language;~session;~a11y;~power
+clock-format=%H:%M
+position=50%,center 55%,center
+hide-user-image=false
+EOF
+echo "Đã ghi $CHROOT/etc/lightdm/lightdm-gtk-greeter.conf (theme=Hyggshi-Greeter, icon=$GREETER_ICON_THEME)"
+
 echo "===== Rebrand os-release / lsb-release / banner ====="
 # Debian mặc định để /etc/os-release là symlink -> ../usr/lib/os-release.
 # Xoá symlink cũ, ghi nội dung THẬT vào usr/lib/os-release, rồi tạo lại
