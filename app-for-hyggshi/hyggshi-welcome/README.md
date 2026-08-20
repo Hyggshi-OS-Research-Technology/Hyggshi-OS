@@ -48,3 +48,14 @@ sudo cmake --install build
 ```
 
 The update page only checks package availability and never installs packages or asks for administrator privileges. Network setup is delegated to the desktop's existing network tools.
+
+
+## Tự động mở cho user mới
+
+Hyggshi Welcome được cài vào `/etc/xdg/autostart/hyggshi-welcome.desktop` và đồng thời vào `/etc/skel/.config/autostart/`. Vì vậy user live và user mới tạo sau khi cài OS đều tự mở Welcome ở lần đăng nhập đầu tiên.
+
+Ứng dụng lưu marker tại `~/.config/hyggshi/welcome-shown` sau khi người dùng chọn hoàn tất thiết lập. Nếu marker đã tồn tại, chương trình tự thoát và không hiện lại. Có thể test lại bằng:
+
+```bash
+HYGGSHI_WELCOME_FORCE=1 hyggshi-welcome
+```

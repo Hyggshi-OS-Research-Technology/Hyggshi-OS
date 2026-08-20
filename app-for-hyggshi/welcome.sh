@@ -33,6 +33,19 @@ cmake --build "$SRC_DIR/build" -j"$(nproc)"
 echo "===== cmake install (binary + desktop entry + autostart) ====="
 cmake --install "$SRC_DIR/build"
 
+# Một số desktop/session manager chỉ quét autostart sau khi HOME đã tồn tại.
+# Giữ entry system-wide tại /etc/xdg/autostart; branding.sh sẽ đồng thời
+# copy cùng entry vào /etc/skel cho user mới.
+if [ -x /usr/bin/hyggshi-welcome ]; then
+  mkdir -p /etc/xdg/autostart /etc/skel/.config/autostart
+  if [ -f "$SRC_DIR/packaging/hyggshi-welcome-autostart.desktop" ]; then
+    install -m 0644 "$SRC_DIR/packaging/hyggshi-welcome-autostart.desktop" \
+      /etc/xdg/autostart/hyggshi-welcome.desktop
+    install -m 0644 "$SRC_DIR/packaging/hyggshi-welcome-autostart.desktop" \
+      /etc/skel/.config/autostart/hyggshi-welcome.desktop
+  fi
+fi
+
 echo "===== Giữ lại thư viện runtime Qt trước khi purge công cụ build ====="
 # apt không biết binary hyggshi-welcome (build từ source, không phải .deb có
 # khai báo Depends) cần các thư viện .so runtime này, nên nếu chỉ chạy

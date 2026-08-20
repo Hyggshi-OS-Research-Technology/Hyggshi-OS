@@ -1125,27 +1125,31 @@ esac
 # tại trong rootfs sau khi toàn bộ desktop/branding (rm -rf .config, chown,
 # copy skel...) đã chạy xong — chỉ TÁI TẠO nếu bị thiếu, không ghi đè source.
 if [ -x "$CHROOT/usr/bin/hyggshi-welcome" ]; then
-  sudo mkdir -p "$CHROOT/etc/xdg/autostart"
-  if [ -f "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" ]; then
-    echo "OK: autostart entry hyggshi-welcome.desktop đã có sẵn (từ cmake install) — không cần tái tạo."
-  else
-    echo "CẢNH BÁO: thiếu $CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop dù binary đã cài — tự tái tạo lại entry."
-    cat <<'WELCOME_AUTOSTART' | sudo tee "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" > /dev/null
+  # Cài system-wide để user live và mọi user được Calamares tạo sau này đều
+  # nhận được Welcome. Đồng thời copy cùng entry vào /etc/skel để user mới
+  # có cấu hình autostart ngay trong HOME; tên file giống nhau để cấu hình
+  # trong HOME override entry system-wide thay vì chạy 2 lần.
+  sudo mkdir -p "$CHROOT/etc/xdg/autostart" "$CHROOT/etc/skel/.config/autostart"
+  cat <<'WELCOME_AUTOSTART' | sudo tee "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" > /dev/null
 [Desktop Entry]
 Type=Application
 Name=Hyggshi Welcome
+Name[vi]=Chào mừng Hyggshi
+Comment=Tự động mở Hyggshi Welcome cho mỗi user chưa hoàn tất thiết lập lần đầu
 Exec=hyggshi-welcome
+TryExec=hyggshi-welcome
 Icon=hyggshi-welcome
 Terminal=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Delay=3
+X-GNOME-Autostart-Delay=4
 X-KDE-autostart-after=panel
-Comment=Hiện wizard chào mừng ở lần đăng nhập đầu tiên (tự thoát nếu đã chạy rồi)
 WELCOME_AUTOSTART
-    sudo chmod 644 "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop"
-    echo "OK: đã tái tạo autostart entry cho Hyggshi Welcome."
-  fi
+  sudo cp "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" \
+    "$CHROOT/etc/skel/.config/autostart/hyggshi-welcome.desktop"
+  sudo chmod 644 "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" \
+    "$CHROOT/etc/skel/.config/autostart/hyggshi-welcome.desktop"
+  echo "OK: Hyggshi Welcome autostart system-wide + /etc/skel đã được cài."
 else
   echo "CẢNH BÁO: không tìm thấy hyggshi-welcome binary (WELCOME_WIZARD=false hoặc build lỗi) — bỏ qua autostart guard." >&2
 fi
