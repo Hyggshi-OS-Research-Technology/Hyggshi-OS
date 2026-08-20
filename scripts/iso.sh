@@ -190,6 +190,11 @@ GRUB_BACKGROUND_APPLIED=false
 if [ -f "iso-config/branding/desktop-grub.png" ]; then
   sudo install -m 0644 "iso-config/branding/desktop-grub.png" \
     live-build/image/boot/grub/desktop-grub.png
+  # Ghi đè luôn bản desktop-base trong live filesystem nếu thư mục tồn tại.
+  # Sau khi cài hệ thống, branding.sh sẽ áp lại vào /usr/share/images/desktop-base.
+  sudo mkdir -p live-build/chroot/usr/share/images/desktop-base
+  sudo install -m 0644 "iso-config/branding/desktop-grub.png" \
+    live-build/chroot/usr/share/images/desktop-base/desktop-grub.png
   GRUB_BACKGROUND_APPLIED=true
   echo "OK: GRUB background = iso-config/branding/desktop-grub.png"
 else
@@ -199,6 +204,9 @@ fi
 if [ -f "iso-config/branding/desktop-grub.svg" ]; then
   sudo install -m 0644 "iso-config/branding/desktop-grub.svg" \
     live-build/image/boot/grub/desktop-grub.svg
+  sudo mkdir -p live-build/chroot/usr/share/images/desktop-base
+  sudo install -m 0644 "iso-config/branding/desktop-grub.svg" \
+    live-build/chroot/usr/share/images/desktop-base/desktop-grub.svg
   echo "OK: đóng gói GRUB SVG = iso-config/branding/desktop-grub.svg"
 else
   echo "WARNING: không tìm thấy iso-config/branding/desktop-grub.svg — bỏ qua SVG."

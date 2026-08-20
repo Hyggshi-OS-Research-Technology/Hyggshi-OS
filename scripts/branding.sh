@@ -31,6 +31,26 @@ if [ -d "iso-config/branding" ]; then
   sudo cp -r iso-config/branding/* "$CHROOT/usr/share/plymouth/themes/" 2>/dev/null || true
 fi
 
+echo "===== GRUB/Desktop-base branding ====="
+# Luôn ghi đè file desktop-base bằng branding riêng của Hyggshi OS.
+# Nguồn repo: ./iso-config/branding/desktop-grub.png và desktop-grub.svg
+# Đây là file mà desktop-base/GRUB của hệ thống dùng tại:
+#   /usr/share/images/desktop-base/desktop-grub.png
+GRUB_BRANDING_DIR="$CHROOT/usr/share/images/desktop-base"
+sudo mkdir -p "$GRUB_BRANDING_DIR"
+if [ -f "iso-config/branding/desktop-grub.png" ]; then
+  sudo install -m 0644 "iso-config/branding/desktop-grub.png" \
+    "$GRUB_BRANDING_DIR/desktop-grub.png"
+  echo "OK: ghi đè $GRUB_BRANDING_DIR/desktop-grub.png"
+else
+  echo "WARNING: thiếu iso-config/branding/desktop-grub.png — không ghi đè desktop-base background."
+fi
+if [ -f "iso-config/branding/desktop-grub.svg" ]; then
+  sudo install -m 0644 "iso-config/branding/desktop-grub.svg" \
+    "$GRUB_BRANDING_DIR/desktop-grub.svg"
+  echo "OK: copy $GRUB_BRANDING_DIR/desktop-grub.svg"
+fi
+
 echo "===== Wallpaper ====="
 sudo mkdir -p "$CHROOT/usr/share/backgrounds/hyggshi"
 
