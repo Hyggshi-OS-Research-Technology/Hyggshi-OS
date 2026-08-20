@@ -22,6 +22,7 @@ set -Eeuo pipefail
 : "${DEBUG_MODE:=false}"
 : "${ISO_FILENAME:=hyggshi-os-local.iso}"
 : "${WELCOME_WIZARD:=true}"
+: "${HYGGSHI_CODENAME:=}"
 : "${WALLPAPER_URL:=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true}"
 : "${LOGO_URL:=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true}"
 : "${PLYMOUTH_LOGO_URL:=}"
@@ -42,7 +43,7 @@ fi
 export BASE_DISTRO DEBIAN_VERSION UBUNTU_VERSION MINT_VERSION DISTRO_NAME EDITION
 export DE PANEL_STYLE ICON_THEME OS_USERNAME OS_PASSWORD OS_HOSTNAME OS_TIMEZONE
 export INCLUDE_BROWSER INCLUDE_OFFICE EXTRA_PACKAGES DEBUG_MODE ISO_FILENAME
-export WALLPAPER_URL LOGO_URL PLYMOUTH_LOGO_URL WELCOME_WIZARD
+export WALLPAPER_URL LOGO_URL PLYMOUTH_LOGO_URL WELCOME_WIZARD HYGGSHI_CODENAME
 export GITHUB_ENV="$PWD/live-build/build.env"
 
 bash scripts/build.sh

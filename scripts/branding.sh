@@ -6,6 +6,26 @@ set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 CHROOT=live-build/chroot
 
+# ===== Hyggshi OS Codename =====
+# Codename RIÊNG của Hyggshi OS (kiểu Ubuntu "Jammy Jellyfish"), KHÔNG phải
+# codename của base distro ($BASE_CODENAME, vd "bookworm"/"noble" — cái đó
+# vẫn được giữ nguyên, chỉ đổi vai trò sang HYGGSHI_BASE_CODENAME trong
+# os-release). Không thêm workflow input mới (đã chạm giới hạn 25 input của
+# workflow_dispatch — xem ghi chú trong Build-Hyggshi-OS-ISO.yml), nên chọn
+# theo VERSION_ID hiện có, có thể override bằng biến môi trường
+# HYGGSHI_CODENAME nếu build script nào đó (local-build.sh...) muốn set tay.
+HYGGSHI_VERSION_ID="1.0"
+declare -A HYGGSHI_CODENAMES=(
+  ["1.0"]="Sen Vàng"
+  ["1.1"]="Trúc Xanh"
+  ["1.2"]="Mây Ngàn"
+  ["2.0"]="Sương Mai"
+)
+if [ -z "$HYGGSHI_CODENAME" ]; then
+  HYGGSHI_CODENAME="${HYGGSHI_CODENAMES[$HYGGSHI_VERSION_ID]:-Sen Vàng}"
+fi
+echo "Hyggshi OS Codename: $HYGGSHI_CODENAME (version $HYGGSHI_VERSION_ID)"
+
 echo "===== Copy Plymouth branding (nếu có) ====="
 if [ -d "iso-config/branding" ]; then
   sudo cp -r iso-config/branding/* "$CHROOT/usr/share/plymouth/themes/" 2>/dev/null || true
@@ -283,11 +303,12 @@ else
 fi
 
 cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
-PRETTY_NAME="$DISTRO_NAME 1.0 (dựa trên $DISTRO_LABEL)"
+PRETTY_NAME="$DISTRO_NAME 1.0 \"$HYGGSHI_CODENAME\" (dựa trên $DISTRO_LABEL)"
 NAME="$DISTRO_NAME"
 VERSION_ID="1.0"
-VERSION="1.0 ($DISTRO_LABEL)"
-VERSION_CODENAME=$BASE_CODENAME
+VERSION="1.0 ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
+VERSION_CODENAME="$HYGGSHI_CODENAME"
+HYGGSHI_BASE_CODENAME=$BASE_CODENAME
 ID=hyggshios
 ID_LIKE=$ID_LIKE_VALUE
 HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
@@ -300,12 +321,12 @@ sudo ln -sf ../usr/lib/os-release "$CHROOT/etc/os-release"
 cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
 DISTRIB_ID=HyggshiOS
 DISTRIB_RELEASE=1.0
-DISTRIB_CODENAME=$BASE_CODENAME
-DISTRIB_DESCRIPTION="$DISTRO_NAME 1.0 ($DISTRO_LABEL)"
+DISTRIB_CODENAME="$HYGGSHI_CODENAME"
+DISTRIB_DESCRIPTION="$DISTRO_NAME 1.0 \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
 EOF
 
-printf "%s \\n \\l\n\n" "$DISTRO_NAME" | sudo tee "$CHROOT/etc/issue" > /dev/null
-echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
+printf "%s \"%s\" \\n \\l\n\n" "$DISTRO_NAME" "$HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/issue" > /dev/null
+echo "Welcome to $DISTRO_NAME \"$HYGGSHI_CODENAME\" — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
 echo "===== Distributor logo ====="
 # 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
@@ -463,7 +484,7 @@ else
   # Bỏ dấu " khỏi DISTRO_NAME trước khi chèn vào file .plymouth (ini) và
   # .script (chuỗi kiểu C) — nếu không, 1 dấu " trong distro_name (input
   # người dùng tự đặt) sẽ làm hỏng cú pháp cả 2 file này.
-  DISTRO_NAME_SAFE="${DISTRO_NAME//\"/}"
+  DISTRO_NAME_SAFE="${DISTRO_NAME//\"/} ${HYGGSHI_CODENAME}"
 
   sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
   if command -v convert > /dev/null 2>&1; then
@@ -1095,31 +1116,38 @@ case "$DE_DETECTED" in
 esac
 
 # === HYGGSHI WELCOME AUTOSTART GUARD ===
-# welcome.sh chạy trước branding.sh và cài Hyggshi Welcome. Giữ một guard
-# ở bước branding cuối để đảm bảo file autostart vẫn tồn tại trong rootfs
-# sau khi toàn bộ desktop/branding đã hoàn tất. Không build lại và không
-# ghi đè source; chỉ bảo vệ entry runtime.
-if [ -x "$CHROOT/usr/bin/hyggshi-welcome" ] && [ -x "$CHROOT/usr/bin/hyggshi-welcome-autostart" ]; then
+# welcome.sh chạy trước branding.sh, build + cmake install hyggshi-welcome —
+# cmake tự cài autostart entry thật vào /etc/xdg/autostart/hyggshi-welcome.desktop
+# (xem packaging/hyggshi-welcome-autostart.desktop, Exec=hyggshi-welcome,
+# KHÔNG có binary/wrapper tên "hyggshi-welcome-autostart" nào cả — bản guard
+# cũ check nhầm tên này nên if luôn false, im lặng bỏ qua, không tự vá được
+# gì). Giữ 1 guard ở bước branding cuối để đảm bảo entry autostart vẫn tồn
+# tại trong rootfs sau khi toàn bộ desktop/branding (rm -rf .config, chown,
+# copy skel...) đã chạy xong — chỉ TÁI TẠO nếu bị thiếu, không ghi đè source.
+if [ -x "$CHROOT/usr/bin/hyggshi-welcome" ]; then
   sudo mkdir -p "$CHROOT/etc/xdg/autostart"
-  cat <<'WELCOME_AUTOSTART' | sudo tee "$CHROOT/etc/xdg/autostart/hyggshi-welcome-autostart.desktop" > /dev/null
+  if [ -f "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" ]; then
+    echo "OK: autostart entry hyggshi-welcome.desktop đã có sẵn (từ cmake install) — không cần tái tạo."
+  else
+    echo "CẢNH BÁO: thiếu $CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop dù binary đã cài — tự tái tạo lại entry."
+    cat <<'WELCOME_AUTOSTART' | sudo tee "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop" > /dev/null
 [Desktop Entry]
 Type=Application
 Name=Hyggshi Welcome
-Comment=Hiện wizard chào mừng ở lần đăng nhập đầu tiên
-Exec=/usr/bin/hyggshi-welcome-autostart
-TryExec=/usr/bin/hyggshi-welcome-autostart
+Exec=hyggshi-welcome
 Icon=hyggshi-welcome
 Terminal=false
-NoDisplay=true
-Hidden=false
+NoDisplay=false
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=3
 X-KDE-autostart-after=panel
+Comment=Hiện wizard chào mừng ở lần đăng nhập đầu tiên (tự thoát nếu đã chạy rồi)
 WELCOME_AUTOSTART
-  sudo chmod 644 "$CHROOT/etc/xdg/autostart/hyggshi-welcome-autostart.desktop"
-  echo "OK: Hyggshi Welcome autostart được bảo vệ trong rootfs cuối."
+    sudo chmod 644 "$CHROOT/etc/xdg/autostart/hyggshi-welcome.desktop"
+    echo "OK: đã tái tạo autostart entry cho Hyggshi Welcome."
+  fi
 else
-  echo "CẢNH BÁO: không tìm thấy hyggshi-welcome binary/wrapper — bỏ qua autostart guard." >&2
+  echo "CẢNH BÁO: không tìm thấy hyggshi-welcome binary (WELCOME_WIZARD=false hoặc build lỗi) — bỏ qua autostart guard." >&2
 fi
 
 echo "=== xong ==="

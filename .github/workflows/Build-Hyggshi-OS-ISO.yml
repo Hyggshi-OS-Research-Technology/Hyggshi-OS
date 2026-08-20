@@ -7,6 +7,10 @@ on:
         description: "Tên hiển thị của bản phân phối (đổi tên base linux — ghi vào os-release/hostname/GRUB/ISO label...)"
         required: false
         default: "Hyggshi OS"
+      hyggshi_codename:
+        description: "Codename RIÊNG của Hyggshi OS (kiểu Ubuntu 'Jammy Jellyfish') — để trống sẽ tự chọn theo version (xem HYGGSHI_CODENAMES trong scripts/branding.sh, mặc định 'Sen Vàng')"
+        required: false
+        default: ""
       distro:
         description: "Bản phân phối gốc (base distro)"
         required: false
@@ -134,6 +138,10 @@ on:
 
 env:
   DISTRO_NAME: ${{ github.event.inputs.distro_name || 'Hyggshi OS' }}
+  # Trống = branding.sh tự chọn theo HYGGSHI_VERSION_ID (xem HYGGSHI_CODENAMES
+  # trong scripts/branding.sh). Không phải codename base distro — cái đó vẫn
+  # là $BASE_CODENAME (bookworm/noble/...), được set riêng ở build-<distro>.sh.
+  HYGGSHI_CODENAME: ${{ github.event.inputs.hyggshi_codename || '' }}
   BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
   EDITION: ${{ github.event.inputs.edition || 'normal' }}
   # LƯU Ý: debian_version/ubuntu_version/mint_version/alpine_version KHÔNG đặt
@@ -397,6 +405,7 @@ jobs:
             echo "===== Inputs / env ====="
             echo "DISTRO_NAME=$DISTRO_NAME | EDITION=$EDITION"
             echo "BASE_DISTRO=$BASE_DISTRO | BASE_CODENAME=$BASE_CODENAME | DISTRO_LABEL=$DISTRO_LABEL"
+            echo "HYGGSHI_CODENAME=$HYGGSHI_CODENAME (trống nếu build tự chọn — xem branding-debug.log để biết giá trị thật đã dùng)"
             echo "DE=$DE | PANEL_STYLE=$PANEL_STYLE | ICON_THEME=$ICON_THEME"
             echo "OS_USERNAME=$OS_USERNAME | OS_HOSTNAME=$OS_HOSTNAME | OS_TIMEZONE=$OS_TIMEZONE"
             echo
