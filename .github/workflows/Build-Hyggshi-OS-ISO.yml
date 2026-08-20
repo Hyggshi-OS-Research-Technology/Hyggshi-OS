@@ -7,6 +7,10 @@ on:
         description: "Tên hiển thị của bản phân phối (đổi tên base linux — ghi vào os-release/hostname/GRUB/ISO label...)"
         required: false
         default: "Hyggshi OS"
+      hyggshi_version:
+        description: "Phiên bản RIÊNG của Hyggshi OS (không phải phiên bản base distro), ví dụ 1.0, 1.1, 2.0"
+        required: false
+        default: "1.0"
       hyggshi_codename:
         description: "Codename RIÊNG của Hyggshi OS (kiểu Ubuntu 'Jammy Jellyfish') — để trống sẽ tự chọn theo version (xem HYGGSHI_CODENAMES trong scripts/branding.sh, mặc định 'Sen Vàng')"
         required: false
@@ -132,12 +136,13 @@ on:
   push:
     branches: [ main ]
     paths:
-      - ".github/workflows/build-hyggshi-os.yml"
+      - ".github/workflows/Build-Hyggshi-OS-ISO.yml"
       - "scripts/**"
       - "iso-config/**"
 
 env:
   DISTRO_NAME: ${{ github.event.inputs.distro_name || 'Hyggshi OS' }}
+  HYGGSHI_VERSION_ID: ${{ github.event.inputs.hyggshi_version || '1.0' }}
   # Trống = branding.sh tự chọn theo HYGGSHI_VERSION_ID (xem HYGGSHI_CODENAMES
   # trong scripts/branding.sh). Không phải codename base distro — cái đó vẫn
   # là $BASE_CODENAME (bookworm/noble/...), được set riêng ở build-<distro>.sh.
@@ -199,6 +204,13 @@ jobs:
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
+
+      - name: Validate Hyggshi OS version
+        run: |
+          if ! printf '%s' "$HYGGSHI_VERSION_ID" | grep -Eq '^[0-9]+([.][0-9]+)*$'; then
+            echo "Lỗi: hyggshi_version phải là dạng số, ví dụ 1.0, 1.1 hoặc 2.0." >&2
+            exit 1
+          fi
 
       - name: Chmod +x cho toàn bộ scripts/
         run: find scripts -type f -name '*.sh' -exec chmod +x {} +

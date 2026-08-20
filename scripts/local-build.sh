@@ -8,6 +8,7 @@ set -Eeuo pipefail
 : "${UBUNTU_VERSION:=noble}"
 : "${MINT_VERSION:=22}"
 : "${DISTRO_NAME:=Hyggshi OS}"
+: "${HYGGSHI_VERSION_ID:=1.0}"
 : "${EDITION:=normal}"
 : "${DE:=xfce}"
 : "${PANEL_STYLE:=windows10}"
@@ -27,6 +28,11 @@ set -Eeuo pipefail
 : "${LOGO_URL:=https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true}"
 : "${PLYMOUTH_LOGO_URL:=}"
 
+if ! printf '%s' "$HYGGSHI_VERSION_ID" | grep -Eq '^[0-9]+([.][0-9]+)*$'; then
+  echo "HYGGSHI_VERSION_ID phải là dạng số, ví dụ 1.0, 1.1 hoặc 2.0." >&2
+  exit 2
+fi
+
 case "$BASE_DISTRO" in
   debian|ubuntu|linuxmint) ;;
   *)
@@ -40,7 +46,7 @@ if [ "$(id -u)" -ne 0 ] && ! command -v sudo >/dev/null; then
   exit 1
 fi
 
-export BASE_DISTRO DEBIAN_VERSION UBUNTU_VERSION MINT_VERSION DISTRO_NAME EDITION
+export BASE_DISTRO DEBIAN_VERSION UBUNTU_VERSION MINT_VERSION DISTRO_NAME HYGGSHI_VERSION_ID EDITION
 export DE PANEL_STYLE ICON_THEME OS_USERNAME OS_PASSWORD OS_HOSTNAME OS_TIMEZONE
 export INCLUDE_BROWSER INCLUDE_OFFICE EXTRA_PACKAGES DEBUG_MODE ISO_FILENAME
 export WALLPAPER_URL LOGO_URL PLYMOUTH_LOGO_URL WELCOME_WIZARD HYGGSHI_CODENAME

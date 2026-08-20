@@ -17,6 +17,11 @@ sudo bash scripts/local-build.sh
 Configuration is passed via environment variables (see the defaults at the
 top of `scripts/local-build.sh`), e.g.:
 
+`HYGGSHI_VERSION_ID` is the **Hyggshi OS version riêng**, independent of the
+base distro version. In GitHub Actions it is editable directly through the
+`hyggshi_version` input; locally it defaults to `1.0`.
+
+
 ```bash
 BASE_DISTRO=debian DEBIAN_VERSION=trixie DE=xfce \
 sudo -E bash scripts/local-build.sh

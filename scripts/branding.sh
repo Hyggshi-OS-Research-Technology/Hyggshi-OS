@@ -14,7 +14,7 @@ CHROOT=live-build/chroot
 # workflow_dispatch — xem ghi chú trong Build-Hyggshi-OS-ISO.yml), nên chọn
 # theo VERSION_ID hiện có, có thể override bằng biến môi trường
 # HYGGSHI_CODENAME nếu build script nào đó (local-build.sh...) muốn set tay.
-HYGGSHI_VERSION_ID="1.0"
+: "${HYGGSHI_VERSION_ID:=1.0}"
 declare -A HYGGSHI_CODENAMES=(
   ["1.0"]="Sen Vàng"
   ["1.1"]="Trúc Xanh"
@@ -303,10 +303,10 @@ else
 fi
 
 cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
-PRETTY_NAME="$DISTRO_NAME 1.0 \"$HYGGSHI_CODENAME\" (dựa trên $DISTRO_LABEL)"
+PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" (dựa trên $DISTRO_LABEL)"
 NAME="$DISTRO_NAME"
-VERSION_ID="1.0"
-VERSION="1.0 ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
+VERSION_ID="$HYGGSHI_VERSION_ID"
+VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
 VERSION_CODENAME="$HYGGSHI_CODENAME"
 HYGGSHI_BASE_CODENAME=$BASE_CODENAME
 ID=hyggshios
@@ -320,9 +320,9 @@ sudo ln -sf ../usr/lib/os-release "$CHROOT/etc/os-release"
 
 cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
 DISTRIB_ID=HyggshiOS
-DISTRIB_RELEASE=1.0
+DISTRIB_RELEASE=$HYGGSHI_VERSION_ID
 DISTRIB_CODENAME="$HYGGSHI_CODENAME"
-DISTRIB_DESCRIPTION="$DISTRO_NAME 1.0 \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
+DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
 EOF
 
 printf "%s \"%s\" \\n \\l\n\n" "$DISTRO_NAME" "$HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/issue" > /dev/null

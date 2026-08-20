@@ -16,6 +16,7 @@
 #     chỉ cần cài package "dracut-live" rồi generate lại initramfs với
 #     --add "dmsquash-live pollcdrom" bên trong chroot.
 set -e
+: "${HYGGSHI_VERSION_ID:=1.0}"
 [ "$DEBUG_MODE" = "true" ] && set -x
 
 : "${DISTRO_NAME:=Hyggshi OS}"
@@ -242,10 +243,10 @@ fi
 
 rm -f "$ROOTFS/etc/os-release"
 cat <<EOF > "$ROOTFS/etc/os-release"
-PRETTY_NAME="$DISTRO_NAME 1.0 (dựa trên $DISTRO_LABEL)"
+PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID (dựa trên $DISTRO_LABEL)"
 NAME="$DISTRO_NAME"
-VERSION_ID="1.0"
-VERSION="1.0 ($DISTRO_LABEL)"
+VERSION_ID="$HYGGSHI_VERSION_ID"
+VERSION="$HYGGSHI_VERSION_ID ($DISTRO_LABEL)"
 ID=hyggshios
 ID_LIKE=fedora
 HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
