@@ -181,10 +181,45 @@ if [ "$BASE_DISTRO" = "debian" ]; then
 fi
 
 mkdir -p live-build/image/boot/grub
+
+# ===== GRUB background: Hyggshi branding =====
+# Nguồn cố định trong repo: ./iso-config/branding/desktop-grub.png
+# và ./iso-config/branding/desktop-grub.svg. GRUB dùng PNG để render
+# background; SVG vẫn được đóng gói kèm để giữ source branding/vector.
+GRUB_BACKGROUND_APPLIED=false
+if [ -f "iso-config/branding/desktop-grub.png" ]; then
+  sudo install -m 0644 "iso-config/branding/desktop-grub.png" \
+    live-build/image/boot/grub/desktop-grub.png
+  GRUB_BACKGROUND_APPLIED=true
+  echo "OK: GRUB background = iso-config/branding/desktop-grub.png"
+else
+  echo "WARNING: không tìm thấy iso-config/branding/desktop-grub.png — GRUB giữ nền mặc định."
+fi
+
+if [ -f "iso-config/branding/desktop-grub.svg" ]; then
+  sudo install -m 0644 "iso-config/branding/desktop-grub.svg" \
+    live-build/image/boot/grub/desktop-grub.svg
+  echo "OK: đóng gói GRUB SVG = iso-config/branding/desktop-grub.svg"
+else
+  echo "WARNING: không tìm thấy iso-config/branding/desktop-grub.svg — bỏ qua SVG."
+fi
+
 {
   echo "set timeout=10"
   echo "set default=0"
   echo ""
+  if [ "$GRUB_BACKGROUND_APPLIED" = "true" ]; then
+    # Chuyển GRUB sang gfxterm và áp background PNG. Dùng if/then để nếu
+    # firmware/GRUB thiếu module đồ hoạ thì menu text vẫn boot bình thường.
+    echo "if insmod gfxterm; then"
+    echo "  if insmod png; then"
+    echo "    set gfxmode=auto"
+    echo "    terminal_output gfxterm"
+    echo "    background_image /boot/grub/desktop-grub.png"
+    echo "  fi"
+    echo "fi"
+    echo ""
+  fi
   echo "menuentry \"$DISTRO_NAME Live\" {"
   echo "  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA"
   echo "  initrd /live/initrd"

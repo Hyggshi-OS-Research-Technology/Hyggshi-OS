@@ -47,3 +47,12 @@ prompt (username + password).
 
 ## Links
 - Website: https://hyggshi-os-website.pages.dev
+
+## GRUB background branding
+
+Để áp dụng nền GRUB riêng, đặt hai file branding tại đúng đường dẫn:
+
+- `iso-config/branding/desktop-grub.png` — file được GRUB render làm background.
+- `iso-config/branding/desktop-grub.svg` — bản vector được đóng gói kèm làm source branding.
+
+`./scripts/iso.sh` sẽ tự copy hai file vào ISO và dùng `desktop-grub.png` làm nền GRUB. Nếu thiếu PNG, ISO vẫn build và GRUB dùng nền mặc định.
