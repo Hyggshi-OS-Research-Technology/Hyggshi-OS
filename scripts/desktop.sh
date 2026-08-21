@@ -513,6 +513,13 @@ for pkg in cmake gcc; do
   fi
 done
 
+echo "===== Flatpak ====="
+# Cài Flatpak cho mọi bản desktop Debian/Ubuntu/Mint. Không bật Flathub
+# mặc định ở đây; người dùng có thể thêm remote sau khi cài hệ thống.
+if ! apt-get install -y flatpak; then
+  echo "CẢNH BÁO: cài gói 'flatpak' thất bại — bỏ qua gói này." >&2
+fi
+
 echo "===== Bộ gõ tiếng Việt (Fcitx5 + engine Unikey) ====="
 # fcitx5-unikey: engine gõ tiếng Việt kiểu Telex/VNI quen thuộc (tương đương
 # Unikey trên Windows), chạy trên nền fcitx5. fcitx5-frontend-gtk3/qt5: cầu
