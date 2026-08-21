@@ -54,6 +54,16 @@ fi
 echo "===== Wallpaper ====="
 sudo mkdir -p "$CHROOT/usr/share/backgrounds/hyggshi"
 
+# Wallpaper mặc định riêng cho Cinnamon/Hyggshi OS. File này được copy vào
+# đúng đường dẫn mà lệnh GSettings lúc login sử dụng.
+if [ -f "iso-config/branding/Verdant-Valley.png" ]; then
+  sudo install -m 0644 "iso-config/branding/Verdant-Valley.png" \
+    "$CHROOT/usr/share/backgrounds/hyggshi/Verdant-Valley.png"
+  echo "Đã copy Verdant-Valley.png vào /usr/share/backgrounds/hyggshi/"
+else
+  echo "⚠️ Không thấy iso-config/branding/Verdant-Valley.png — Cinnamon sẽ dùng wallpaper fallback hiện có."
+fi
+
 # car-light.png / car-Dark.png: wallpaper riêng cho theme Sáng/Tối, được
 # hyggshi-welcome (make-welcome.sh) áp tự động khi user chọn theme ở trang
 # "Chọn giao diện". Copy sẵn vào đây (không phụ thuộc cmake install của app)
@@ -1072,9 +1082,19 @@ apply_wallpaper_xfce() {
 apply_wallpaper_cinnamon() {
   # Cinnamon dùng dconf/GSettings, không có "process reload" như xfdesktop —
   # cinnamon-settings-daemon tự áp ngay khi property đổi.
-  gsettings set org.cinnamon.desktop.background picture-uri "file://$WALL" 2>>"$LOG"
-  gsettings set org.cinnamon.desktop.background picture-options 'zoom' 2>>"$LOG"
-  echo "Đã set wallpaper Cinnamon (gsettings org.cinnamon.desktop.background) -> $WALL"
+  # Login/autostart không truyền tham số -> luôn dùng wallpaper thương hiệu
+  # Verdant Valley của Hyggshi OS. Khi hyggshi-welcome truyền $1 (ví dụ
+  # car-light.png / car-Dark.png), giữ lựa chọn theme của user.
+  if [ -z "$1" ] && [ -f "/usr/share/backgrounds/hyggshi/Verdant-Valley.png" ]; then
+    gsettings set org.cinnamon.desktop.background picture-uri \
+      "file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png" 2>>"$LOG"
+    gsettings set org.cinnamon.desktop.background picture-options 'zoom' 2>>"$LOG"
+    echo "Đã set wallpaper Cinnamon mặc định Hyggshi: /usr/share/backgrounds/hyggshi/Verdant-Valley.png"
+  else
+    gsettings set org.cinnamon.desktop.background picture-uri "file://$WALL" 2>>"$LOG"
+    gsettings set org.cinnamon.desktop.background picture-options 'zoom' 2>>"$LOG"
+    echo "Đã set wallpaper Cinnamon (gsettings org.cinnamon.desktop.background) -> $WALL"
+  fi
 }
 
 apply_wallpaper_gnome() {
