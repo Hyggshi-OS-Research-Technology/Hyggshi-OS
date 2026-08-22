@@ -1205,6 +1205,7 @@ Type=Application
 Name=Hyggshi Wallpaper Setup
 Exec=/usr/local/bin/hyggshi-set-wallpaper.sh
 X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=8
 NoDisplay=true
 DESKTOP
 

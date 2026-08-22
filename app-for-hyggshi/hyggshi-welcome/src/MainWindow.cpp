@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -10,6 +11,7 @@
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QProcess>
 #include <QPixmap>
@@ -527,6 +529,25 @@ void MainWindow::advanceCarousel() {
   if (!m_features.isEmpty()) showFeatureSlide((m_featureIndex + 1) % m_features.size());
 }
 
+namespace {
+
+QToolButton *makeSocialButton(const QString &iconPath, const QString &url, const QString &tooltip) {
+  auto *btn = new QToolButton;
+  btn->setIcon(QIcon(iconPath));
+  btn->setIconSize(QSize(28, 28));
+  btn->setCursor(Qt::PointingHandCursor);
+  btn->setToolTip(tooltip);
+  btn->setAutoRaise(true);
+  btn->setStyleSheet("QToolButton { border: none; padding: 4px; border-radius: 8px; }"
+                      "QToolButton:hover { background: #2a2d35; }");
+  QObject::connect(btn, &QToolButton::clicked, [url]() {
+    QDesktopServices::openUrl(QUrl(url));
+  });
+  return btn;
+}
+
+}  // namespace
+
 QWidget *MainWindow::buildFinishPage() {
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
@@ -544,6 +565,18 @@ QWidget *MainWindow::buildFinishPage() {
   desc->setStyleSheet("font-size:13px; color:#9aa0ab;");
   desc->setWordWrap(true);
 
+  auto *communityLabel = new QLabel(tr("Tham gia cộng đồng Hyggshi OS"));
+  communityLabel->setAlignment(Qt::AlignCenter);
+  communityLabel->setStyleSheet("font-size:12px; color:#9aa0ab;");
+
+  auto *socialRow = new QHBoxLayout;
+  socialRow->setAlignment(Qt::AlignCenter);
+  socialRow->setSpacing(12);
+  socialRow->addWidget(makeSocialButton(":/icons/discord.png",
+                                         "https://discord.gg/C2wnU8Vz6U", tr("Discord")));
+  socialRow->addWidget(makeSocialButton(":/icons/x.png",
+                                         "https://x.com/hyggshios", tr("X (Twitter)")));
+
   m_dontAskAgainChk = new QCheckBox(tr("Không hỏi lại lần sau"));
   m_dontAskAgainChk->setChecked(true);
   m_dontAskAgainChk->setCursor(Qt::PointingHandCursor);
@@ -552,6 +585,9 @@ QWidget *MainWindow::buildFinishPage() {
   layout->addWidget(icon);
   layout->addWidget(title);
   layout->addWidget(desc);
+  layout->addSpacing(14);
+  layout->addWidget(communityLabel);
+  layout->addLayout(socialRow);
   layout->addSpacing(10);
   layout->addWidget(m_dontAskAgainChk, 0, Qt::AlignCenter);
   layout->addStretch(2);

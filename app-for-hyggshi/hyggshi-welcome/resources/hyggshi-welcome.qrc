@@ -4,5 +4,7 @@
     <file>icons/theme-light.png</file>
     <file>icons/theme-dark.png</file>
     <file>icons/theme-auto.png</file>
+    <file>icons/discord.png</file>
+    <file>icons/x.png</file>
   </qresource>
 </RCC>

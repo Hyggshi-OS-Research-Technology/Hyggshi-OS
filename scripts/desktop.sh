@@ -393,6 +393,13 @@ theme='Orchis'
 
 [org/cinnamon/theme]
 name='Orchis'
+
+# Hyggshi OS wallpaper mặc định cho Cinnamon. Đây là system default,
+# áp dụng cho user mới kể cả khi user chưa chạy Hyggshi Welcome.
+[org/cinnamon/desktop/background]
+picture-uri='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
+picture-uri-dark='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
+picture-options='zoom'
 EOF
     dconf update || echo "⚠️  dconf update thất bại — có thể do chạy trong chroot thiếu D-Bus, kiểm tra lại lúc boot thật."
     ;;
