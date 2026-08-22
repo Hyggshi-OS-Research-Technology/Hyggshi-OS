@@ -513,12 +513,31 @@ for pkg in cmake gcc; do
   fi
 done
 
-echo "===== Flatpak ====="
-# Cài Flatpak cho mọi bản desktop Debian/Ubuntu/Mint. Không bật Flathub
-# mặc định ở đây; người dùng có thể thêm remote sau khi cài hệ thống.
-if ! apt-get install -y flatpak; then
-  echo "CẢNH BÁO: cài gói 'flatpak' thất bại — bỏ qua gói này." >&2
+echo "===== Flatpak + Software Center ====="
+# Flatpak phải xuất hiện trong ứng dụng Software/GNOME Software, không chỉ
+# có lệnh `flatpak` trong terminal. Cài backend Flatpak cho GNOME Software
+# Không cài backend Debian (.deb) vì nguồn "Hyggshi OS / Unknown source" chưa hoàn thiện.
+# Software chỉ hiển thị/cài ứng dụng Flatpak từ Flathub ở thời điểm này.
+for pkg in flatpak gnome-software gnome-software-plugin-flatpak; do
+  if ! apt-get install -y "$pkg"; then
+    echo "CẢNH BÁO: cài gói '$pkg' thất bại — bỏ qua gói này." >&2
+  fi
+done
+
+# Đăng ký Flathub ở cấp hệ thống để mọi user mới đều thấy ứng dụng Flatpak
+# trong Software. Không tải/cài ứng dụng Flatpak nào trong lúc build.
+if command -v flatpak >/dev/null 2>&1; then
+  if ! flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo; then
+    echo "CẢNH BÁO: không thêm được Flathub — Software vẫn có thể hiển thị Flatpak nếu remote được thêm sau." >&2
+  else
+    echo "OK: Flathub đã được đăng ký ở cấp hệ thống."
+  fi
+  flatpak remotes --system || true
 fi
+
+# GNOME Software cache/database có thể được tạo trước khi Flathub được thêm.
+# Xoá cache tạm để Software tự quét lại remote sau lần đăng nhập đầu tiên.
+rm -rf /root/.cache/gnome-software /root/.cache/gnome-software/* 2>/dev/null || true
 
 echo "===== Bộ gõ tiếng Việt (Fcitx5 + engine Unikey) ====="
 # fcitx5-unikey: engine gõ tiếng Việt kiểu Telex/VNI quen thuộc (tương đương
