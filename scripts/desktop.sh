@@ -114,6 +114,22 @@ else
     echo "CẢNH BÁO: calamares không có trong PATH — installer sẽ không khả dụng."
 fi
 
+# ===== Hyggshi Calamares config: GHI ĐÈ /etc/calamares =====
+# iso-config/calamares được workflow/local-build stage vào /tmp/calamares vì
+# desktop.sh chạy bên trong chroot và không nhìn thấy source tree trên host.
+# Phải ghi đè SAU apt install để calamares-settings-debian không thay thế
+# cấu hình Hyggshi bằng cấu hình Debian mặc định.
+if [ -d /tmp/calamares ]; then
+  echo "===== Ghi đè /etc/calamares bằng iso-config/calamares ====="
+  rm -rf /etc/calamares
+  mkdir -p /etc/calamares
+  cp -a /tmp/calamares/. /etc/calamares/
+  chmod -R a+rX /etc/calamares
+  echo "OK: /etc/calamares đã được ghi đè hoàn toàn từ source Hyggshi."
+else
+  echo "CẢNH BÁO: không có /tmp/calamares — giữ cấu hình Calamares do package cung cấp." >&2
+fi
+
 echo "===== Polkit: cho phép user live mở Calamares KHÔNG cần nhập mật khẩu ====="
 # Icon "Install Debian/Hyggshi OS" trên desktop live gọi launcher của
 # calamares-settings-debian, mặc định Exec=pkexec calamares — pkexec luôn
@@ -546,38 +562,104 @@ fi
 # Xoá cache tạm để Software tự quét lại remote sau lần đăng nhập đầu tiên.
 rm -rf /root/.cache/gnome-software /root/.cache/gnome-software/* 2>/dev/null || true
 
-echo "===== Bộ gõ tiếng Việt (Fcitx5 + engine Unikey) ====="
-# fcitx5-unikey: engine gõ tiếng Việt kiểu Telex/VNI quen thuộc (tương đương
-# Unikey trên Windows), chạy trên nền fcitx5. fcitx5-frontend-gtk3/qt5: cầu
-# nối để app GTK3 (XFCE mặc định) và Qt5 nhận input method (Qt6 dùng chung
-# module Qt5 qua tương thích ngược của fcitx5, KHÔNG cần gói riêng).
-#
-# Cài TỪNG gói + best-effort (không fatal): fcitx5 chỉ có trong repo chính
-# thức từ Debian 12/Ubuntu 22.04 trở lên — distro cũ hơn sẽ báo "Unable to
-# locate package" cho 1 vài gói, giống cách xử lý fastfetch ở trên, không
-# nên làm fail cả build ISO chỉ vì thiếu bộ gõ.
-for pkg in fcitx5 fcitx5-unikey fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5; do
+echo "===== Bộ gõ tiếng Việt (Fcitx5 + Fcitx5 Lotus) ====="
+# Fcitx5 Lotus được cung cấp qua repo chính thức của dự án. Thêm repo theo
+# VERSION_CODENAME, sau đó cài fcitx5-lotus. Nếu repo/package không hỗ trợ
+# distro hiện tại thì build vẫn tiếp tục với fcitx5-unikey làm fallback.
+for pkg in ca-certificates curl gnupg; do
+  if ! apt-get install -y "$pkg"; then
+    echo "CẢNH BÁO: cài gói '$pkg' thất bại — không thể chuẩn bị repo Lotus đầy đủ." >&2
+  fi
+done
+
+LOTUS_REPO_ADDED=0
+if command -v curl >/dev/null 2>&1 && command -v gpg >/dev/null 2>&1; then
+  CODENAME=$(grep '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+  if [ -n "$CODENAME" ]; then
+    mkdir -p /etc/apt/keyrings
+    if curl -fsSL https://fcitx5-lotus.pages.dev/pubkey.gpg -o /tmp/fcitx5-lotus-pubkey.gpg && \
+       gpg --dearmor --yes -o /etc/apt/keyrings/fcitx5-lotus.gpg /tmp/fcitx5-lotus-pubkey.gpg && \
+       echo "deb [signed-by=/etc/apt/keyrings/fcitx5-lotus.gpg] https://fcitx5-lotus.pages.dev/apt/$CODENAME $CODENAME main" > /etc/apt/sources.list.d/fcitx5-lotus.list; then
+      echo "OK: đã thêm repo Fcitx5 Lotus cho codename '$CODENAME'."
+      if apt-get update; then
+        LOTUS_REPO_ADDED=1
+      else
+        echo "CẢNH BÁO: apt update với repo Lotus thất bại — gỡ repo để không làm hỏng các bước apt sau." >&2
+        rm -f /etc/apt/sources.list.d/fcitx5-lotus.list /etc/apt/keyrings/fcitx5-lotus.gpg
+        apt-get update || true
+      fi
+    else
+      echo "CẢNH BÁO: không tải/thiết lập được khóa hoặc repo Fcitx5 Lotus — bỏ qua Lotus." >&2
+    fi
+  else
+    echo "CẢNH BÁO: không tìm thấy VERSION_CODENAME — bỏ qua repo Fcitx5 Lotus." >&2
+  fi
+fi
+
+for pkg in fcitx5 fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5 fcitx5-unikey; do
   if ! apt-get install -y "$pkg"; then
     echo "CẢNH BÁO: cài gói '$pkg' (Fcitx5) thất bại — bỏ qua gói này." >&2
   fi
 done
 
+if [ "$LOTUS_REPO_ADDED" = "1" ]; then
+  if apt-get install -y fcitx5-lotus; then
+    echo "OK: đã cài Fcitx5 Lotus."
+  else
+    echo "CẢNH BÁO: không cài được fcitx5-lotus — giữ fcitx5-unikey làm fallback." >&2
+  fi
+fi
+
 if command -v fcitx5 > /dev/null 2>&1; then
   echo "OK: đã cài fcitx5."
-  # Biến môi trường input-method chuẩn (GTK/Qt/X11 XIM/SDL) — ghi vào
-  # /etc/environment để áp dụng cho MỌI phiên đăng nhập trên MỌI DE (PAM/
-  # systemd đọc file này lúc login), không phụ thuộc DE nào cấu hình riêng.
-  if ! grep -q '^GTK_IM_MODULE=' /etc/environment 2>/dev/null; then
-    cat >> /etc/environment <<'ENVEOF'
+  # Biến môi trường input-method chuẩn (GTK/Qt/X11 XIM/SDL) — áp dụng
+  # cho MỌI phiên đăng nhập. GLFW_IM_MODULE=ibus được giữ đúng theo hướng
+  # dẫn Lotus; các ứng dụng GLFW riêng có thể dùng IBus compatibility layer.
+  # Thay giá trị cũ nếu tồn tại để không bị trùng biến.
+  sed -i '/^GTK_IM_MODULE=/d; /^QT_IM_MODULE=/d; /^XMODIFIERS=/d; /^SDL_IM_MODULE=/d; /^GLFW_IM_MODULE=/d' /etc/environment 2>/dev/null || true
+  cat >> /etc/environment <<'ENVEOF'
 GTK_IM_MODULE=fcitx
 QT_IM_MODULE=fcitx
 XMODIFIERS=@im=fcitx
 SDL_IM_MODULE=fcitx
+GLFW_IM_MODULE=ibus
 ENVEOF
-    echo "OK: đã ghi biến môi trường input-method vào /etc/environment."
-  fi
-  # Gói fcitx5 (Debian/Ubuntu) tự cài sẵn autostart tại
-  # /etc/xdg/autostart/org.fcitx.Fcitx5.desktop — không cần tạo tay.
+  echo "OK: đã ghi biến môi trường input-method vào /etc/environment."
+
+  # Fcitx5 thường đã cài autostart. Tạo thêm session helper để bật server
+  # Lotus theo từng user sau khi desktop đã có systemd --user.
+  cat > /usr/local/bin/hyggshi-fcitx5-lotus-session <<'LOTOSEOF'
+#!/bin/sh
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user enable --now "fcitx5-lotus-server@$(id -un).service" 2>/dev/null || true
+fi
+exit 0
+LOTOSEOF
+  chmod 0755 /usr/local/bin/hyggshi-fcitx5-lotus-session
+  mkdir -p /etc/xdg/autostart
+  cat > /etc/xdg/autostart/hyggshi-fcitx5-lotus-server.desktop <<'DESKTOPEOF'
+[Desktop Entry]
+Type=Application
+Name=Fcitx5 Lotus Server
+Comment=Start the Fcitx5 Lotus server for the current user
+Exec=/usr/local/bin/hyggshi-fcitx5-lotus-session
+OnlyShowIn=Cinnamon;GNOME;XFCE;MATE;KDE;LXQt;
+X-GNOME-Autostart-Phase=Application
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+DESKTOPEOF
+
+  # Tắt IBus autostart để tránh chạy song song với Fcitx5. Không purge ibus
+  # vì một số desktop/meta-package có thể phụ thuộc vào nó.
+  cat > /etc/xdg/autostart/ibus.desktop <<'IBUSOFF'
+[Desktop Entry]
+Type=Application
+Name=IBus (disabled by Hyggshi OS)
+Hidden=true
+NoDisplay=true
+X-GNOME-Autostart-enabled=false
+IBUSOFF
+  rm -f /etc/xdg/autostart/ibus-daemon.desktop /etc/xdg/autostart/ibus-autostart.desktop 2>/dev/null || true
 else
   echo "CẢNH BÁO: fcitx5 KHÔNG được cài — bộ gõ tiếng Việt sẽ không khả dụng, build vẫn tiếp tục." >&2
 fi

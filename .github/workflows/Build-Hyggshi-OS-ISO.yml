@@ -278,6 +278,11 @@ jobs:
           sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"
           sudo rm -rf "${CHROOT_DIR}/tmp/packages"
           sudo cp -r iso-config/packages "${CHROOT_DIR}/tmp/packages"
+          # Stage the repository's complete Calamares configuration.
+          # desktop.sh will overwrite /etc/calamares with this exact tree
+          # after the Calamares packages are installed.
+          sudo rm -rf "${CHROOT_DIR}/tmp/calamares"
+          sudo cp -a iso-config/calamares "${CHROOT_DIR}/tmp/calamares"
           sudo chmod +x "${CHROOT_DIR}/tmp/desktop.sh"
           
       # === 3) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===

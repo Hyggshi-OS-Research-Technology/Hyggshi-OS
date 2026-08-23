@@ -1,0 +1,39 @@
+---
+componentName:   hyggshios
+welcomeStyleCalamares: true
+welcomeExpandingLogo: true
+windowExpanding: normal
+windowSize: 800px,580px
+windowPlacement: center
+
+strings:
+    productName:         Hyggshi OS
+    shortProductName:    Hyggshi OS
+    version:             1.4.0
+    shortVersion:        1.4.0
+    versionedName:       Hyggshi OS 1.4.0 Verdant Valley
+    shortVersionedName:  Hyggshi OS 1.4.0
+    bootloaderEntryName: Hyggshi OS
+    productUrl:          https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS
+    supportUrl:          https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues
+    knownIssuesUrl:      https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues
+    releaseNotesUrl:     https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/releases
+    
+
+sidebar: widget
+navigation: widget
+
+images:
+    productLogo:         "hyggshios-logo.png"
+    productIcon:         "hyggshios-logo.png"
+    productWelcome:      "welcome.png"
+
+slideshow:               "show.qml"
+
+style:
+   SidebarBackground:    "#3c935f"
+   SidebarText:          "#FFFFFF"
+   SidebarTextCurrent:   "#fbfbfb"
+   SidebarBackgroundCurrent: "#28603f"
+
+slideshowAPI: 2

@@ -60,6 +60,9 @@ source "$GITHUB_ENV"
 
 sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
 sudo cp scripts/kernel-tuning.sh live-build/chroot/tmp/kernel-tuning.sh
+# Stage the repository's complete Calamares configuration.
+sudo rm -rf live-build/chroot/tmp/calamares
+sudo cp -a iso-config/calamares live-build/chroot/tmp/calamares
 sudo chmod +x live-build/chroot/tmp/desktop.sh
 sudo chroot live-build/chroot env \
   BASE_DISTRO="$BASE_DISTRO" DE="$DE" EDITION="$EDITION" DEBUG_MODE="$DEBUG_MODE" \
