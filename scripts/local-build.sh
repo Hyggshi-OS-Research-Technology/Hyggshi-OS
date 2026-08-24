@@ -63,6 +63,9 @@ sudo cp scripts/kernel-tuning.sh live-build/chroot/tmp/kernel-tuning.sh
 # Stage the repository's complete Calamares configuration.
 sudo rm -rf live-build/chroot/tmp/calamares
 sudo cp -a iso-config/calamares live-build/chroot/tmp/calamares
+# Stage installer branding so desktop.sh can rebrand the Calamares launcher.
+sudo cp iso-config/branding/Hyggshi-OS-Installer.png live-build/chroot/tmp/Hyggshi-OS-Installer.png
+sudo chmod 0644 live-build/chroot/tmp/Hyggshi-OS-Installer.png
 sudo chmod +x live-build/chroot/tmp/desktop.sh
 sudo chroot live-build/chroot env \
   BASE_DISTRO="$BASE_DISTRO" DE="$DE" EDITION="$EDITION" DEBUG_MODE="$DEBUG_MODE" \

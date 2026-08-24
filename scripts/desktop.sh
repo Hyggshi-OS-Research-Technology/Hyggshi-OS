@@ -130,6 +130,54 @@ else
   echo "CẢNH BÁO: không có /tmp/calamares — giữ cấu hình Calamares do package cung cấp." >&2
 fi
 
+# ===== Calamares launcher: đổi "Install Debian" -> "Install Hyggshi OS" =====
+# calamares-settings-debian có thể cài launcher ở nhiều vị trí/tên khác nhau
+# tùy phiên bản Debian. Dò theo nội dung .desktop thay vì hardcode 1 filename,
+# sau đó ghi đè tên + icon của launcher.
+INSTALLER_ICON_SRC="/tmp/Hyggshi-OS-Installer.png"
+INSTALLER_ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
+INSTALLER_ICON_NAME="hyggshi-installer"
+if [ -f "$INSTALLER_ICON_SRC" ]; then
+  echo "===== Branding Calamares launcher: Install Hyggshi OS ====="
+  mkdir -p "$INSTALLER_ICON_DIR" /usr/share/pixmaps
+  install -m 0644 "$INSTALLER_ICON_SRC" "$INSTALLER_ICON_DIR/${INSTALLER_ICON_NAME}.png"
+  install -m 0644 "$INSTALLER_ICON_SRC" "/usr/share/pixmaps/${INSTALLER_ICON_NAME}.png"
+
+  FOUND_INSTALLER=0
+  while IFS= read -r -d '' desktop_file; do
+    if grep -Eiq '^(Name|Name\[[^]]+\])=.*Install Debian|^(Name|Name\[[^]]+\])=.*Debian Installer|^Exec=.*(pkexec[[:space:]]+)?calamares' "$desktop_file"; then
+      FOUND_INSTALLER=1
+      # Đổi mọi tên locale có sẵn để không còn hiện "Install Debian".
+      sed -i -E 's/^Name([[:space:]]*=|\[[^]]+\][[:space:]]*=).*/Name=Install Hyggshi OS/; s/^Name\[[^]]+\][[:space:]]*=.*/Name=Install Hyggshi OS/' "$desktop_file"
+      # Các bản desktop có thể dùng tên tiếng Việt/locale khác; thay theo key.
+      sed -i -E 's/^Name\[[^]]+\][[:space:]]*=.*/Name=Install Hyggshi OS/' "$desktop_file"
+      sed -i -E 's/^Icon=.*/Icon=hyggshi-installer/' "$desktop_file"
+      chmod 644 "$desktop_file"
+      echo "OK: đã rebrand launcher $desktop_file"
+    fi
+  done < <(find /usr/share/applications /usr/local/share/applications /etc/xdg/applications -type f -name '*.desktop' -print0 2>/dev/null)
+
+  # Nếu package đặt shortcut trực tiếp trên Desktop của user live/skel,
+  # sửa luôn shortcut đó để icon + tên trên màn hình cũng đồng nhất.
+  while IFS= read -r -d '' desktop_file; do
+    if grep -Eiq '^(Name|Name\[[^]]+\])=.*Install Debian|^(Name|Name\[[^]]+\])=.*Debian Installer|^Exec=.*(pkexec[[:space:]]+)?calamares' "$desktop_file"; then
+      sed -i -E 's/^Name\[[^]]+\][[:space:]]*=.*/Name=Install Hyggshi OS/; s/^Name[[:space:]]*=.*/Name=Install Hyggshi OS/; s/^Icon=.*/Icon=hyggshi-installer/' "$desktop_file"
+      chmod 755 "$desktop_file" 2>/dev/null || chmod 644 "$desktop_file"
+      echo "OK: đã rebrand shortcut $desktop_file"
+    fi
+  done < <(find /etc/skel/Desktop /home /root/Desktop -type f -name '*.desktop' -print0 2>/dev/null)
+
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+  fi
+  echo "OK: icon nguồn: $INSTALLER_ICON_SRC -> $INSTALLER_ICON_NAME"
+  if [ "$FOUND_INSTALLER" = "0" ]; then
+    echo "CẢNH BÁO: không tìm thấy launcher Calamares để đổi tên/icon." >&2
+  fi
+else
+  echo "CẢNH BÁO: không có $INSTALLER_ICON_SRC — bỏ qua rebrand launcher Calamares." >&2
+fi
+
 echo "===== Polkit: cho phép user live mở Calamares KHÔNG cần nhập mật khẩu ====="
 # Icon "Install Debian/Hyggshi OS" trên desktop live gọi launcher của
 # calamares-settings-debian, mặc định Exec=pkexec calamares — pkexec luôn
