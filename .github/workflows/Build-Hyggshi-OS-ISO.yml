@@ -310,11 +310,11 @@ jobs:
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
       # === 3.1) CINNAMON: sửa Dark/Light + Cinnamon Spices ===
-      # Debian Trixie có Cinnamon 6.4.10. Bản 6.4.10 ban đầu có lỗi
-      # Spices.py khi server trả response chunked/gzip không có Content-Length:
-      # int(None) làm Themes/Applets/Desklets/Extensions không tải được.
-      # Ưu tiên bản Cinnamon đã được Debian backport fix; nếu mirror vẫn trả
-      # bản cũ, patch Spices.py theo upstream 6.4-maintenance.
+      # Debian Trixie hiện có thể vẫn cung cấp Cinnamon 6.4.10-2.
+      # Bản này có lỗi Spices.py khi server Cinnamon trả response không có
+      # Content-Length (HTTP chunked/gzip), làm int(None) -> TypeError.
+      # Patch bên dưới là bản sửa 6.4-maintenance đã được đưa vào Cinnamon 6.4.14
+      # và Debian trixie-updates. Không dùng regex/base64 để tránh lỗi build.
       - name: "[cinnamon-fix] Fix Dark/Light mode + Cinnamon Spices downloader"
         if: ${{ env.DE == 'cinnamon' }}
         run: |
@@ -328,17 +328,87 @@ jobs:
             cinnamon cinnamon-common gnome-themes-extra \
             gsettings-desktop-schemas xdg-desktop-portal xdg-desktop-portal-xapp
 
-          # Debian Trixie đã backport bản sửa Spices downloader; nếu mirror vẫn trả
-          # Cinnamon 6.4.10-2 cũ thì patch fallback bên dưới sẽ sửa trực tiếp Spices.py.
+          # Cố nâng Cinnamon nếu repository đã có bản fixed.
           apt-get install -y --only-upgrade cinnamon cinnamon-common || true
 
-          SPICES=/usr/share/cinnamon/cinnamon-settings/bin/Spices.py
+          SPICES="/usr/share/cinnamon/cinnamon-settings/bin/Spices.py"
+
           if [ -f "$SPICES" ]; then
-            python3 -c 'import base64,sys; exec(base64.b64decode("ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQppbXBvcnQgc3lzCgpwID0gUGF0aChzeXMuYXJndlsxXSkKcyA9IHAucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCgojIFNhZmUgSFRUUCByZXNwb25zZSBoYW5kbGluZyAodXBzdHJlYW0gQ2lubmFtb24gNi40LjE0IGZpeCkuCnMgPSBzLnJlcGxhY2UoImFzc2VydCByZXNwb25zZS5vayIsICJyZXNwb25zZS5yYWlzZV9mb3Jfc3RhdHVzKCkiLCAxKQpzID0gcy5yZXBsYWNlKAogICAgInRvdGFsU2l6ZSA9IGludChyZXNwb25zZS5oZWFkZXJzLmdldCgnY29udGVudC1sZW5ndGgnKSkiLAogICAgImNvbnRlbnRfbGVuZ3RoID0gcmVzcG9uc2UuaGVhZGVycy5nZXQoJ2NvbnRlbnQtbGVuZ3RoJylcbnRvdGFsU2l6ZSA9IGludChjb250ZW50X2xlbmd0aCkgaWYgY29udGVudF9sZW5ndGggZWxzZSAtMSIsCiAgICAxLAopCgppZiAiZGVmIF9zZXRfcHJvZ3Jlc3NiYXJfcHVsc2Uoc2VsZik6IiBub3QgaW4gczoKICAgIG5lZWRsZSA9ICIgICAgZGVmIF9zZXRfcHJvZ3Jlc3NiYXJfdmlzaWJsZShzZWxmLCB2aXNpYmxlKTpcbiIKICAgIGJsb2NrID0gKAogICAgICAgICIgICAgZGVmIF9zZXRfcHJvZ3Jlc3NiYXJfcHVsc2Uoc2VsZik6XG4iCiAgICAgICAgIiAgICAgICAgZm9yIHByb2dyZXNzYmFyIGluIHNlbGYucHJvZ3Jlc3NiYXJzOlxuIgogICAgICAgICIgICAgICAgICAgICBwcm9ncmVzc2Jhci5wdWxzZSgpXG5cbiIKICAgICkKICAgIGlmIG5lZWRsZSBpbiBzOgogICAgICAgIHMgPSBzLnJlcGxhY2UobmVlZGxlLCBibG9jayArIG5lZWRsZSwgMSkKCiMgUmVwbGFjZSB0aGUgcHJvZ3Jlc3MgY2FsY3VsYXRpb24gd2l0aCB0aGUgdXBzdHJlYW0gdGhyZWUtd2F5IGhhbmRsaW5nOgojIGtub3duIGltYWdlIHNpemUsIHVua25vd24gdG90YWwgc2l6ZSAoLTEpLCBvciBrbm93biBkb3dubG9hZCBzaXplLgppZiAiZWxpZiB0b3RhbFNpemUgPT0gLTE6IiBub3QgaW4gczoKICAgIHBhdHRlcm4gPSByZS5jb21waWxlKAogICAgICAgIHIiKD9QPHByZWZpeD5ccyspZnJhY3Rpb24gPSBmbG9hdFwoY3VycmVudFwpIC8gZmxvYXRcKHRvdGFsXClcbiIKICAgICAgICByIig/UDx0ZXh0PlxzK3RleHQgPSBfXChcIkRvd25sb2FkaW5nIGltYWdlczpcIlwpIFwrIGZcIiBce2N1cnJlbnRcfS9ce3RvdGFsXH1cIlxuIgogICAgICAgIHIiXHMrc2VsZlwuX3NldF9wcm9ncmVzc2Jhcl90ZXh0XCh0ZXh0XClcbiIKICAgICAgICByIlxzK3NlbGZcLl9zZXRfcHJvZ3Jlc3NiYXJfZnJhY3Rpb25cKGZyYWN0aW9uXClcbiIKICAgICAgICByIlxzK2Vsc2U6XG4iCiAgICAgICAgciJccytmcmFjdGlvbiA9IGNvdW50IFwqIGJsb2NrU2l6ZSAvIGZsb2F0XChcKHRvdGFsU2l6ZSAvIGJsb2NrU2l6ZSBcKyAxXCkgXCogYmxvY2tTaXplXClcbiIKICAgICAgICByIlxzK3NlbGZcLl9zZXRfcHJvZ3Jlc3NiYXJfZnJhY3Rpb25cKGZyYWN0aW9uXCkiLAogICAgICAgIHJlLk0sCiAgICApCiAgICByZXBsYWNlbWVudCA9ICgKICAgICAgICAiICAgICAgICAgICAgZnJhY3Rpb24gPSBmbG9hdChjdXJyZW50KSAvIGZsb2F0KHRvdGFsKVxuIgogICAgICAgICIgICAgICAgICAgICB0ZXh0ID0gXyhcIkRvd25sb2FkaW5nIGltYWdlczpcIikgKyBmXCIge2N1cnJlbnR9L3t0b3RhbH1cIlxuIgogICAgICAgICIgICAgICAgICAgICBzZWxmLl9zZXRfcHJvZ3Jlc3NiYXJfdGV4dCh0ZXh0KVxuIgogICAgICAgICIgICAgICAgICAgICBzZWxmLl9zZXRfcHJvZ3Jlc3NiYXJfZnJhY3Rpb24oZnJhY3Rpb24pXG4iCiAgICAgICAgIiAgICAgICAgZWxpZiB0b3RhbFNpemUgPT0gLTE6XG4iCiAgICAgICAgIiAgICAgICAgICAgIHNlbGYuX3NldF9wcm9ncmVzc2Jhcl9wdWxzZSgpXG4iCiAgICAgICAgIiAgICAgICAgZWxzZTpcbiIKICAgICAgICAiICAgICAgICAgICAgZnJhY3Rpb24gPSBjb3VudCAqIGJsb2NrU2l6ZSAvIGZsb2F0KCh0b3RhbFNpemUgLyBibG9ja1NpemUgKyAxKSAqIGJsb2NrU2l6ZSlcbiIKICAgICAgICAiICAgICAgICAgICAgc2VsZi5fc2V0X3Byb2dyZXNzYmFyX2ZyYWN0aW9uKGZyYWN0aW9uKSIKICAgICkKICAgIHMsIF8gPSBwYXR0ZXJuLnN1Ym4ocmVwbGFjZW1lbnQsIHMsIGNvdW50PTEpCgpwLndyaXRlX3RleHQocywgZW5jb2Rpbmc9InV0Zi04IikK"))' "$SPICES"
+            cp -a "$SPICES" "${SPICES}.hyggshi-backup"
+
+            python3 - "$SPICES" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          original = source
+
+          # 1. HTTP errors phải được xử lý bằng exception chuẩn.
+          source = source.replace(
+              "assert response.ok",
+              "response.raise_for_status()",
+              1,
+          )
+
+          # 2. Không được int(None) khi server không gửi Content-Length.
+          source = source.replace(
+              "totalSize = int(response.headers.get('content-length'))",
+              "content_length = response.headers.get('content-length')\n"
+              "            totalSize = int(content_length) if content_length else -1",
+              1,
+          )
+
+          # 3. Progress bar phải có trạng thái pulse khi total size không biết.
+          if "def _set_progressbar_pulse(self):" not in source:
+              marker = "    def _set_progressbar_visible(self, visible):"
+              method = (
+                  "    def _set_progressbar_pulse(self):\n"
+                  "        for progressbar in self.progressbars:\n"
+                  "            progressbar.pulse()\n"
+                  "\n"
+              )
+              if marker in source:
+                  source = source.replace(marker, method + marker, 1)
+
+          # Bản Cinnamon 6.4.x có đúng block này trong _update_progress.
+          old_progress = (
+              "        if current and total:\n"
+              "            fraction = float(current) / float(total)\n"
+              "            text = _(\"Downloading images:\") + f\" {current}/{total}\"\n"
+              "            self._set_progressbar_text(text)\n"
+              "        else:\n"
+              "            fraction = count * blockSize / float((totalSize / blockSize + 1) * blockSize)\n"
+              "\n"
+              "        self._set_progressbar_fraction(fraction)"
+          )
+
+          new_progress = (
+              "        if current and total:\n"
+              "            fraction = float(current) / float(total)\n"
+              "            text = _(\"Downloading images:\") + f\" {current}/{total}\"\n"
+              "            self._set_progressbar_text(text)\n"
+              "            self._set_progressbar_fraction(fraction)\n"
+              "        elif totalSize == -1:\n"
+              "            self._set_progressbar_pulse()\n"
+              "        else:\n"
+              "            fraction = count * blockSize / float((totalSize / blockSize + 1) * blockSize)\n"
+              "            self._set_progressbar_fraction(fraction)"
+          )
+
+          if old_progress in source:
+              source = source.replace(old_progress, new_progress, 1)
+
+          if source != original:
+              path.write_text(source, encoding="utf-8")
+              print("Hyggshi OS: Cinnamon Spices.py patched successfully")
+          else:
+              print("Hyggshi OS: Cinnamon Spices.py đã có bản sửa, bỏ qua patch")
+          PY
           fi
 
-          # Không khóa Dark hay Light. Cinnamon System Settings vẫn được quyền chuyển
-          # Mixed/Dark/Light; color-scheme mặc định là automatic/default.
+          # Không ép Cinnamon vào Dark hoặc Light.
+          # Cho phép Cinnamon Settings quản lý lựa chọn Mixed/Dark/Light.
           mkdir -p /etc/dconf/db/local.d
           cat > /etc/dconf/db/local.d/00-hyggshi-cinnamon-color-scheme <<'EOF'
           [org/gnome/desktop/interface]
@@ -350,7 +420,7 @@ jobs:
 
           dconf update || true
 
-          # Theme Manager có thể ghi vào các thư mục này cho user mới.
+          # Thư mục theme cho user mới.
           mkdir -p /etc/skel/.local/share/themes
           mkdir -p /etc/skel/.themes
           mkdir -p /etc/skel/.local/share/cinnamon/themes
