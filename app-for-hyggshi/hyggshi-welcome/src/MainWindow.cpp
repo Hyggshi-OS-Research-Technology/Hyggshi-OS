@@ -127,19 +127,34 @@ void MainWindow::loadPreferences() {
   m_highContrast = settings.value("accessibility/high_contrast", false).toBool();
   m_largeText = settings.value("accessibility/large_text", false).toBool();
   m_installProfile = settings.value("software/profile", "normal").toString();
-  if (m_installProfile != "full" && m_installProfile != "normal" && m_installProfile != "minimal") {
+  if (m_installProfile != "full" && m_installProfile != "normal" &&
+      m_installProfile != "minimal" && m_installProfile != "custom") {
     m_installProfile = "normal";
   }
   m_selectedSoftware = settings.value("software/packages").toStringList();
+  m_selectedWallpaper = settings.value(
+      "wallpaper", "/usr/share/backgrounds/hyggshi/Verdant-Valley.png").toString();
+  if (m_selectedWallpaper != "/usr/share/backgrounds/hyggshi/Verdant-Valley.png" &&
+      m_selectedWallpaper != "/usr/share/backgrounds/hyggshi/wallpaper.png") {
+    m_selectedWallpaper = "/usr/share/backgrounds/hyggshi/Verdant-Valley.png";
+  }
+  if (m_selectedSoftware.isEmpty() && m_installProfile == "normal") {
+    m_selectedSoftware << "ffmpeg" << "vlc" << "libreoffice";
+  }
+  if (m_selectedSoftware.isEmpty() && m_installProfile == "full") {
+    m_selectedSoftware << "ffmpeg" << "vlc" << "libreoffice"
+                       << "unattended-upgrades" << "thunderbird" << "krita"
+                       << "virt-manager" << "keepassxc" << "git" << "curl" << "htop"
+                       << "com.google.Chrome" << "com.visualstudio.code"
+                       << "org.gimp.GIMP" << "org.inkscape.Inkscape"
+                       << "com.obsproject.Studio";
+  }
 
   if (m_selectedLanguage.isEmpty()) m_selectedLanguage = "vi";
   if (m_selectedKeyboard.isEmpty()) m_selectedKeyboard = "vn-telex";
   if (m_selectedTheme != "light" && m_selectedTheme != "dark" && m_selectedTheme != "auto") {
     m_selectedTheme = "auto";
   }
-  m_selectedWallpaper = m_selectedTheme == "dark"
-                            ? "/usr/share/backgrounds/hyggshi/car-Dark.png"
-                            : "/usr/share/backgrounds/hyggshi/car-light.png";
 }
 
 void MainWindow::savePreferences() const {
@@ -153,6 +168,7 @@ void MainWindow::savePreferences() const {
   settings.setValue("accessibility/large_text", m_largeText);
   settings.setValue("software/profile", m_installProfile);
   settings.setValue("software/packages", m_selectedSoftware);
+  settings.setValue("wallpaper", m_selectedWallpaper);
   settings.sync();
 }
 
@@ -315,13 +331,12 @@ QWidget *MainWindow::buildThemePage() {
 
     if (opt.id == m_selectedTheme) {
       card->setChecked(true);
-      m_selectedWallpaper = opt.wallpaper;
     }
 
     m_themeGroup->addButton(card, i);
     connect(card, &QPushButton::clicked, this, [this, opt]() {
       m_selectedTheme = opt.id;
-      m_selectedWallpaper = opt.wallpaper;
+      savePreferences();
     });
     cardsRow->addWidget(card);
   }
@@ -331,6 +346,21 @@ QWidget *MainWindow::buildThemePage() {
     m_selectedTheme = "auto";
   }
 
+  auto *wallpaperLabel = new QLabel(tr("Hình nền"));
+  wallpaperLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:10px;");
+  auto *wallpaperBox = new QComboBox;
+  wallpaperBox->addItem(tr("Verdant Valley"), "/usr/share/backgrounds/hyggshi/Verdant-Valley.png");
+  wallpaperBox->addItem(tr("Hyggshi Wallpaper"), "/usr/share/backgrounds/hyggshi/wallpaper.png");
+  const int wallpaperIndex = wallpaperBox->findData(m_selectedWallpaper);
+  wallpaperBox->setCurrentIndex(wallpaperIndex >= 0 ? wallpaperIndex : 0);
+  connect(wallpaperBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this, wallpaperBox](int index) {
+            if (index >= 0) {
+              m_selectedWallpaper = wallpaperBox->itemData(index).toString();
+              savePreferences();
+            }
+          });
+
   auto *note = new QLabel(tr("Tự động sẽ bám theo theme hiện tại của desktop khi hoàn tất thiết lập."));
   note->setWordWrap(true);
   note->setStyleSheet("color:#6f7480; font-size:11px; margin-top:10px;");
@@ -338,6 +368,8 @@ QWidget *MainWindow::buildThemePage() {
   layout->addWidget(title);
   layout->addSpacing(8);
   layout->addLayout(cardsRow);
+  layout->addWidget(wallpaperLabel);
+  layout->addWidget(wallpaperBox);
   layout->addWidget(note);
   layout->addStretch(1);
   return page;
@@ -351,43 +383,53 @@ QWidget *MainWindow::buildSoftwarePage() {
 
   auto *title = new QLabel(tr("Tùy chỉnh & Phần mềm"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Các lựa chọn trước đây nằm ở Customize và Additional Software nay được thực hiện trong Hyggshi Welcome sau khi đăng nhập. Bạn có thể đổi lại bất cứ lúc nào."));
+  auto *desc = new QLabel(tr("Các lựa chọn trước đây nằm ở Customize và Additional Software nay được thực hiện trong Hyggshi Welcome sau khi đăng nhập. Có LibreOffice, ONLYOFFICE, WPS Office, VLC, Visual Studio Code, Google Chrome và nhiều ứng dụng khác. Chọn một bộ Office phù hợp hoặc dùng Tùy chỉnh."));
   desc->setWordWrap(true);
   desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
 
   auto *profileLabel = new QLabel(tr("Kiểu cài đặt phần mềm"));
   profileLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
   m_installProfileBox = new QComboBox;
-  m_installProfileBox->addItem(tr("Đầy đủ"), "full");
-  m_installProfileBox->addItem(tr("Thông thường"), "normal");
-  m_installProfileBox->addItem(tr("Tối giản"), "minimal");
+  m_installProfileBox->addItem(tr("Đầy đủ — cài toàn bộ"), "full");
+  m_installProfileBox->addItem(tr("Thông thường — bộ cơ bản"), "normal");
+  m_installProfileBox->addItem(tr("Tối giản — không cài thêm"), "minimal");
+  m_installProfileBox->addItem(tr("Tùy chỉnh — tự chọn"), "custom");
   const int profileIndex = m_installProfileBox->findData(m_installProfile);
   m_installProfileBox->setCurrentIndex(profileIndex >= 0 ? profileIndex : 1);
   connect(m_installProfileBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this](int index) {
             if (index < 0) return;
             m_installProfile = m_installProfileBox->itemData(index).toString();
-            if (m_installProfile == "full" || m_installProfile == "minimal") {
-              const bool checked = m_installProfile == "full";
+            if (m_installProfile == "full" || m_installProfile == "minimal" || m_installProfile == "normal") {
+              QStringList desired;
+              if (m_installProfile == "full") {
+                // Full profile: useful desktop set, but do not install every
+                // mutually alternative office/browser package at once.
+                desired << "ffmpeg" << "vlc" << "libreoffice"
+                        << "unattended-upgrades" << "thunderbird" << "krita"
+                        << "virt-manager" << "keepassxc" << "git" << "curl" << "htop"
+                        << "com.google.Chrome" << "com.visualstudio.code"
+                        << "org.gimp.GIMP" << "org.inkscape.Inkscape"
+                        << "com.obsproject.Studio";
+              } else if (m_installProfile == "normal") {
+                desired << "ffmpeg" << "vlc" << "libreoffice";
+              }
               {
                 const QSignalBlocker blocker(m_installProfileBox);
                 Q_UNUSED(blocker);
                 for (QCheckBox *check : m_softwareChecks) {
                   const QSignalBlocker checkBlocker(check);
                   Q_UNUSED(checkBlocker);
-                  check->setChecked(checked);
+                  check->setChecked(desired.contains(check->property("packageName").toString()));
                 }
               }
-              m_selectedSoftware.clear();
-              if (checked) {
-                for (QCheckBox *check : m_softwareChecks)
-                  m_selectedSoftware << check->property("packageName").toString();
-              }
+              m_selectedSoftware = desired;
             }
+            // Custom leaves the current checkbox selection untouched.
             savePreferences();
           });
 
-  auto *softwareLabel = new QLabel(tr("Phần mềm bổ sung"));
+  auto *softwareLabel = new QLabel(tr("Phần mềm bổ sung (APT + Flathub)"));
   softwareLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:6px;");
 
   auto *scroll = new QScrollArea;
@@ -398,35 +440,70 @@ QWidget *MainWindow::buildSoftwarePage() {
   listLayout->setContentsMargins(4, 2, 4, 2);
   listLayout->setSpacing(5);
 
-  struct SoftwareOpt { const char *id; const char *label; };
+  struct SoftwareOpt { const char *id; const char *label; const char *type; const char *group; };
   const SoftwareOpt options[] = {
-      {"unattended-upgrades", "Cập nhật tự động (unattended-upgrades)"},
-      {"ffmpeg", "Codec đa phương tiện (FFmpeg)"},
-      {"thunderbird", "Thunderbird"},
-      {"krita", "Krita"},
-      {"virt-manager", "Virtual Machine Manager"},
-      {"keepassxc", "KeePassXC"},
+      {"ffmpeg", "Codec đa phương tiện (FFmpeg)", "apt", ""},
+      {"vlc", "VLC — trình phát đa phương tiện", "apt", "media"},
+      {"libreoffice", "LibreOffice — bộ ứng dụng văn phòng", "apt", "office"},
+      {"unattended-upgrades", "Cập nhật tự động (unattended-upgrades)", "apt", ""},
+      {"thunderbird", "Thunderbird", "apt", ""},
+      {"krita", "Krita", "apt", ""},
+      {"virt-manager", "Virtual Machine Manager", "apt", ""},
+      {"keepassxc", "KeePassXC", "apt", ""},
+      {"git", "Git", "apt", ""},
+      {"curl", "cURL", "apt", ""},
+      {"htop", "Htop", "apt", ""},
+      {"org.libreoffice.LibreOffice", "LibreOffice (Flatpak)", "flatpak", "office"},
+      {"org.onlyoffice.desktopeditors", "ONLYOFFICE Desktop Editors", "flatpak", "office"},
+      {"com.wps.Office", "WPS Office", "flatpak", "office"},
+      {"com.google.Chrome", "Google Chrome", "flatpak", "browser"},
+      {"com.visualstudio.code", "Visual Studio Code", "flatpak", ""},
+      {"org.videolan.VLC", "VLC (Flatpak)", "flatpak", "media"},
+      {"org.gimp.GIMP", "GIMP", "flatpak", ""},
+      {"org.inkscape.Inkscape", "Inkscape", "flatpak", ""},
+      {"com.obsproject.Studio", "OBS Studio", "flatpak", ""},
   };
 
   for (const auto &opt : options) {
     auto *check = new QCheckBox(tr(opt.label));
     check->setProperty("packageName", QString::fromLatin1(opt.id));
+    check->setProperty("installType", QString::fromLatin1(opt.type));
+    check->setProperty("group", QString::fromLatin1(opt.group));
     check->setCursor(Qt::PointingHandCursor);
     check->setChecked(m_selectedSoftware.contains(QString::fromLatin1(opt.id)) ||
-                      m_installProfile == "full");
+                      (m_installProfile == "normal" &&
+                       (QString::fromLatin1(opt.id) == "ffmpeg" ||
+                        QString::fromLatin1(opt.id) == "vlc" ||
+                        QString::fromLatin1(opt.id) == "libreoffice")));
     m_softwareChecks.push_back(check);
-    connect(check, &QCheckBox::toggled, this, [this](bool) {
+    connect(check, &QCheckBox::toggled, this, [this, check](bool checked) {
+      if (checked) {
+        const QString group = check->property("group").toString();
+        if (!group.isEmpty()) {
+          for (QCheckBox *other : m_softwareChecks) {
+            if (other == check) continue;
+            if (other->property("group").toString() == group) {
+              const QSignalBlocker blocker(other);
+              Q_UNUSED(blocker);
+              other->setChecked(false);
+            }
+          }
+        }
+      }
       QStringList packages;
       for (QCheckBox *item : m_softwareChecks) {
         if (item->isChecked()) packages << item->property("packageName").toString();
       }
       m_selectedSoftware = packages;
-      if (m_installProfile == "full" || m_installProfile == "minimal") {
-        m_installProfile = "normal";
+      if (m_installProfile != "custom") {
+        m_installProfile = "custom";
         if (m_installProfileBox) {
-          const int index = m_installProfileBox->findData("normal");
-          if (index >= 0 && m_installProfileBox->currentIndex() != index)
+          const int index = m_installProfileBox->findData("custom");
+          if (index >= 0 && m_installProfileBox->currentIndex() != index) {
+            const QSignalBlocker blocker(m_installProfileBox);
+            Q_UNUSED(blocker);
             m_installProfileBox->setCurrentIndex(index);
+          }
         }
       }
       savePreferences();
@@ -934,29 +1011,10 @@ void MainWindow::checkForUpdates() {
 }
 
 QString MainWindow::resolveAutoWallpaper() const {
-  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
-  if (hasExecutable("gsettings")) {
-    QString theme;
-    if (desktop.contains("gnome")) {
-      QProcess process;
-      process.start("gsettings", {"get", "org.gnome.desktop.interface", "gtk-theme"});
-      if (process.waitForFinished(1000)) theme = QString::fromLocal8Bit(process.readAllStandardOutput());
-    } else if (desktop.contains("cinnamon")) {
-      QProcess process;
-      process.start("gsettings", {"get", "org.cinnamon.desktop.interface", "gtk-theme"});
-      if (process.waitForFinished(1000)) theme = QString::fromLocal8Bit(process.readAllStandardOutput());
-    }
-    if (theme.toLower().contains("dark")) return "/usr/share/backgrounds/hyggshi/car-Dark.png";
-  }
-  if (hasExecutable("xfconf-query") && desktop.contains("xfce")) {
-    QProcess process;
-    process.start("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName"});
-    if (process.waitForFinished(1000)) {
-      const QString theme = QString::fromLocal8Bit(process.readAllStandardOutput());
-      if (theme.toLower().contains("dark")) return "/usr/share/backgrounds/hyggshi/car-Dark.png";
-    }
-  }
-  return "/usr/share/backgrounds/hyggshi/car-light.png";
+  if (QFile::exists(m_selectedWallpaper)) return m_selectedWallpaper;
+  if (QFile::exists("/usr/share/backgrounds/hyggshi/Verdant-Valley.png"))
+    return "/usr/share/backgrounds/hyggshi/Verdant-Valley.png";
+  return "/usr/share/backgrounds/hyggshi/wallpaper.png";
 }
 
 void MainWindow::saveFirstRunState(bool completed) {
@@ -974,14 +1032,40 @@ void MainWindow::saveFirstRunState(bool completed) {
 }
 
 bool MainWindow::installSelectedSoftware() {
-  QStringList packages;
-  if (m_installProfile == "full") {
-    packages << "thunderbird" << "krita" << "virt-manager" << "keepassxc";
+  QStringList aptPackages;
+  QStringList flatpakApps;
+  QSet<QString> seenApt;
+  QSet<QString> seenFlatpak;
+
+  auto addApt = [&](const QString &pkg) {
+    if (!pkg.isEmpty() && !seenApt.contains(pkg)) {
+      seenApt.insert(pkg);
+      aptPackages << pkg;
+    }
+  };
+  auto addFlatpak = [&](const QString &app) {
+    if (!app.isEmpty() && !seenFlatpak.contains(app)) {
+      seenFlatpak.insert(app);
+      flatpakApps << app;
+    }
+  };
+
+  // Profiles are resolved here too, so changing profile and restarting
+  // Welcome does not leave an inconsistent package list behind.
+  if (m_installProfile == "minimal") {
+    // No additional applications.
+  } else if (m_installProfile == "normal") {
+    addApt("ffmpeg");
+    addApt("vlc");
+    addApt("libreoffice");
+  } else {
+    for (const QString &item : m_selectedSoftware) {
+      if (item.contains('.') && !item.startsWith("/")) addFlatpak(item);
+      else addApt(item);
+    }
   }
-  for (const QString &pkg : m_selectedSoftware) {
-    if (!packages.contains(pkg)) packages << pkg;
-  }
-  if (packages.isEmpty()) return true;
+
+  if (aptPackages.isEmpty() && flatpakApps.isEmpty()) return true;
 
   if (!hasExecutable("pkexec")) {
     if (m_softwareStatus) m_softwareStatus->setText(tr("Không tìm thấy pkexec; bỏ qua cài phần mềm bổ sung."));
@@ -989,22 +1073,39 @@ bool MainWindow::installSelectedSoftware() {
   }
 
   if (m_softwareStatus) {
-    m_softwareStatus->setText(tr("Đang cài phần mềm bổ sung. Có thể cần nhập mật khẩu quản trị..."));
+    m_softwareStatus->setText(tr("Đang cài phần mềm. Có thể cần nhập mật khẩu quản trị...\n\nGói APT: %1\nỨng dụng Flatpak: %2")
+                                  .arg(aptPackages.join(", "), flatpakApps.join(", ")));
     qApp->processEvents();
   }
 
-  QStringList args;
-  args << "sh" << "-c";
-  const QString command = QString("apt-get update && apt-get install -y %1").arg(packages.join(' '));
-  args << command;
-  const int rc = QProcess::execute("pkexec", args);
+  // All identifiers originate from the fixed UI list, but quote them anyway
+  // before passing the combined command through pkexec/sh.
+  auto shellQuote = [](const QString &value) {
+    QString out = value;
+    out.replace("'", "'\\''");
+    return "'" + out + "'";
+  };
+
+  QStringList commands;
+  if (!aptPackages.isEmpty()) {
+    QStringList quoted;
+    for (const QString &pkg : aptPackages) quoted << shellQuote(pkg);
+    commands << "apt-get update && apt-get install -y " + quoted.join(' ');
+  }
+  if (!flatpakApps.isEmpty()) {
+    QStringList quoted;
+    for (const QString &app : flatpakApps) quoted << shellQuote(app);
+    commands << "flatpak --system remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && flatpak --system install -y flathub " + quoted.join(' ');
+  }
+
+  const int rc = QProcess::execute("pkexec", {"sh", "-c", commands.join(" && ")});
   if (rc != 0) {
     if (m_softwareStatus) {
-      m_softwareStatus->setText(tr("Không cài được một hoặc nhiều gói. Bạn có thể cài lại sau bằng Software Manager."));
+      m_softwareStatus->setText(tr("Không cài được một hoặc nhiều phần mềm. Kiểm tra Internet và thử lại trong Hyggshi Welcome."));
     }
     return false;
   }
-  if (m_softwareStatus) m_softwareStatus->setText(tr("Đã cài xong phần mềm bổ sung."));
+  if (m_softwareStatus) m_softwareStatus->setText(tr("✓ Đã cài xong phần mềm bổ sung."));
   return true;
 }
 
@@ -1036,8 +1137,7 @@ void MainWindow::finishSetup() {
     userThemeConf.close();
   }
 
-  const QString wallpaper = m_selectedTheme == "auto" ? resolveAutoWallpaper() : m_selectedWallpaper;
-  applyWallpaper(wallpaper);
+  applyWallpaper(m_selectedWallpaper);
 
   const bool dontAskAgain = m_dontAskAgainChk == nullptr || m_dontAskAgainChk->isChecked();
   saveFirstRunState(dontAskAgain);
