@@ -17,6 +17,8 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
+#include <QSignalBlocker>
 #include <QScreen>
 #include <QSettings>
 #include <QStandardPaths>
@@ -27,7 +29,7 @@
 
 namespace {
 
-constexpr int kPageCount = 9;
+constexpr int kPageCount = 10;
 constexpr int kPreferredWidth = 860;
 constexpr int kPreferredHeight = 560;
 
@@ -90,6 +92,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
   m_stack->addWidget(buildLanguagePage());
   m_stack->addWidget(buildNetworkPage());
   m_stack->addWidget(buildThemePage());
+  m_stack->addWidget(buildSoftwarePage());
   m_stack->addWidget(buildAccessibilityPage());
   m_stack->addWidget(buildSystemCheckPage());
   m_stack->addWidget(buildUpdatePage());
@@ -123,6 +126,11 @@ void MainWindow::loadPreferences() {
   m_reducedMotion = settings.value("accessibility/reduced_motion", false).toBool();
   m_highContrast = settings.value("accessibility/high_contrast", false).toBool();
   m_largeText = settings.value("accessibility/large_text", false).toBool();
+  m_installProfile = settings.value("software/profile", "normal").toString();
+  if (m_installProfile != "full" && m_installProfile != "normal" && m_installProfile != "minimal") {
+    m_installProfile = "normal";
+  }
+  m_selectedSoftware = settings.value("software/packages").toStringList();
 
   if (m_selectedLanguage.isEmpty()) m_selectedLanguage = "vi";
   if (m_selectedKeyboard.isEmpty()) m_selectedKeyboard = "vn-telex";
@@ -143,6 +151,8 @@ void MainWindow::savePreferences() const {
   settings.setValue("accessibility/reduced_motion", m_reducedMotion);
   settings.setValue("accessibility/high_contrast", m_highContrast);
   settings.setValue("accessibility/large_text", m_largeText);
+  settings.setValue("software/profile", m_installProfile);
+  settings.setValue("software/packages", m_selectedSoftware);
   settings.sync();
 }
 
@@ -330,6 +340,114 @@ QWidget *MainWindow::buildThemePage() {
   layout->addLayout(cardsRow);
   layout->addWidget(note);
   layout->addStretch(1);
+  return page;
+}
+
+QWidget *MainWindow::buildSoftwarePage() {
+  auto *page = new QWidget;
+  auto *outer = new QVBoxLayout(page);
+  outer->setContentsMargins(55, 35, 55, 30);
+  outer->setSpacing(10);
+
+  auto *title = new QLabel(tr("Tùy chỉnh & Phần mềm"));
+  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
+  auto *desc = new QLabel(tr("Các lựa chọn trước đây nằm ở Customize và Additional Software nay được thực hiện trong Hyggshi Welcome sau khi đăng nhập. Bạn có thể đổi lại bất cứ lúc nào."));
+  desc->setWordWrap(true);
+  desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
+
+  auto *profileLabel = new QLabel(tr("Kiểu cài đặt phần mềm"));
+  profileLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
+  m_installProfileBox = new QComboBox;
+  m_installProfileBox->addItem(tr("Đầy đủ"), "full");
+  m_installProfileBox->addItem(tr("Thông thường"), "normal");
+  m_installProfileBox->addItem(tr("Tối giản"), "minimal");
+  const int profileIndex = m_installProfileBox->findData(m_installProfile);
+  m_installProfileBox->setCurrentIndex(profileIndex >= 0 ? profileIndex : 1);
+  connect(m_installProfileBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int index) {
+            if (index < 0) return;
+            m_installProfile = m_installProfileBox->itemData(index).toString();
+            if (m_installProfile == "full" || m_installProfile == "minimal") {
+              const bool checked = m_installProfile == "full";
+              {
+                const QSignalBlocker blocker(m_installProfileBox);
+                Q_UNUSED(blocker);
+                for (QCheckBox *check : m_softwareChecks) {
+                  const QSignalBlocker checkBlocker(check);
+                  Q_UNUSED(checkBlocker);
+                  check->setChecked(checked);
+                }
+              }
+              m_selectedSoftware.clear();
+              if (checked) {
+                for (QCheckBox *check : m_softwareChecks)
+                  m_selectedSoftware << check->property("packageName").toString();
+              }
+            }
+            savePreferences();
+          });
+
+  auto *softwareLabel = new QLabel(tr("Phần mềm bổ sung"));
+  softwareLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:6px;");
+
+  auto *scroll = new QScrollArea;
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  auto *list = new QWidget;
+  auto *listLayout = new QVBoxLayout(list);
+  listLayout->setContentsMargins(4, 2, 4, 2);
+  listLayout->setSpacing(5);
+
+  struct SoftwareOpt { const char *id; const char *label; };
+  const SoftwareOpt options[] = {
+      {"unattended-upgrades", "Cập nhật tự động (unattended-upgrades)"},
+      {"ffmpeg", "Codec đa phương tiện (FFmpeg)"},
+      {"thunderbird", "Thunderbird"},
+      {"krita", "Krita"},
+      {"virt-manager", "Virtual Machine Manager"},
+      {"keepassxc", "KeePassXC"},
+  };
+
+  for (const auto &opt : options) {
+    auto *check = new QCheckBox(tr(opt.label));
+    check->setProperty("packageName", QString::fromLatin1(opt.id));
+    check->setCursor(Qt::PointingHandCursor);
+    check->setChecked(m_selectedSoftware.contains(QString::fromLatin1(opt.id)) ||
+                      m_installProfile == "full");
+    m_softwareChecks.push_back(check);
+    connect(check, &QCheckBox::toggled, this, [this](bool) {
+      QStringList packages;
+      for (QCheckBox *item : m_softwareChecks) {
+        if (item->isChecked()) packages << item->property("packageName").toString();
+      }
+      m_selectedSoftware = packages;
+      if (m_installProfile == "full" || m_installProfile == "minimal") {
+        m_installProfile = "normal";
+        if (m_installProfileBox) {
+          const int index = m_installProfileBox->findData("normal");
+          if (index >= 0 && m_installProfileBox->currentIndex() != index)
+            m_installProfileBox->setCurrentIndex(index);
+        }
+      }
+      savePreferences();
+    });
+    listLayout->addWidget(check);
+  }
+  listLayout->addStretch(1);
+  scroll->setWidget(list);
+
+  m_softwareStatus = new QLabel(tr("Các gói sẽ được cài khi bạn bấm 'Bắt đầu sử dụng' ở cuối Welcome."));
+  m_softwareStatus->setWordWrap(true);
+  m_softwareStatus->setStyleSheet("font-size:11px; color:#6f7480;");
+
+  outer->addWidget(title);
+  outer->addWidget(desc);
+  outer->addSpacing(4);
+  outer->addWidget(profileLabel);
+  outer->addWidget(m_installProfileBox);
+  outer->addWidget(softwareLabel);
+  outer->addWidget(scroll, 1);
+  outer->addWidget(m_softwareStatus);
   return page;
 }
 
@@ -663,8 +781,8 @@ void MainWindow::goNext() {
     return;
   }
   if (index == 2) refreshNetworkStatus();
-  if (index == 5) refreshSystemStatus();
-  if (index == 6) setUpdateStatus(tr("Bạn có thể kiểm tra cập nhật ngay hoặc tiếp tục."));
+  if (index == 6) refreshSystemStatus();
+  if (index == 7) setUpdateStatus(tr("Bạn có thể kiểm tra cập nhật ngay hoặc tiếp tục."));
   m_stack->slideToIndex(index + 1);
   updateNavState();
 }
@@ -855,6 +973,41 @@ void MainWindow::saveFirstRunState(bool completed) {
   }
 }
 
+bool MainWindow::installSelectedSoftware() {
+  QStringList packages;
+  if (m_installProfile == "full") {
+    packages << "thunderbird" << "krita" << "virt-manager" << "keepassxc";
+  }
+  for (const QString &pkg : m_selectedSoftware) {
+    if (!packages.contains(pkg)) packages << pkg;
+  }
+  if (packages.isEmpty()) return true;
+
+  if (!hasExecutable("pkexec")) {
+    if (m_softwareStatus) m_softwareStatus->setText(tr("Không tìm thấy pkexec; bỏ qua cài phần mềm bổ sung."));
+    return false;
+  }
+
+  if (m_softwareStatus) {
+    m_softwareStatus->setText(tr("Đang cài phần mềm bổ sung. Có thể cần nhập mật khẩu quản trị..."));
+    qApp->processEvents();
+  }
+
+  QStringList args;
+  args << "sh" << "-c";
+  const QString command = QString("apt-get update && apt-get install -y %1").arg(packages.join(' '));
+  args << command;
+  const int rc = QProcess::execute("pkexec", args);
+  if (rc != 0) {
+    if (m_softwareStatus) {
+      m_softwareStatus->setText(tr("Không cài được một hoặc nhiều gói. Bạn có thể cài lại sau bằng Software Manager."));
+    }
+    return false;
+  }
+  if (m_softwareStatus) m_softwareStatus->setText(tr("Đã cài xong phần mềm bổ sung."));
+  return true;
+}
+
 void MainWindow::finishSetup() {
   if (!m_stack || m_stack->isAnimating()) return;
 
@@ -871,6 +1024,8 @@ void MainWindow::finishSetup() {
 
   applyLanguageAndKeyboard();
   applyAccessibility();
+  savePreferences();
+  installSelectedSoftware();
   savePreferences();
 
   const QString themeCfg = configDirectory() + "/theme.conf";
