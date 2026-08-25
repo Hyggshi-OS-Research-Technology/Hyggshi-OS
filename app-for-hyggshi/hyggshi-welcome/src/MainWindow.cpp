@@ -1095,7 +1095,10 @@ bool MainWindow::installSelectedSoftware() {
   if (!flatpakApps.isEmpty()) {
     QStringList quoted;
     for (const QString &app : flatpakApps) quoted << shellQuote(app);
-    commands << "flatpak --system remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && flatpak --system install -y flathub " + quoted.join(' ');
+    // Repair stale system refs/cache and ensure FUSE is available before
+    // installing runtimes. This avoids the common revokefs-fuse mount error
+    // after an interrupted first download on a fresh ISO.
+    commands << "modprobe fuse 2>/dev/null || true; flatpak --system repair || true; flatpak --system remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && flatpak --system install -y flathub " + quoted.join(' ');
   }
 
   const int rc = QProcess::execute("pkexec", {"sh", "-c", commands.join(" && ")});
@@ -1117,10 +1120,26 @@ void MainWindow::finishSetup() {
 
   if (m_selectedTheme != "auto" && desktop.contains("xfce")) {
     if (hasExecutable("xfconf-query")) QProcess::execute("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
-  } else if (m_selectedTheme != "auto" && hasExecutable("gsettings")) {
-    if (desktop.contains("cinnamon")) setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
-    else if (desktop.contains("mate")) setGsettings("org.mate.interface", "gtk-theme", themeName);
-    else if (desktop.contains("gnome")) setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
+  } else if (hasExecutable("gsettings")) {
+    // Cinnamon 6.4's Appearance page follows the GNOME color-scheme key.
+    // Setting only gtk-theme made the Dark/Light buttons look selectable but
+    // did not reliably change the actual application color scheme. Set both
+    // the Cinnamon GTK theme and the shared color-scheme key.
+    const QString colorScheme = m_selectedTheme == "dark" ? "prefer-dark"
+                                : m_selectedTheme == "light" ? "prefer-light"
+                                : "default";
+    if (desktop.contains("cinnamon")) {
+      setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
+      setGsettings("org.cinnamon.desktop.interface", "icon-theme", "Adwaita");
+      setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+      setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
+    } else if (desktop.contains("mate")) {
+      setGsettings("org.mate.interface", "gtk-theme", themeName);
+      setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+    } else if (desktop.contains("gnome")) {
+      setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
+      setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+    }
   }
 
   applyLanguageAndKeyboard();

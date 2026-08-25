@@ -584,30 +584,51 @@ for pkg in cmake gcc; do
   fi
 done
 
-echo "===== Flatpak + Software Center ====="
-# Flatpak phải xuất hiện trong ứng dụng Software/GNOME Software, không chỉ
-# có lệnh `flatpak` trong terminal. Cài backend Flatpak cho GNOME Software
-# Không cài backend Debian (.deb) vì nguồn "Hyggshi OS / Unknown source" chưa hoàn thiện.
-# Software chỉ hiển thị/cài ứng dụng Flatpak từ Flathub ở thời điểm này.
-for pkg in flatpak gnome-software gnome-software-plugin-flatpak; do
-  if ! apt-get install -y "$pkg"; then
+echo "===== Flatpak + Software Center (Flathub-only) ====="
+# Chỉ dùng Flathub trong Software. Debian trixie gnome-software vẫn có
+# PackageKit plugin tích hợp sẵn; nếu để plugin này chạy, Software sẽ hiện
+# thêm nguồn PACKAGE/"Hyggshi OS - Unknown source". Không cần gỡ thư viện
+# PackageKit (gnome-software cần libpackagekit), chỉ block plugin lúc runtime.
+# Đồng thời cài fuse3 + nạp module fuse để Flatpak revokefs-fuse có thể mount
+# runtime (lỗi "Could not mount ... Child process exited with code 1").
+for pkg in flatpak fuse3 gnome-software gnome-software-plugin-flatpak \
+           xdg-desktop-portal xdg-desktop-portal-xapp xdg-desktop-portal-gtk; do
+  if ! apt-get install -y --no-install-recommends "$pkg"; then
     echo "CẢNH BÁO: cài gói '$pkg' thất bại — bỏ qua gói này." >&2
   fi
 done
 
-# Đăng ký Flathub ở cấp hệ thống để mọi user mới đều thấy ứng dụng Flatpak
-# trong Software. Không tải/cài ứng dụng Flatpak nào trong lúc build.
+# Không cài plugin .deb của GNOME Software. Đây là phần hỗ trợ hiển thị/cài
+# package truyền thống; Hyggshi Software Center chỉ dùng Flatpak/Flathub.
+apt-get purge -y gnome-software-plugin-deb 2>/dev/null || true
+
+# Đảm bảo module FUSE được nạp ở mỗi lần boot. fuse3 tạo /dev/fuse khi module
+# được nạp; Flatpak cần nó cho revokefs-fuse khi tải runtime/app.
+mkdir -p /etc/modules-load.d
+printf '%s\n' fuse > /etc/modules-load.d/fuse.conf
+
+# Block PackageKit plugin của GNOME Software. GNOME Software hỗ trợ biến môi
+# trường GNOME_SOFTWARE_PLUGINS_BLOCKLIST trong các bản hiện tại. Ghi vào
+# /etc/environment để desktop launcher và các phiên đăng nhập mới cùng nhận.
+if [ -f /etc/environment ]; then
+  sed -i '/^GNOME_SOFTWARE_PLUGINS_BLOCKLIST=/d' /etc/environment
+fi
+printf '%s\n' 'GNOME_SOFTWARE_PLUGINS_BLOCKLIST=packagekit' >> /etc/environment
+
+# Đăng ký duy nhất Flathub ở cấp hệ thống để mọi user mới đều thấy ứng dụng
+# Flatpak trong Software. Không cài ứng dụng Flatpak trong lúc build ISO.
 if command -v flatpak >/dev/null 2>&1; then
   if ! flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo; then
-    echo "CẢNH BÁO: không thêm được Flathub — Software vẫn có thể hiển thị Flatpak nếu remote được thêm sau." >&2
+    echo "CẢNH BÁO: không thêm được Flathub — kiểm tra mạng/SSL rồi thử lại sau." >&2
   else
     echo "OK: Flathub đã được đăng ký ở cấp hệ thống."
   fi
   flatpak remotes --system || true
+  # Dọn cache cũ có thể được tạo bởi các lần build lại cùng chroot.
+  flatpak repair --system || true
 fi
 
 # GNOME Software cache/database có thể được tạo trước khi Flathub được thêm.
-# Xoá cache tạm để Software tự quét lại remote sau lần đăng nhập đầu tiên.
 rm -rf /root/.cache/gnome-software /root/.cache/gnome-software/* 2>/dev/null || true
 
 echo "===== Bộ gõ tiếng Việt (Fcitx5 + Fcitx5 Lotus) ====="

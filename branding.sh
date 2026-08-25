@@ -47,6 +47,17 @@ for CAR_FILE in car-light.png car-Dark.png car-auto.png; do
   fi
 done
 
+# Hai wallpaper chính của Hyggshi OS. Cả hai phải tồn tại trong image để
+# Cinnamon/Welcome có thể chọn trực tiếp, không phụ thuộc WALLPAPER_URL.
+for WALL_FILE in Verdant-Valley.png wallpaper.png; do
+  if [ -f "iso-config/branding/$WALL_FILE" ]; then
+    sudo cp "iso-config/branding/$WALL_FILE" "$CHROOT/usr/share/backgrounds/hyggshi/$WALL_FILE"
+    echo "Đã copy $WALL_FILE vào /usr/share/backgrounds/hyggshi/"
+  else
+    echo "CẢNH BÁO: không thấy iso-config/branding/$WALL_FILE" >&2
+  fi
+done
+
 # 1. Ưu tiên file wallpaper có sẵn trong repo (checkout local, không phân biệt hoa/thường)
 WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
