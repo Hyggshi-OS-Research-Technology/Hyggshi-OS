@@ -309,6 +309,53 @@ jobs:
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
+      # === 3.1) CINNAMON: sửa Dark/Light + Cinnamon Spices ===
+      # Debian Trixie có Cinnamon 6.4.10. Bản 6.4.10 ban đầu có lỗi
+      # Spices.py khi server trả response chunked/gzip không có Content-Length:
+      # int(None) làm Themes/Applets/Desklets/Extensions không tải được.
+      # Ưu tiên bản Cinnamon đã được Debian backport fix; nếu mirror vẫn trả
+      # bản cũ, patch Spices.py theo upstream 6.4-maintenance.
+      - name: "[cinnamon-fix] Fix Dark/Light mode + Cinnamon Spices downloader"
+        if: ${{ env.DE == 'cinnamon' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "${CHROOT_DIR}" /bin/bash -s <<'CHROOT_SCRIPT'
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cinnamon cinnamon-common gnome-themes-extra \
+            gsettings-desktop-schemas xdg-desktop-portal xdg-desktop-portal-xapp
+
+          # Debian Trixie đã backport bản sửa Spices downloader; nếu mirror vẫn trả
+          # Cinnamon 6.4.10-2 cũ thì patch fallback bên dưới sẽ sửa trực tiếp Spices.py.
+          apt-get install -y --only-upgrade cinnamon cinnamon-common || true
+
+          SPICES=/usr/share/cinnamon/cinnamon-settings/bin/Spices.py
+          if [ -f "$SPICES" ]; then
+            python3 -c 'import base64,sys; exec(base64.b64decode("ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQppbXBvcnQgc3lzCgpwID0gUGF0aChzeXMuYXJndlsxXSkKcyA9IHAucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCgojIFNhZmUgSFRUUCByZXNwb25zZSBoYW5kbGluZyAodXBzdHJlYW0gQ2lubmFtb24gNi40LjE0IGZpeCkuCnMgPSBzLnJlcGxhY2UoImFzc2VydCByZXNwb25zZS5vayIsICJyZXNwb25zZS5yYWlzZV9mb3Jfc3RhdHVzKCkiLCAxKQpzID0gcy5yZXBsYWNlKAogICAgInRvdGFsU2l6ZSA9IGludChyZXNwb25zZS5oZWFkZXJzLmdldCgnY29udGVudC1sZW5ndGgnKSkiLAogICAgImNvbnRlbnRfbGVuZ3RoID0gcmVzcG9uc2UuaGVhZGVycy5nZXQoJ2NvbnRlbnQtbGVuZ3RoJylcbnRvdGFsU2l6ZSA9IGludChjb250ZW50X2xlbmd0aCkgaWYgY29udGVudF9sZW5ndGggZWxzZSAtMSIsCiAgICAxLAopCgppZiAiZGVmIF9zZXRfcHJvZ3Jlc3NiYXJfcHVsc2Uoc2VsZik6IiBub3QgaW4gczoKICAgIG5lZWRsZSA9ICIgICAgZGVmIF9zZXRfcHJvZ3Jlc3NiYXJfdmlzaWJsZShzZWxmLCB2aXNpYmxlKTpcbiIKICAgIGJsb2NrID0gKAogICAgICAgICIgICAgZGVmIF9zZXRfcHJvZ3Jlc3NiYXJfcHVsc2Uoc2VsZik6XG4iCiAgICAgICAgIiAgICAgICAgZm9yIHByb2dyZXNzYmFyIGluIHNlbGYucHJvZ3Jlc3NiYXJzOlxuIgogICAgICAgICIgICAgICAgICAgICBwcm9ncmVzc2Jhci5wdWxzZSgpXG5cbiIKICAgICkKICAgIGlmIG5lZWRsZSBpbiBzOgogICAgICAgIHMgPSBzLnJlcGxhY2UobmVlZGxlLCBibG9jayArIG5lZWRsZSwgMSkKCiMgUmVwbGFjZSB0aGUgcHJvZ3Jlc3MgY2FsY3VsYXRpb24gd2l0aCB0aGUgdXBzdHJlYW0gdGhyZWUtd2F5IGhhbmRsaW5nOgojIGtub3duIGltYWdlIHNpemUsIHVua25vd24gdG90YWwgc2l6ZSAoLTEpLCBvciBrbm93biBkb3dubG9hZCBzaXplLgppZiAiZWxpZiB0b3RhbFNpemUgPT0gLTE6IiBub3QgaW4gczoKICAgIHBhdHRlcm4gPSByZS5jb21waWxlKAogICAgICAgIHIiKD9QPHByZWZpeD5ccyspZnJhY3Rpb24gPSBmbG9hdFwoY3VycmVudFwpIC8gZmxvYXRcKHRvdGFsXClcbiIKICAgICAgICByIig/UDx0ZXh0PlxzK3RleHQgPSBfXChcIkRvd25sb2FkaW5nIGltYWdlczpcIlwpIFwrIGZcIiBce2N1cnJlbnRcfS9ce3RvdGFsXH1cIlxuIgogICAgICAgIHIiXHMrc2VsZlwuX3NldF9wcm9ncmVzc2Jhcl90ZXh0XCh0ZXh0XClcbiIKICAgICAgICByIlxzK3NlbGZcLl9zZXRfcHJvZ3Jlc3NiYXJfZnJhY3Rpb25cKGZyYWN0aW9uXClcbiIKICAgICAgICByIlxzK2Vsc2U6XG4iCiAgICAgICAgciJccytmcmFjdGlvbiA9IGNvdW50IFwqIGJsb2NrU2l6ZSAvIGZsb2F0XChcKHRvdGFsU2l6ZSAvIGJsb2NrU2l6ZSBcKyAxXCkgXCogYmxvY2tTaXplXClcbiIKICAgICAgICByIlxzK3NlbGZcLl9zZXRfcHJvZ3Jlc3NiYXJfZnJhY3Rpb25cKGZyYWN0aW9uXCkiLAogICAgICAgIHJlLk0sCiAgICApCiAgICByZXBsYWNlbWVudCA9ICgKICAgICAgICAiICAgICAgICAgICAgZnJhY3Rpb24gPSBmbG9hdChjdXJyZW50KSAvIGZsb2F0KHRvdGFsKVxuIgogICAgICAgICIgICAgICAgICAgICB0ZXh0ID0gXyhcIkRvd25sb2FkaW5nIGltYWdlczpcIikgKyBmXCIge2N1cnJlbnR9L3t0b3RhbH1cIlxuIgogICAgICAgICIgICAgICAgICAgICBzZWxmLl9zZXRfcHJvZ3Jlc3NiYXJfdGV4dCh0ZXh0KVxuIgogICAgICAgICIgICAgICAgICAgICBzZWxmLl9zZXRfcHJvZ3Jlc3NiYXJfZnJhY3Rpb24oZnJhY3Rpb24pXG4iCiAgICAgICAgIiAgICAgICAgZWxpZiB0b3RhbFNpemUgPT0gLTE6XG4iCiAgICAgICAgIiAgICAgICAgICAgIHNlbGYuX3NldF9wcm9ncmVzc2Jhcl9wdWxzZSgpXG4iCiAgICAgICAgIiAgICAgICAgZWxzZTpcbiIKICAgICAgICAiICAgICAgICAgICAgZnJhY3Rpb24gPSBjb3VudCAqIGJsb2NrU2l6ZSAvIGZsb2F0KCh0b3RhbFNpemUgLyBibG9ja1NpemUgKyAxKSAqIGJsb2NrU2l6ZSlcbiIKICAgICAgICAiICAgICAgICAgICAgc2VsZi5fc2V0X3Byb2dyZXNzYmFyX2ZyYWN0aW9uKGZyYWN0aW9uKSIKICAgICkKICAgIHMsIF8gPSBwYXR0ZXJuLnN1Ym4ocmVwbGFjZW1lbnQsIHMsIGNvdW50PTEpCgpwLndyaXRlX3RleHQocywgZW5jb2Rpbmc9InV0Zi04IikK"))' "$SPICES"
+          fi
+
+          # Không khóa Dark hay Light. Cinnamon System Settings vẫn được quyền chuyển
+          # Mixed/Dark/Light; color-scheme mặc định là automatic/default.
+          mkdir -p /etc/dconf/db/local.d
+          cat > /etc/dconf/db/local.d/00-hyggshi-cinnamon-color-scheme <<'EOF'
+          [org/gnome/desktop/interface]
+          color-scheme='default'
+
+          [org/x/apps/portal]
+          color-scheme='default'
+          EOF
+
+          dconf update || true
+
+          # Theme Manager có thể ghi vào các thư mục này cho user mới.
+          mkdir -p /etc/skel/.local/share/themes
+          mkdir -p /etc/skel/.themes
+          mkdir -p /etc/skel/.local/share/cinnamon/themes
+          CHROOT_SCRIPT
+
       # === 3.5) NEXWM: clone + build (make) + cài NexWM TỪ SOURCE, và tạo
       # đúng X11 session (/usr/share/xsessions/nexwm.desktop, Type=XSession)
       # — chạy BÊN TRONG chroot (giống desktop.sh/welcome.sh) vì binary +
