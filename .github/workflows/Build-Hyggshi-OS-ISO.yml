@@ -22,10 +22,10 @@ on:
         options: [debian, ubuntu, linuxmint, alpine, arch, fedora]
         default: "debian"
       debian_version:
-        description: "Phiên bản Debian (chỉ áp dụng khi distro = debian)"
+        description: "Phiên bản Debian (chỉ áp dụng khi distro = debian). 'testing' luôn trỏ đúng bản Testing hiện tại của Debian (rolling), không hardcode theo 1 codename cụ thể."
         required: false
         type: choice
-        options: [trixie, bookworm, bullseye]
+        options: [trixie, bookworm, bullseye, testing]
         default: "trixie"
       ubuntu_version:
         description: "Phiên bản Ubuntu (chỉ áp dụng khi distro = ubuntu; Resolute Raccoon = Ubuntu 26.04 LTS)"
@@ -82,10 +82,10 @@ on:
         options: [windows10, classic]
         default: "windows10"
       icon_theme:
-        description: "Bộ icon (chỉ áp dụng cho XFCE)"
+        description: "Bộ icon (áp dụng cho XFCE/LXQt; Cinnamon luôn dùng Tela riêng, xem desktop.sh)"
         required: false
         type: choice
-        options: [papirus, numix, breeze, adwaita]
+        options: [papirus, numix, breeze, adwaita, tela]
         default: "papirus"
       username:
         description: "Username mặc định trong live session"

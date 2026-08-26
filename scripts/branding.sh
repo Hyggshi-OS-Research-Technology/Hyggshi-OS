@@ -290,6 +290,7 @@ case "${ICON_THEME:-papirus}" in
   numix)   GREETER_ICON_THEME="Numix" ;;
   breeze)  GREETER_ICON_THEME="Breeze-Dark" ;;
   adwaita) GREETER_ICON_THEME="Adwaita" ;;
+  tela)    GREETER_ICON_THEME="Tela-dark" ;;
   *)       GREETER_ICON_THEME="Papirus-Dark" ;;
 esac
 
@@ -333,7 +334,7 @@ else
 fi
 
 cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
-PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" (dựa trên $DISTRO_LABEL)"
+PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
 NAME="$DISTRO_NAME"
 VERSION_ID="$HYGGSHI_VERSION_ID"
 VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
@@ -856,6 +857,7 @@ case "$ICON_THEME" in
   numix)   ICON_NAME="Numix" ;;
   breeze)  ICON_NAME="breeze" ;;
   adwaita) ICON_NAME="Adwaita" ;;
+  tela)    ICON_NAME="Tela" ;;
   *)       ICON_NAME="Papirus" ;;
 esac
 

@@ -370,6 +370,16 @@ case "$DE" in
       numix)   apt-get install -y numix-icon-theme ;;
       breeze)  apt-get install -y breeze-icon-theme ;;
       adwaita) apt-get install -y adwaita-icon-theme ;;
+      tela)
+        apt-get install -y git > /dev/null 2>&1 || true
+        if git clone --depth=1 https://github.com/vinceliuice/Tela-icon-theme.git /tmp/Tela-icon-theme; then
+          /tmp/Tela-icon-theme/install.sh -d /usr/share/icons \
+            || echo "⚠️  Cài Tela icon theme thất bại — giữ icon mặc định (Papirus)."
+          rm -rf /tmp/Tela-icon-theme
+        else
+          echo "⚠️  Clone Tela-icon-theme thất bại — bỏ qua, giữ icon mặc định (Papirus)."
+        fi
+        ;;
       *)       apt-get install -y papirus-icon-theme ;;
     esac
     ;;
@@ -487,6 +497,20 @@ EOF
       numix)   apt-get install -y numix-icon-theme ;;
       breeze)  apt-get install -y breeze-icon-theme ;;
       adwaita) apt-get install -y adwaita-icon-theme ;;
+      tela)
+        # Tela không có gói .deb chính thức trên mirror Debian/Ubuntu — cài
+        # từ source giống hệt cách nhánh "cinnamon" bên dưới đã làm, có
+        # fallback rõ ràng nếu clone lỗi (mạng/rate-limit) thay vì để build
+        # fail giữa chừng.
+        apt-get install -y git > /dev/null 2>&1 || true
+        if git clone --depth=1 https://github.com/vinceliuice/Tela-icon-theme.git /tmp/Tela-icon-theme; then
+          /tmp/Tela-icon-theme/install.sh -d /usr/share/icons \
+            || echo "⚠️  Cài Tela icon theme thất bại — giữ icon mặc định (Papirus)."
+          rm -rf /tmp/Tela-icon-theme
+        else
+          echo "⚠️  Clone Tela-icon-theme thất bại — bỏ qua, giữ icon mặc định (Papirus)."
+        fi
+        ;;
       *)       apt-get install -y papirus-icon-theme ;;
     esac
 

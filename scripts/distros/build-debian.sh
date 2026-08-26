@@ -7,7 +7,11 @@ set -e
 
 BASE_CODENAME="$DEBIAN_VERSION"
 MIRROR="http://deb.debian.org/debian/"
-DISTRO_LABEL="Debian ${BASE_CODENAME}"
+case "$BASE_CODENAME" in
+  testing)  DISTRO_LABEL="Debian Testing" ;;
+  unstable|sid) DISTRO_LABEL="Debian Unstable (Sid)" ;;
+  *)        DISTRO_LABEL="Debian ${BASE_CODENAME}" ;;
+esac
 
 echo "Sẽ build trên: $DISTRO_LABEL"
 # Ghi ra $GITHUB_ENV để các step/script sau (desktop.sh, branding.sh, iso.sh...) đọc được
@@ -36,11 +40,31 @@ if [ "$BASE_CODENAME" = "bullseye" ]; then
 else
   FIRMWARE_COMPONENT="non-free-firmware"
 fi
-sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
+
+# BUG tương thích (chỉ lộ ra khi build debian_version=testing/unstable):
+# 2 dòng "${BASE_CODENAME}-updates" và "${BASE_CODENAME}-security" CHỈ tồn
+# tại cho Stable/Oldstable (cơ chế point-release + kho security riêng của
+# Debian). Debian Testing/Unstable KHÔNG có suite "-security" hay
+# "-updates" riêng — từ 2019 bản vá bảo mật đi thẳng vào testing qua
+# unstable, không qua repo riêng. Với BASE_CODENAME=testing (hoặc sid/
+# unstable), 2 dòng đó luôn 404 ngay ở apt update ĐẦU TIÊN trong
+# desktop.sh, làm build fail hoàn toàn trước khi cài được gói nào —
+# đây chính là lỗi tương thích khi build các bản khác trixie/bookworm/
+# bullseye. Chỉ ghi suite chính cho testing/unstable/sid.
+case "$BASE_CODENAME" in
+  testing|unstable|sid)
+    sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
+deb http://deb.debian.org/debian ${BASE_CODENAME} main contrib non-free ${FIRMWARE_COMPONENT}
+EOF
+    ;;
+  *)
+    sudo tee live-build/chroot/etc/apt/sources.list > /dev/null <<EOF
 deb http://deb.debian.org/debian ${BASE_CODENAME} main contrib non-free ${FIRMWARE_COMPONENT}
 deb http://deb.debian.org/debian ${BASE_CODENAME}-updates main contrib non-free ${FIRMWARE_COMPONENT}
 deb http://security.debian.org/debian-security ${BASE_CODENAME}-security main contrib non-free ${FIRMWARE_COMPONENT}
 EOF
+    ;;
+esac
 sudo cp /etc/resolv.conf live-build/chroot/etc/resolv.conf
 
 echo "===== build-debian.sh xong ====="

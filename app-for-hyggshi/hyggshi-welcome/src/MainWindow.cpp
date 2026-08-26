@@ -491,7 +491,7 @@ QWidget *MainWindow::buildSoftwarePage() {
   listLayout->setSpacing(5);
 
   struct SoftwareOpt { const char *id; const char *label; const char *type; const char *group; };
-  const SoftwareOpt options[] = {
+  QVector<SoftwareOpt> options = {
       {"ffmpeg", "Codec đa phương tiện (FFmpeg)", "apt", ""},
       {"vlc", "VLC — trình phát đa phương tiện", "apt", "media"},
       {"libreoffice", "LibreOffice — bộ ứng dụng văn phòng", "apt", "office"},
@@ -514,12 +514,41 @@ QWidget *MainWindow::buildSoftwarePage() {
       {"com.obsproject.Studio", "OBS Studio", "flatpak", ""},
   };
 
+  // Debian Testing: mở rộng thêm 2 lựa chọn "nặng" — kernel mới nhất và
+  // bản Desktop Environment mới nhất từ kho Testing. Chỉ hiện trên Debian
+  // (isDebian) vì "Dùng package Debian Testing" ở trên cũng chỉ áp dụng
+  // cho Debian. DE hiển thị ĐÚNG 1 metapackage khớp desktop hiện tại của
+  // máy (XDG_CURRENT_DESKTOP) — ISO chỉ cài 1 DE duy nhất nên không có lý
+  // do liệt kê cả 6 DE khác không tồn tại trên máy.
+  if (isDebian) {
+    options.push_back({"linux-image-amd64", "Kernel Linux mới nhất (Debian Testing)", "apt", "kernel"});
+
+    const QString curDesktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
+    if (curDesktop.contains("cinnamon")) {
+      options.push_back({"cinnamon-desktop-environment", "Cinnamon mới nhất (Debian Testing)", "apt", "de"});
+    } else if (curDesktop.contains("xfce")) {
+      options.push_back({"task-xfce-desktop", "XFCE mới nhất (Debian Testing)", "apt", "de"});
+    } else if (curDesktop.contains("kde") || curDesktop.contains("plasma")) {
+      options.push_back({"kde-plasma-desktop", "KDE Plasma mới nhất (Debian Testing)", "apt", "de"});
+    } else if (curDesktop.contains("gnome")) {
+      options.push_back({"gnome-session", "GNOME mới nhất (Debian Testing)", "apt", "de"});
+    } else if (curDesktop.contains("mate")) {
+      options.push_back({"mate-desktop-environment", "MATE mới nhất (Debian Testing)", "apt", "de"});
+    } else if (curDesktop.contains("lxqt")) {
+      options.push_back({"lxqt", "LXQt mới nhất (Debian Testing)", "apt", "de"});
+    }
+  }
+
   for (const auto &opt : options) {
     auto *check = new QCheckBox(tr(opt.label));
     check->setProperty("packageName", QString::fromLatin1(opt.id));
     check->setProperty("installType", QString::fromLatin1(opt.type));
     check->setProperty("group", QString::fromLatin1(opt.group));
     check->setCursor(Qt::PointingHandCursor);
+    const QString optGroup = QString::fromLatin1(opt.group);
+    if (optGroup == "kernel" || optGroup == "de") {
+      check->setToolTip(tr("Chỉ được cài khi bật 'Dùng package Debian Testing' ở trên. Sẽ kéo theo nhiều package phụ thuộc cũng được nâng lên bản Testing."));
+    }
     check->setChecked(m_selectedSoftware.contains(QString::fromLatin1(opt.id)) ||
                       (m_installProfile == "normal" &&
                        (QString::fromLatin1(opt.id) == "ffmpeg" ||
@@ -1137,31 +1166,67 @@ bool MainWindow::installSelectedSoftware() {
     return "'" + out + "'";
   };
 
+  // Packages that intentionally pull a large dependency closure when
+  // installed from Debian Testing — a newer kernel or a whole desktop
+  // environment metapackage. The per-package Testing safety check below
+  // (exit 42) blocks ANY package outside the user's exact selection from
+  // being upgraded; that's correct for a single app, but wrong for a
+  // DE/kernel swap, which is EXPECTED to upgrade dozens of dependent
+  // libraries — that's the whole point of the feature, not a mistake to
+  // block. Route these through -t testing directly, without the closure
+  // check, while every other package keeps the strict protection.
+  static const QSet<QString> kHeavyTestingPackages = {
+      "linux-image-amd64",
+      "cinnamon-desktop-environment",
+      "task-xfce-desktop",
+      "kde-plasma-desktop",
+      "gnome-session",
+      "mate-desktop-environment",
+      "lxqt",
+  };
+
   QStringList commands;
   if (!aptPackages.isEmpty()) {
-    QStringList quoted;
-    for (const QString &pkg : aptPackages) quoted << shellQuote(pkg);
-      if (m_debianTesting && isDebianSystem()) {
+    if (m_debianTesting && isDebianSystem()) {
+      QStringList strictPackages, heavyPackages;
+      for (const QString &pkg : aptPackages) {
+        (kHeavyTestingPackages.contains(pkg) ? heavyPackages : strictPackages) << pkg;
+      }
+
       // Debian Testing is opt-in and only used when this Welcome option is enabled.
       // Keep the source explicit and prefer Testing only for the selected packages.
       commands << "printf '%s\n' 'deb http://deb.debian.org/debian testing main contrib non-free non-free-firmware' > /etc/apt/sources.list.d/hyggshi-testing.list";
       commands << "printf '%s\n' 'Package: *' 'Pin: release a=testing' 'Pin-Priority: 100' > /etc/apt/preferences.d/99-hyggshi-testing";
       commands << "apt-get update";
-      // Selective Testing: simulate first and refuse to proceed if an
-      // already-installed package outside the user's explicit selection
-      // would be upgraded from Stable to Testing. This protects the stable
-      // base (systemd, libc, Cinnamon, core libraries, etc.).
-      const QString selectedShell = quoted.join(" ");
-      commands << "printf '%s\n' " + selectedShell + " > /tmp/hyggshi-testing-selected";
-      commands << "if ! SIM=$(apt-get -s -t testing install " + selectedShell + "); then "
-                    "echo 'HYGGSHI-TESTING-BLOCK: apt simulation failed; no packages were changed.' >&2; exit 41; fi; "
-                    "printf '%s\n' \"$SIM\" | awk '/^Inst / && /\[.*\] \\(/ && /\(testing/ {print $2}' > /tmp/hyggshi-testing-upgrades; "
-                    "if grep -Fvx -f /tmp/hyggshi-testing-selected /tmp/hyggshi-testing-upgrades > /tmp/hyggshi-testing-bad; then "
-                    "echo 'HYGGSHI-TESTING-BLOCK: Stable package would be upgraded from Testing:' >&2; cat /tmp/hyggshi-testing-bad >&2; "
-                    "echo 'HYGGSHI-TESTING-BLOCK: select fewer packages or install them without Debian Testing.' >&2; exit 42; fi";
-      commands << "rm -f /tmp/hyggshi-testing-selected /tmp/hyggshi-testing-upgrades /tmp/hyggshi-testing-bad";
-      commands << "apt-get install -y -t testing " + selectedShell;
+
+      if (!strictPackages.isEmpty()) {
+        QStringList quoted;
+        for (const QString &pkg : strictPackages) quoted << shellQuote(pkg);
+        // Selective Testing: simulate first and refuse to proceed if an
+        // already-installed package outside the user's explicit selection
+        // would be upgraded from Stable to Testing. This protects the stable
+        // base (systemd, libc, Cinnamon, core libraries, etc.).
+        const QString selectedShell = quoted.join(" ");
+        commands << "printf '%s\n' " + selectedShell + " > /tmp/hyggshi-testing-selected";
+        commands << "if ! SIM=$(apt-get -s -t testing install " + selectedShell + "); then "
+                      "echo 'HYGGSHI-TESTING-BLOCK: apt simulation failed; no packages were changed.' >&2; exit 41; fi; "
+                      "printf '%s\n' \"$SIM\" | awk '/^Inst / && /\[.*\] \\(/ && /\(testing/ {print $2}' > /tmp/hyggshi-testing-upgrades; "
+                      "if grep -Fvx -f /tmp/hyggshi-testing-selected /tmp/hyggshi-testing-upgrades > /tmp/hyggshi-testing-bad; then "
+                      "echo 'HYGGSHI-TESTING-BLOCK: Stable package would be upgraded from Testing:' >&2; cat /tmp/hyggshi-testing-bad >&2; "
+                      "echo 'HYGGSHI-TESTING-BLOCK: select fewer packages or install them without Debian Testing.' >&2; exit 42; fi";
+        commands << "rm -f /tmp/hyggshi-testing-selected /tmp/hyggshi-testing-upgrades /tmp/hyggshi-testing-bad";
+        commands << "apt-get install -y -t testing " + selectedShell;
+      }
+
+      if (!heavyPackages.isEmpty()) {
+        QStringList quoted;
+        for (const QString &pkg : heavyPackages) quoted << shellQuote(pkg);
+        // No closure check here on purpose (see kHeavyTestingPackages comment).
+        commands << "apt-get install -y -t testing " + quoted.join(' ');
+      }
     } else {
+      QStringList quoted;
+      for (const QString &pkg : aptPackages) quoted << shellQuote(pkg);
       commands << "apt-get update && apt-get install -y " + quoted.join(' ');
     }
   }
@@ -1209,7 +1274,15 @@ void MainWindow::finishSetup() {
                                 : "default";
     if (desktop.contains("cinnamon")) {
       setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
-      setGsettings("org.cinnamon.desktop.interface", "icon-theme", "Adwaita");
+      // BUG (root cause of "icon theme reverts to default after Welcome
+      // finishes"): this used to hardcode icon-theme to "Adwaita" here,
+      // unconditionally overwriting whatever icon theme the ISO was built
+      // with (Tela, Papirus, ...) every single time the user finished
+      // Welcome. Icon theme is independent from the light/dark GTK theme
+      // choice and must not be touched by this dialog — leave the OS
+      // build-time default (desktop.sh / dconf) in place. This also fixes
+      // the same regression on every other icon-theme choice, not just
+      // Tela, across all build variants.
       setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
       setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
     } else if (desktop.contains("mate")) {
