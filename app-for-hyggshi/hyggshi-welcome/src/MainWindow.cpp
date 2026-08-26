@@ -14,6 +14,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QProcess>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -50,6 +51,13 @@ QString preferencesPath() { return configDirectory() + "/welcome.conf"; }
 
 bool hasExecutable(const QString &name) {
   return !QStandardPaths::findExecutable(name).isEmpty();
+}
+
+bool isDebianSystem() {
+  QFile file("/etc/os-release");
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+  const QString data = QString::fromUtf8(file.readAll());
+  return QRegularExpression("^ID=(?:\"debian\"|debian)$", QRegularExpression::MultilineOption).match(data).hasMatch();
 }
 
 void setGsettings(const QString &schema, const QString &key, const QString &value) {
@@ -127,6 +135,7 @@ void MainWindow::loadPreferences() {
   m_highContrast = settings.value("accessibility/high_contrast", false).toBool();
   m_largeText = settings.value("accessibility/large_text", false).toBool();
   m_installProfile = settings.value("software/profile", "normal").toString();
+  m_debianTesting = settings.value("software/debian_testing", false).toBool();
   if (m_installProfile != "full" && m_installProfile != "normal" &&
       m_installProfile != "minimal" && m_installProfile != "custom") {
     m_installProfile = "normal";
@@ -167,6 +176,7 @@ void MainWindow::savePreferences() const {
   settings.setValue("accessibility/high_contrast", m_highContrast);
   settings.setValue("accessibility/large_text", m_largeText);
   settings.setValue("software/profile", m_installProfile);
+  settings.setValue("software/debian_testing", m_debianTesting);
   settings.setValue("software/packages", m_selectedSoftware);
   settings.setValue("wallpaper", m_selectedWallpaper);
   settings.sync();
@@ -396,6 +406,34 @@ QWidget *MainWindow::buildSoftwarePage() {
   m_installProfileBox->addItem(tr("Tùy chỉnh — tự chọn"), "custom");
   const int profileIndex = m_installProfileBox->findData(m_installProfile);
   m_installProfileBox->setCurrentIndex(profileIndex >= 0 ? profileIndex : 1);
+
+  auto *testingBox = new QCheckBox(tr("Dùng package Debian Testing"));
+  testingBox->setToolTip(tr("Chỉ áp dụng cho Debian. Dùng kho Debian Testing khi cài các phần mềm đã chọn."));
+  m_debianTestingCheck = testingBox;
+  const bool isDebian = isDebianSystem();
+  testingBox->setVisible(isDebian);
+  testingBox->setChecked(isDebian && m_debianTesting);
+  connect(testingBox, &QCheckBox::toggled, this, [this, testingBox](bool checked) {
+    if (!checked) {
+      m_debianTesting = false;
+      savePreferences();
+      return;
+    }
+    QMessageBox::StandardButton answer = QMessageBox::warning(
+        this, tr("Cảnh báo: Debian Testing"),
+        tr("Debian Testing là kho phát triển, có thể chứa package chưa ổn định và có thể gây xung đột hoặc làm hệ thống khó nâng cấp.\n\nChỉ bật tùy chọn này nếu bạn hiểu rủi ro và muốn dùng package Testing cho phần mềm đã chọn. Hyggshi OS không khuyến nghị bật trên máy chính.\n\nBạn có muốn tiếp tục không?"),
+        QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel);
+    if (answer != QMessageBox::Ok) {
+      const QSignalBlocker blocker(testingBox);
+      Q_UNUSED(blocker);
+      testingBox->setChecked(false);
+      m_debianTesting = false;
+      savePreferences();
+      return;
+    }
+    m_debianTesting = true;
+    savePreferences();
+  });
   connect(m_installProfileBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this](int index) {
             if (index < 0) return;
@@ -522,6 +560,7 @@ QWidget *MainWindow::buildSoftwarePage() {
   outer->addSpacing(4);
   outer->addWidget(profileLabel);
   outer->addWidget(m_installProfileBox);
+  outer->addWidget(testingBox);
   outer->addWidget(softwareLabel);
   outer->addWidget(scroll, 1);
   outer->addWidget(m_softwareStatus);
@@ -1090,7 +1129,29 @@ bool MainWindow::installSelectedSoftware() {
   if (!aptPackages.isEmpty()) {
     QStringList quoted;
     for (const QString &pkg : aptPackages) quoted << shellQuote(pkg);
-    commands << "apt-get update && apt-get install -y " + quoted.join(' ');
+      if (m_debianTesting && isDebianSystem()) {
+      // Debian Testing is opt-in and only used when this Welcome option is enabled.
+      // Keep the source explicit and prefer Testing only for the selected packages.
+      commands << "printf '%s\n' 'deb http://deb.debian.org/debian testing main contrib non-free non-free-firmware' > /etc/apt/sources.list.d/hyggshi-testing.list";
+      commands << "printf '%s\n' 'Package: *' 'Pin: release a=testing' 'Pin-Priority: 100' > /etc/apt/preferences.d/99-hyggshi-testing";
+      commands << "apt-get update";
+      // Selective Testing: simulate first and refuse to proceed if an
+      // already-installed package outside the user's explicit selection
+      // would be upgraded from Stable to Testing. This protects the stable
+      // base (systemd, libc, Cinnamon, core libraries, etc.).
+      const QString selectedShell = quoted.join(" ");
+      commands << "printf '%s\n' " + selectedShell + " > /tmp/hyggshi-testing-selected";
+      commands << "if ! SIM=$(apt-get -s -t testing install " + selectedShell + "); then "
+                    "echo 'HYGGSHI-TESTING-BLOCK: apt simulation failed; no packages were changed.' >&2; exit 41; fi; "
+                    "printf '%s\n' \"$SIM\" | awk '/^Inst / && /\[.*\] \\(/ && /\(testing/ {print $2}' > /tmp/hyggshi-testing-upgrades; "
+                    "if grep -Fvx -f /tmp/hyggshi-testing-selected /tmp/hyggshi-testing-upgrades > /tmp/hyggshi-testing-bad; then "
+                    "echo 'HYGGSHI-TESTING-BLOCK: Stable package would be upgraded from Testing:' >&2; cat /tmp/hyggshi-testing-bad >&2; "
+                    "echo 'HYGGSHI-TESTING-BLOCK: select fewer packages or install them without Debian Testing.' >&2; exit 42; fi";
+      commands << "rm -f /tmp/hyggshi-testing-selected /tmp/hyggshi-testing-upgrades /tmp/hyggshi-testing-bad";
+      commands << "apt-get install -y -t testing " + selectedShell;
+    } else {
+      commands << "apt-get update && apt-get install -y " + quoted.join(' ');
+    }
   }
   if (!flatpakApps.isEmpty()) {
     QStringList quoted;
@@ -1104,7 +1165,13 @@ bool MainWindow::installSelectedSoftware() {
   const int rc = QProcess::execute("pkexec", {"sh", "-c", commands.join(" && ")});
   if (rc != 0) {
     if (m_softwareStatus) {
-      m_softwareStatus->setText(tr("Không cài được một hoặc nhiều phần mềm. Kiểm tra Internet và thử lại trong Hyggshi Welcome."));
+      if (rc == 42) {
+        m_softwareStatus->setText(tr("⚠ Debian Testing đã bị chặn: package bạn chọn sẽ làm nâng cấp một package Stable đang có lên Testing. Hệ thống Stable được giữ nguyên. Hãy chọn ít package hơn hoặc tắt Debian Testing."));
+      } else if (rc == 41) {
+        m_softwareStatus->setText(tr("Không thể kiểm tra trước thay đổi của Debian Testing. Không có package nào được cài."));
+      } else {
+        m_softwareStatus->setText(tr("Không cài được một hoặc nhiều phần mềm. Kiểm tra Internet và thử lại trong Hyggshi Welcome."));
+      }
     }
     return false;
   }

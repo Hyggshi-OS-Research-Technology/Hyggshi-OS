@@ -45,6 +45,7 @@ class MainWindow : public QMainWindow {
   QCheckBox *m_highContrastChk = nullptr;
   QCheckBox *m_largeTextChk = nullptr;
   QComboBox *m_installProfileBox = nullptr;
+  QCheckBox *m_debianTestingCheck = nullptr;
   QVector<QCheckBox *> m_softwareChecks;
   QLabel *m_softwareStatus = nullptr;
   QLabel *m_networkStatus = nullptr;
@@ -60,6 +61,7 @@ class MainWindow : public QMainWindow {
   bool m_highContrast = false;
   bool m_largeText = false;
   QString m_installProfile = "normal";
+  bool m_debianTesting = false;
   QStringList m_selectedSoftware;
 
   QTimer *m_carouselTimer = nullptr;
