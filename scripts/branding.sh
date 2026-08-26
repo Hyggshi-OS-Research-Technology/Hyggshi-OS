@@ -711,7 +711,7 @@ Theme=hyggshi-boot
 ShowDelay=0
 PLYD_EOF
 
-  if sudo chroot "$CHROOT" command -v plymouth-set-default-theme >/dev/null 2>&1; then
+  if sudo chroot "$CHROOT" sh -c 'command -v plymouth-set-default-theme' >/dev/null 2>&1; then
     sudo chroot "$CHROOT" plymouth-set-default-theme hyggshi-boot || true
   fi
 
@@ -757,10 +757,12 @@ HOOK_EOF
   # The hook above makes the initrd self-contained. Rebuild ALL kernels, not
   # only the newest one, because Calamares may install a different kernel on
   # the target and ISO generation picks the newest initrd.
-  if sudo chroot "$CHROOT" command -v update-initramfs >/dev/null 2>&1; then
-    sudo chroot "$CHROOT" update-initramfs -u -k all
+  if sudo chroot "$CHROOT" sh -c 'command -v update-initramfs' >/dev/null 2>&1; then
+    sudo chroot "$CHROOT" update-initramfs -u -k all -v
+  else
+    echo "CẢNH BÁO: không tìm thấy update-initramfs trong chroot — initramfs sẽ KHÔNG được rebuild, theme sẽ không nằm trong initrd." >&2
   fi
-  if sudo chroot "$CHROOT" command -v plymouth-update-initrd >/dev/null 2>&1; then
+  if sudo chroot "$CHROOT" sh -c 'command -v plymouth-update-initrd' >/dev/null 2>&1; then
     sudo chroot "$CHROOT" plymouth-update-initrd || true
   fi
 
