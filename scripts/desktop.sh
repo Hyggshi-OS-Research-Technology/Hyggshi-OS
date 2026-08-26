@@ -566,15 +566,28 @@ if [ "$INCLUDE_BROWSER" = "true" ]; then
     # Vì vậy KHÔNG cài gói snap-transition trong chroot. Dùng tarball chính
     # thức của Mozilla, chạy độc lập với snapd và phù hợp cho ISO offline.
     echo "===== Cài Firefox Mozilla tarball (không dùng snap trong chroot) ====="
-    apt-get install -y curl ca-certificates bzip2
+    apt-get install -y curl ca-certificates xz-utils
     FIREFOX_TMP="$(mktemp -d)"
     trap 'rm -rf "$FIREFOX_TMP"' EXIT
-    curl -fL --retry 3 --retry-delay 2 \
+    # Mozilla hiện phát hành Linux x86_64 tarball dạng .tar.xz. Endpoint
+    # download.mozilla.org vẫn dùng được nhưng không còn đảm bảo trả về
+    # .tar.bz2 như script cũ, nên tar -xjf sẽ lỗi "not a bzip2 file".
+    FIREFOX_ARCHIVE="$FIREFOX_TMP/firefox.tar.xz"
+    curl -fL --retry 3 --retry-delay 2 --retry-all-errors \
       "https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US" \
-      -o "$FIREFOX_TMP/firefox.tar.bz2"
+      -o "$FIREFOX_ARCHIVE"
+    # Kiểm tra archive trước khi giải nén để báo lỗi rõ ràng nếu CDN
+    # trả về HTML/error page thay vì tarball. `xz -t` không cần gói `file`.
+    test -s "$FIREFOX_ARCHIVE"
+    if ! xz -t "$FIREFOX_ARCHIVE" >/dev/null 2>&1; then
+      echo "ERROR: Mozilla không trả về Firefox .tar.xz hợp lệ." >&2
+      echo "HTTP/đầu file nhận được:" >&2
+      head -c 200 "$FIREFOX_ARCHIVE" >&2 || true
+      exit 1
+    fi
     rm -rf /opt/firefox
     mkdir -p /opt
-    tar -xjf "$FIREFOX_TMP/firefox.tar.bz2" -C /opt
+    tar -xJf "$FIREFOX_ARCHIVE" -C /opt
     test -x /opt/firefox/firefox
     ln -sf /opt/firefox/firefox /usr/local/bin/firefox
     cat > /usr/share/applications/firefox.desktop <<'FIREFOX_DESKTOP'
