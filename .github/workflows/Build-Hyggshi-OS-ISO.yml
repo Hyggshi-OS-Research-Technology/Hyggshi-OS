@@ -28,10 +28,10 @@ on:
         options: [trixie, bookworm, bullseye]
         default: "trixie"
       ubuntu_version:
-        description: "Phiên bản Ubuntu (chỉ áp dụng khi distro = ubuntu)"
+        description: "Phiên bản Ubuntu (chỉ áp dụng khi distro = ubuntu; Resolute Raccoon = Ubuntu 26.04 LTS)"
         required: false
         type: choice
-        options: [noble, mantic, jammy, focal]
+        options: [resolute, noble, mantic, jammy, focal]
         default: "noble"
       mint_version:
         description: "Phiên bản Linux Mint (chỉ áp dụng khi distro = linuxmint)"
