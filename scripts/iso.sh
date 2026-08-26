@@ -9,6 +9,12 @@ sudo chroot live-build/chroot umount /proc || true
 sudo chroot live-build/chroot umount /sys || true
 sudo umount live-build/chroot/run || true
 sudo umount live-build/chroot/dev || true
+# Bind-mount cache .deb (xem step "Mount apt cache vào chroot" trong
+# workflow) PHẢI được unmount trước khi mksquashfs — nếu không toàn bộ
+# .deb đã tải sẽ bị đóng gói lẫn vào filesystem.squashfs, làm ISO phình to
+# vô ích (những .deb này chỉ cần tồn tại trên HOST để actions/cache lưu
+# lại dùng cho lần build sau, không cần có trong ISO cuối cùng).
+sudo umount live-build/chroot/var/cache/apt/archives || true
 
 echo "===== Build squashfs from chroot ====="
 mkdir -p live-build/image/live
@@ -20,18 +26,24 @@ mkdir -p live-build/image/live
 # grub-install/update-grub chạy trong target). Kết quả: lỗi "grub-pc has
 # no installation candidate" + "update-grub: No such file or directory".
 #
-# Tối ưu kích thước (không đổi nội dung, chỉ đổi cách nén):
-#   -b 1M       block size 1MiB thay vì mặc định 128KiB — block lớn hơn cho
-#               xz nhiều ngữ cảnh hơn để nén, tỷ lệ nén tốt hơn rõ rệt trên
-#               1 filesystem nhiều file lặp lại (icon theme, locale, lib...),
-#               đánh đổi bằng RAM/thời gian build squashfs (chấp nhận được
-#               trên runner CI).
-#   -Xbcj x86   BCJ filter chuyển đổi lệnh nhảy/gọi hàm x86 trước khi nén —
-#               phần lớn nội dung squashfs là binary/thư viện x86_64, filter
-#               này giúp xz nén binary tốt hơn đáng kể so với coi chúng như
-#               dữ liệu ngẫu nhiên.
+# Nén bằng zstd thay vì xz: đây là bước tốn thời gian nhất trong cả pipeline
+# (~18 phút với xz trên runner CI). zstd multi-threaded (-processors) nén
+# nhanh hơn xz đáng kể (thường giảm 40-60% thời gian build squashfs) với
+# dung lượng ISO chỉ nhỉnh hơn xz một chút không đáng kể — đánh đổi rất
+# đáng vì đây là bottleneck chính của cả build.
+#   -b 1M                     giữ nguyên block size 1MiB như bản xz cũ, cho
+#                              tỷ lệ nén tốt trên nhiều file lặp lại (icon
+#                              theme, locale, lib...).
+#   -Xcompression-level 19    mức nén zstd (1-22). 19 cân bằng tốt giữa tốc
+#                              độ và dung lượng; hạ xuống ~12-15 nếu vẫn cần
+#                              nhanh hơn nữa và chấp nhận ISO to hơn 1 chút.
+#   -processors $(nproc)      dùng hết số core runner có (mksquashfs hỗ trợ
+#                              nén đa luồng với zstd, không như xz vốn gần
+#                              như đơn luồng ở phần nén chính).
+# LƯU Ý: KHÔNG dùng -Xbcj x86 nữa — filter BCJ đó chỉ dành riêng cho xz,
+# zstd không hỗ trợ (mksquashfs sẽ báo lỗi option không hợp lệ nếu giữ lại).
 sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
-  -comp xz -b 1M -Xbcj x86
+  -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)"
 
 echo "===== Prepare boot files (kernel + initrd) ====="
 # Dùng ls -t + head -n1 thay vì cp trực tiếp theo glob: nếu vì lý do gì đó

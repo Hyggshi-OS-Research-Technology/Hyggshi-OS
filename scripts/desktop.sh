@@ -59,6 +59,32 @@ apt-get install -y linux-image-amd64 live-boot systemd-sysv \
   plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release
 
+if [ "$BASE_DISTRO" = "ubuntu" ] || [ "$BASE_DISTRO" = "linuxmint" ]; then
+  echo "===== Gỡ Plymouth theme mặc định của Ubuntu (chờ branding.sh cài theme Hyggshi riêng) ====="
+  # plymouth-themes (vừa cài ở trên) là gói TỔNG HỢP kéo theo nhiều theme,
+  # trong đó "spinner" (logo tròn xoay 5 chấm) chính là theme ĐANG active
+  # mặc định trên Ubuntu ngay sau khi cài (update-alternatives ưu tiên nó
+  # cao nhất). "ubuntu-text" là theme text-mode fallback riêng của Ubuntu
+  # (không có trên Debian upstream). Nếu không gỡ, 2 theme này vẫn nằm
+  # trong danh sách update-alternatives --list plymouth-theme và sẽ hiện
+  # lại (logo Ubuntu) trong các trường hợp branding.sh không tạo được
+  # theme "hyggshi-boot" (thiếu logo, convert lỗi...) — lúc đó code ở
+  # branding.sh chỉ cảnh báo rồi "giữ Plymouth theme mặc định của distro
+  # gốc", và distro gốc ở đây chính là spinner/ubuntu-text. Gỡ hẳn 2 gói
+  # này TRƯỚC khi branding.sh chạy để không có đường lùi về logo Ubuntu,
+  # kể cả khi tạo theme Hyggshi thất bại (best-effort, không fatal nếu 1
+  # trong 2 gói không tồn tại — tuỳ version Ubuntu).
+  apt-get purge -y plymouth-theme-spinner plymouth-theme-ubuntu-text 2>/dev/null || true
+  # Một số phiên bản đóng gói theme dưới tên khác (ubuntu-mate, kubuntu...)
+  # — quét dpkg theo pattern để dọn sạch bất kỳ theme nào có chữ "ubuntu"
+  # trong tên gói, không phụ thuộc đúng 2 tên cứng ở trên.
+  UBUNTU_PLYMOUTH_PKGS=$(dpkg-query -W -f='${Package}\n' 'plymouth-theme-*ubuntu*' 2>/dev/null || true)
+  if [ -n "$UBUNTU_PLYMOUTH_PKGS" ]; then
+    echo "Gỡ thêm: $UBUNTU_PLYMOUTH_PKGS"
+    echo "$UBUNTU_PLYMOUTH_PKGS" | xargs apt-get purge -y 2>/dev/null || true
+  fi
+fi
+
 echo "===== Cài GRUB + công cụ cho Calamares (partition/bootloader module) ====="
 # Calamares (calamares-settings-debian) mặc định yêu cầu gói "grub-pc" có
 # sẵn trong target để bootloader module chạy update-grub sau khi cài đặt
@@ -343,6 +369,67 @@ if [ "$BASE_DISTRO" = "debian" ]; then
     os-prober pciutils usbutils || true
 else
   apt-get install -y linux-firmware os-prober pciutils usbutils || true
+
+  # Ubuntu/Mint tách RIÊNG các driver wifi/bluetooth "ngoài luồng" (không
+  # nằm trong mainline kernel, ví dụ rtl8821ce, rtw88/89 cho card Realtek
+  # đời mới, mt7921 MediaTek...) vào gói linux-modules-extra-<flavour>,
+  # KHÔNG nằm trong linux-image-generic/linux-modules-generic. Thiếu gói
+  # này là lý do phổ biến nhất khiến "có firmware nhưng vẫn không thấy
+  # card wifi" trên Ubuntu — firmware có nhưng module driver thì không.
+  # Dò đúng flavour kernel vừa cài (generic/lowlatency...) thay vì hardcode
+  # "generic", để không cài nhầm module cho kernel không chạy.
+  KERNEL_FLAVOUR=$(dpkg-query -W -f='${Package}\n' 'linux-image-*-generic' 'linux-image-*-lowlatency' 2>/dev/null \
+    | sed -E 's/^linux-image-[0-9.]+-[0-9]+-//' | sort -u | head -n1)
+  : "${KERNEL_FLAVOUR:=generic}"
+  apt-get install -y "linux-modules-extra-${KERNEL_FLAVOUR}" || \
+    apt-get install -y linux-modules-extra-generic || \
+    echo "CẢNH BÁO: không cài được linux-modules-extra-* — một số card wifi/bluetooth USB đời mới (Realtek rtw88/89, MediaTek mt7921...) có thể không được nhận diện." >&2
+fi
+
+echo "===== Bluetooth + tiện ích quản lý mạng không dây (mọi distro) ====="
+# bluez (daemon/stack Bluetooth thật sự) trước giờ KHÔNG được cài ở đâu
+# trong toàn bộ build — mục "Bluetooth Manager" hiện trong menu (do
+# task-*-desktop kéo theo GUI applet) nhưng bấm vào không thấy adapter/
+# thiết bị nào vì thiếu hẳn bluetoothd phía sau. blueman là applet GUI
+# dùng chung được cho XFCE/Cinnamon/MATE/LXQt (khác panel riêng của từng
+# DE). rfkill để tự bỏ soft-block wifi/bluetooth (khá nhiều máy/VM boot
+# lên với card bị soft-block sẵn, wifi/bluetooth hiện trong danh sách
+# nhưng không bật được tới khi rfkill unblock). wireless-tools/iw + 
+# wpasupplicant khai báo tường minh dù network-manager thường tự kéo theo,
+# để không phụ thuộc ngầm vào Recommends (một số build tắt Recommends).
+apt-get install -y bluez bluez-obexd blueman rfkill wireless-tools iw wpasupplicant || \
+  echo "CẢNH BÁO: thiếu ít nhất 1 gói bluetooth/wifi ở trên — kiểm tra log apt phía trên." >&2
+
+# Bật bluetooth service (một số distro không auto-enable) + unblock rfkill
+# ngay trong chroot cho session đầu tiên; systemctl trong chroot chỉ ghi
+# symlink enable, không start được service thật (không có PID 1 thật) nên
+# không cần chạy `systemctl start`, chỉ enable là đủ để boot thật tự bật.
+if command -v systemctl > /dev/null 2>&1; then
+  systemctl enable bluetooth 2>/dev/null || true
+fi
+mkdir -p /etc/systemd/system/multi-user.target.wants
+cat <<'RFKILLEOF' > /usr/local/bin/hyggshi-rfkill-unblock.sh
+#!/bin/sh
+# Hyggshi OS — tự unblock wifi/bluetooth mỗi lần boot, phòng trường hợp
+# firmware/BIOS soft-block sẵn (rfkill list hiện "Soft blocked: yes").
+command -v rfkill >/dev/null 2>&1 && rfkill unblock all 2>/dev/null || true
+exit 0
+RFKILLEOF
+chmod 0755 /usr/local/bin/hyggshi-rfkill-unblock.sh
+cat <<'RFKILLSVC' > /etc/systemd/system/hyggshi-rfkill-unblock.service
+[Unit]
+Description=Hyggshi OS - unblock wifi/bluetooth rfkill at boot
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hyggshi-rfkill-unblock.sh
+
+[Install]
+WantedBy=multi-user.target
+RFKILLSVC
+if command -v systemctl > /dev/null 2>&1; then
+  systemctl enable hyggshi-rfkill-unblock.service 2>/dev/null || true
 fi
 
 # hostname
