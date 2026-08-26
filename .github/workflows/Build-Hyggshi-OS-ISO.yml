@@ -275,6 +275,7 @@ jobs:
         run: |
           sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
           sudo cp scripts/kernel-tuning.sh "${CHROOT_DIR}/tmp/kernel-tuning.sh"
+          sudo cp scripts/fix-cinnamon-tela-persistence.sh "${CHROOT_DIR}/tmp/fix-cinnamon-tela-persistence.sh"
           sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"
           sudo rm -rf "${CHROOT_DIR}/tmp/packages"
           sudo cp -r iso-config/packages "${CHROOT_DIR}/tmp/packages"

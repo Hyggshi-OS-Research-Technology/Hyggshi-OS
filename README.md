@@ -56,3 +56,11 @@ prompt (username + password).
 - `iso-config/branding/desktop-grub.svg` — bản vector được đóng gói kèm làm source branding.
 
 `./scripts/iso.sh` sẽ tự copy hai file vào ISO và dùng `desktop-grub.png` làm nền GRUB. Nếu thiếu PNG, ISO vẫn build và GRUB dùng nền mặc định.
+
+### Cinnamon / Tela icon persistence
+
+Hyggshi OS installs Tela as the Cinnamon icon theme. Because Calamares may
+create a new user's dconf database from the live session, a one-time first-login
+guard applies Tela (and the Hyggshi Orchis theme/cursor defaults) to the newly
+installed user. It writes a per-user marker and never reapplies the defaults on
+later logins, so manual theme changes remain intact.

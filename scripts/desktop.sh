@@ -466,6 +466,15 @@ picture-uri-dark='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
 picture-options='zoom'
 EOF
     dconf update || echo "⚠️  dconf update thất bại — có thể do chạy trong chroot thiếu D-Bus, kiểm tra lại lúc boot thật."
+
+    # Calamares can create the installed user's dconf database from the live
+    # session. A user database has higher priority than /etc/dconf/db/local,
+    # so install a one-time first-login guard that explicitly applies Tela to
+    # the newly installed Cinnamon user. It runs only once and then leaves the
+    # user's later theme choices untouched.
+    if [ -f /tmp/fix-cinnamon-tela-persistence.sh ]; then
+      bash /tmp/fix-cinnamon-tela-persistence.sh
+    fi
     ;;
 
   *)

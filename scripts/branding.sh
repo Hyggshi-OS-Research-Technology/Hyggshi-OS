@@ -333,10 +333,10 @@ else
 fi
 
 cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
-PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
+PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" (dựa trên $DISTRO_LABEL)"
 NAME="$DISTRO_NAME"
 VERSION_ID="$HYGGSHI_VERSION_ID"
-VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME)"
+VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
 VERSION_CODENAME="$HYGGSHI_CODENAME"
 HYGGSHI_BASE_CODENAME=$BASE_CODENAME
 ID=hyggshios
@@ -355,11 +355,11 @@ cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
 DISTRIB_ID=HyggshiOS
 DISTRIB_RELEASE=$HYGGSHI_VERSION_ID
 DISTRIB_CODENAME="$HYGGSHI_CODENAME"
-DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
+DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
 EOF
 
 printf "%s \"%s\" \\n \\l\n\n" "$DISTRO_NAME" "$HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/issue" > /dev/null
-echo "Welcome to $DISTRO_NAME $HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/motd" > /dev/null
+echo "Welcome to $DISTRO_NAME \"$HYGGSHI_CODENAME\" — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
 echo "===== Distributor logo ====="
 # 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
