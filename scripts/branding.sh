@@ -725,32 +725,53 @@ PLYD_EOF
   # symlink, daemon config and the script plugin into every generated initrd.
   sudo tee "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth" > /dev/null <<'HOOK_EOF'
 #!/bin/sh
-set -e
+# KHÔNG dùng "set -e" ở đây: nếu 1 bước phụ (copy plymouthd.conf, copy .so
+# renderer) fail vì lý do vặt (thiếu file trên distro/kernel nào đó),
+# set -e sẽ giết chết CẢ hook giữa chừng -> initramfs-tools coi hook fail
+# -> update-initramfs rollback initrd (Removing *.dpkg-bak) -> initrd cuối
+# cùng KHÔNG có theme dù phần copy theme (bước quan trọng nhất) đã chạy
+# xong trước đó. Chỉ bước copy theme + tạo symlink default.plymouth mới
+# thật sự bắt buộc; các bước còn lại luôn được best-effort.
 PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case "${1:-}" in
   prereqs) prereqs; exit 0 ;;
 esac
 . /usr/share/initramfs-tools/hook-functions
+
 THEME=/usr/share/plymouth/themes/hyggshi-boot
 if [ -d "$THEME" ]; then
-  mkdir -p "${DESTDIR}${THEME}"
-  cp -a "$THEME/." "${DESTDIR}${THEME}/"
+  mkdir -p "${DESTDIR}${THEME}" || { echo "hyggshi-plymouth: mkdir theme dir FAILED" >&2; exit 1; }
+  cp -a "$THEME/." "${DESTDIR}${THEME}/" || { echo "hyggshi-plymouth: cp theme FAILED" >&2; exit 1; }
+else
+  echo "hyggshi-plymouth: CANH BAO khong thay $THEME trong chroot, bo qua." >&2
 fi
-mkdir -p "${DESTDIR}/usr/share/plymouth/themes"
+
+mkdir -p "${DESTDIR}/usr/share/plymouth/themes" || { echo "hyggshi-plymouth: mkdir themes dir FAILED" >&2; exit 1; }
 rm -f "${DESTDIR}/usr/share/plymouth/themes/default.plymouth"
 ln -s "hyggshi-boot/hyggshi-boot.plymouth" \
-  "${DESTDIR}/usr/share/plymouth/themes/default.plymouth"
+  "${DESTDIR}/usr/share/plymouth/themes/default.plymouth" \
+  || { echo "hyggshi-plymouth: ln -s default.plymouth FAILED" >&2; exit 1; }
+
+# Từ đây trở xuống là các bước PHỤ (config file, renderer .so) — best-effort,
+# lỗi ở đây không được phép làm fail cả hook.
 if [ -f /etc/plymouth/plymouthd.conf ]; then
-  copy_file config /etc/plymouth/plymouthd.conf
+  copy_file config /etc/plymouth/plymouthd.conf \
+    || echo "hyggshi-plymouth: canh bao - copy plymouthd.conf that bai (bo qua)" >&2
 fi
+
 for so in \
   /usr/lib/x86_64-linux-gnu/plymouth/script.so \
   /usr/lib/x86_64-linux-gnu/plymouth/drm.so \
   /usr/lib/x86_64-linux-gnu/plymouth/renderers/drm.so \
   /usr/lib/x86_64-linux-gnu/plymouth/renderers/frame-buffer.so; do
-  [ -f "$so" ] && copy_exec "$so" "$so" || true
+  if [ -f "$so" ]; then
+    copy_exec "$so" "$so" \
+      || echo "hyggshi-plymouth: canh bao - copy_exec $so that bai (bo qua)" >&2
+  fi
 done
+
+exit 0
 HOOK_EOF
   sudo chmod 0755 "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth"
 
