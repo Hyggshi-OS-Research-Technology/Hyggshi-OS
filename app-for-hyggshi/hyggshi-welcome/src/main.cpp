@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QIcon>
 #include <QStandardPaths>
 
 #include "MainWindow.h"
@@ -17,6 +18,9 @@ int main(int argc, char *argv[]) {
   QApplication::setApplicationVersion("1.2.0");
   QApplication::setOrganizationName("Hyggshi OS Foundation");
   QApplication::setDesktopSettingsAware(true);
+  // Keep the Hyggshi icon on the running window/taskbar even when the
+  // installed icon theme or desktop database is refreshed after Calamares.
+  app.setWindowIcon(QIcon(":/icons/logo.png"));
 
   const QString marker = markerPath();
   const bool force = qEnvironmentVariable("HYGGSHI_WELCOME_FORCE") == "1";

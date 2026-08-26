@@ -57,7 +57,19 @@ bool isDebianSystem() {
   QFile file("/etc/os-release");
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
   const QString data = QString::fromUtf8(file.readAll());
-  return QRegularExpression("^ID=(?:\"debian\"|debian)$", QRegularExpression::MultilineOption).match(data).hasMatch();
+
+  // Hyggshi OS intentionally brands /etc/os-release with ID=hyggshios, so
+  // checking only ID=debian makes the Debian-only Testing option disappear
+  // after branding. Prefer the explicit base-distro marker and keep the
+  // native Debian check as a fallback for unbranded systems.
+  const auto baseMatch = QRegularExpression(
+      "^HYGGSHI_BASE_DISTRO=(?:\"debian\"|debian)$",
+      QRegularExpression::MultilineOption).match(data);
+  if (baseMatch.hasMatch()) return true;
+
+  return QRegularExpression(
+      "^ID=(?:\"debian\"|debian)$",
+      QRegularExpression::MultilineOption).match(data).hasMatch();
 }
 
 void setGsettings(const QString &schema, const QString &key, const QString &value) {

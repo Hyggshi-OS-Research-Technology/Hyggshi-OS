@@ -52,10 +52,15 @@ install(FILES packaging/hyggshi-welcome-autostart.desktop
 )
 
 # Desktop icon: the .desktop entry refers to this name.
-install(FILES resources/icons/logo.png
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps"
-  RENAME hyggshi-welcome.png
-)
+# Install the Hyggshi Welcome icon in several standard hicolor sizes so
+# Cinnamon/other desktops do not fall back to a generic application icon
+# after the installed system rebuilds its icon cache.
+foreach(ICON_SIZE 48 64 128 192 256)
+  install(FILES resources/icons/logo.png
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps"
+    RENAME hyggshi-welcome.png
+  )
+endforeach()
 
 # Wallpapers used by the welcome wizard / theme helpers.
 install(FILES resources/icons/theme-light.png

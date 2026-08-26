@@ -333,14 +333,17 @@ else
 fi
 
 cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
-PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" (dựa trên $DISTRO_LABEL)"
+PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
 NAME="$DISTRO_NAME"
 VERSION_ID="$HYGGSHI_VERSION_ID"
-VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
+VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME)"
 VERSION_CODENAME="$HYGGSHI_CODENAME"
 HYGGSHI_BASE_CODENAME=$BASE_CODENAME
 ID=hyggshios
 ID_LIKE=$ID_LIKE_VALUE
+# Explicitly preserve the real base distro for Hyggshi applications.
+# ID is branded as hyggshios, so apps must not guess the base from ID alone.
+HYGGSHI_BASE_DISTRO=$BASE_DISTRO
 HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
 SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
 BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
@@ -352,11 +355,11 @@ cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
 DISTRIB_ID=HyggshiOS
 DISTRIB_RELEASE=$HYGGSHI_VERSION_ID
 DISTRIB_CODENAME="$HYGGSHI_CODENAME"
-DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
+DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
 EOF
 
 printf "%s \"%s\" \\n \\l\n\n" "$DISTRO_NAME" "$HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/issue" > /dev/null
-echo "Welcome to $DISTRO_NAME \"$HYGGSHI_CODENAME\" — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
+echo "Welcome to $DISTRO_NAME $HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
 echo "===== Distributor logo ====="
 # 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
@@ -391,6 +394,52 @@ if [ -n "$LOGO_FILE" ]; then
 else
   echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo mặc định của distro gốc."
   echo "    Thêm file logo.png (khuyến nghị 256x256, nền trong suốt) vào iso-config/branding/ để đổi logo."
+fi
+
+# ===== Persist Hyggshi icons/installer shortcut into the installed system =====
+# branding.sh runs after the live user has been created and after Calamares has
+# been installed. Put the same launcher/icon into /etc/skel so a user created
+# by Calamares after installation does not receive the Debian default icon.
+if [ -f "iso-config/branding/Hyggshi-OS-Installer.png" ]; then
+  echo "===== Persist Install Hyggshi OS icon + desktop entry ====="
+  INSTALLER_ICON="$CHROOT/usr/share/icons/hicolor/256x256/apps/hyggshi-installer.png"
+  sudo mkdir -p "$(dirname "$INSTALLER_ICON")" "$CHROOT/usr/share/pixmaps" "$CHROOT/etc/skel/Desktop"
+  sudo install -m 0644 "iso-config/branding/Hyggshi-OS-Installer.png" "$INSTALLER_ICON"
+  sudo install -m 0644 "iso-config/branding/Hyggshi-OS-Installer.png" "$CHROOT/usr/share/pixmaps/hyggshi-installer.png"
+  sudo tee "$CHROOT/etc/skel/Desktop/install-hyggshi-os.desktop" > /dev/null <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Install Hyggshi OS
+Comment=Cài đặt Hyggshi OS
+Exec=pkexec calamares
+Icon=hyggshi-installer
+Terminal=false
+Categories=System;Settings;
+DESKTOP
+  sudo chmod 0644 "$CHROOT/etc/skel/Desktop/install-hyggshi-os.desktop"
+
+  # Also refresh the live user's shortcut if one exists.
+  for user_desktop in "$CHROOT/home/*/Desktop" "$CHROOT/root/Desktop"; do
+    [ -d "$user_desktop" ] || continue
+    sudo cp "$CHROOT/etc/skel/Desktop/install-hyggshi-os.desktop" "$user_desktop/install-hyggshi-os.desktop" 2>/dev/null || true
+  done
+fi
+
+# Make the Welcome icon robust against icon-theme/cache changes after install.
+WELCOME_ICON_SRC="app-for-hyggshi/hyggshi-welcome/resources/icons/logo.png"
+if [ -f "$WELCOME_ICON_SRC" ]; then
+  for size in 48 64 128 192 256; do
+    DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
+    sudo mkdir -p "$DEST"
+    if command -v convert >/dev/null 2>&1; then
+      convert "$WELCOME_ICON_SRC" -resize ${size}x${size} "/tmp/hyggshi-welcome-$size.png"
+      sudo cp "/tmp/hyggshi-welcome-$size.png" "$DEST/hyggshi-welcome.png"
+    else
+      sudo cp "$WELCOME_ICON_SRC" "$DEST/hyggshi-welcome.png"
+    fi
+  done
+  sudo chroot "$CHROOT" gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+  echo "OK: Hyggshi Welcome icon đã được cài vào hicolor."
 fi
 
 echo "===== Calamares: đổi logo sidebar (branding.desc) ====="
