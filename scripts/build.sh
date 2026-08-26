@@ -26,7 +26,7 @@ sudo apt-get update
 sudo apt-get install -y \
   debootstrap squashfs-tools xorriso isolinux syslinux-efi \
   grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools \
-  live-boot live-boot-doc
+  initramfs-tools live-boot live-boot-doc
 
 mkdir -p live-build/chroot
 

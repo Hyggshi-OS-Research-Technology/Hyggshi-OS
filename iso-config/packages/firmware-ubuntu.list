@@ -1,4 +1,15 @@
+# Firmware + driver stack cho Ubuntu/Mint
 linux-firmware
+intel-microcode
+amd64-microcode
+mesa-vulkan-drivers
+libgl1-mesa-dri
+libegl1-mesa
+libglx-mesa0
+xserver-xorg-video-amdgpu
+xserver-xorg-video-intel
+xserver-xorg-video-nouveau
+xserver-xorg-video-fbdev
 os-prober
 pciutils
 usbutils

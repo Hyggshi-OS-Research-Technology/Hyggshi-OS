@@ -1,8 +1,27 @@
+# Firmware tổng quát cho Debian (Wi-Fi, Bluetooth, GPU, sound, SoC)
 firmware-linux-free
 firmware-misc-nonfree
 firmware-realtek
 firmware-iwlwifi
 firmware-atheros
+firmware-brcm80211
+firmware-mediatek
+firmware-libertas
+firmware-amd-graphics
+firmware-intel-sound
+firmware-sof-signed
+firmware-qcom
+firmware-qcom-soc
+firmware-nvidia-gsp
+firmware-ralink
+firmware-ath9k-htc
+firmware-zd1211
+firmware-marvell
+firmware-ti-connectivity
+firmware-bnx2
+firmware-bnx2x
+intel-microcode
+amd64-microcode
 os-prober
 pciutils
 usbutils

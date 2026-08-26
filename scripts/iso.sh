@@ -45,14 +45,6 @@ mkdir -p live-build/image/live
 sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
   -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)"
 
-echo "===== Verify Hyggshi Plymouth is embedded before copying initrd ====="
-if sudo test -f live-build/chroot/usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.plymouth && \
-   sudo test -f live-build/chroot/usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.script; then
-  echo "OK: Hyggshi Plymouth theme tồn tại trong chroot."
-else
-  echo "CẢNH BÁO: thiếu Hyggshi Plymouth theme trong chroot — ISO có thể dùng splash mặc định." >&2
-fi
-
 echo "===== Prepare boot files (kernel + initrd) ====="
 # Dùng ls -t + head -n1 thay vì cp trực tiếp theo glob: nếu vì lý do gì đó
 # /boot có nhiều hơn 1 vmlinuz-*/initrd.img-* (ví dụ update kernel giữa
@@ -71,6 +63,18 @@ VMLINUZ_FILE=$(sudo ls -t live-build/chroot/boot/vmlinuz-* | head -n1)
 INITRD_FILE=$(sudo ls -t live-build/chroot/boot/initrd.img-* | head -n1)
 sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
 sudo cp "$INITRD_FILE" live-build/image/live/initrd
+
+# Fail-fast: không cho phép tạo ISO nếu initrd lại chứa Plymouth mặc định
+# thay vì theme Hyggshi. Đây chính là nguyên nhân màn hình QEMU trước đó chỉ
+# hiện nền tối + 3 chấm của spinner mặc định.
+if command -v lsinitramfs >/dev/null 2>&1; then
+  if ! sudo lsinitramfs "$INITRD_FILE" 2>/dev/null | grep -q 'usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.plymouth'; then
+    echo "LỖI: initrd $INITRD_FILE không chứa Hyggshi Plymouth theme." >&2
+    echo "Không tiếp tục tạo ISO để tránh phát hành bản boot splash sai." >&2
+    exit 1
+  fi
+  echo "OK: initrd ISO chứa Hyggshi Plymouth theme."
+fi
 
 echo "===== Dò memtest86+ trong chroot (cho mục 'Kiểm tra RAM' trong GRUB, best-effort) ====="
 # Tên file binary memtest86+ đổi khác nhau tuỳ version đóng gói (Debian
@@ -199,6 +203,14 @@ if [ "$BASE_DISTRO" = "debian" ]; then
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kernel-tuning.sh"
   KERNEL_CMDLINE_EXTRA=$(hyggshi_kernel_cmdline_extra "${EDITION:-normal}")
 fi
+case " $KERNEL_CMDLINE_EXTRA " in
+  *" quiet "*) ;;
+  *) KERNEL_CMDLINE_EXTRA="quiet $KERNEL_CMDLINE_EXTRA" ;;
+esac
+case " $KERNEL_CMDLINE_EXTRA " in
+  *" splash "*) ;;
+  *) KERNEL_CMDLINE_EXTRA="$KERNEL_CMDLINE_EXTRA splash" ;;
+esac
 
 mkdir -p live-build/image/boot/grub
 

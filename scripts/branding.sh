@@ -561,22 +561,6 @@ if [ -z "$PLYMOUTH_LOGO_FILE" ]; then
 else
   THEME_DIR="$CHROOT/usr/share/plymouth/themes/hyggshi-boot"
   sudo mkdir -p "$THEME_DIR"
-
-  # Plymouth phải chạy ở chế độ đồ họa ngay từ initramfs. Ghi rõ cấu hình
-  # thay vì phụ thuộc vào theme mặc định của distro; đồng thời bật splash
-  # cho cả lần boot live và hệ thống sau khi Calamares cài xong.
-  sudo mkdir -p "$CHROOT/etc/plymouth" "$CHROOT/etc/initramfs-tools/conf.d"
-  sudo tee "$CHROOT/etc/plymouth/plymouthd.conf" > /dev/null <<'PLYD_CONF'
-[Daemon]
-Theme=hyggshi-boot
-ShowDelay=0
-DeviceTimeout=8
-PLYD_CONF
-  sudo tee "$CHROOT/etc/initramfs-tools/conf.d/hyggshi-plymouth" > /dev/null <<'INITRAMFS_CONF'
-# Hyggshi OS: keep Plymouth in the initramfs so the custom splash is visible
-# before the real root filesystem is mounted.
-FRAMEBUFFER=y
-INITRAMFS_CONF
   # Bỏ dấu " khỏi DISTRO_NAME trước khi chèn vào file .plymouth (ini) và
   # .script (chuỗi kiểu C) — nếu không, 1 dấu " trong distro_name (input
   # người dùng tự đặt) sẽ làm hỏng cú pháp cả 2 file này.
@@ -715,67 +699,81 @@ if (spinner_frame_count > 0) {
 }
 SCRIPTEOF
 
-  echo "===== Bật Plymouth splash cho GRUB + systemd ====="
-  if [ -f "$CHROOT/etc/default/grub" ]; then
-    sudo sed -i -E 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash plymouth.ignore-serial-consoles"/' "$CHROOT/etc/default/grub"
-    if ! sudo grep -q '^GRUB_GFXPAYLOAD_LINUX=' "$CHROOT/etc/default/grub"; then
-      echo 'GRUB_GFXPAYLOAD_LINUX=auto' | sudo tee -a "$CHROOT/etc/default/grub" > /dev/null
-    fi
-  else
-    sudo tee "$CHROOT/etc/default/grub" > /dev/null <<'GRUBEOF'
-GRUB_DEFAULT=0
-GRUB_TIMEOUT=5
-GRUB_GFXPAYLOAD_LINUX=auto
-GRUB_CMDLINE_LINUX_DEFAULT="quiet splash plymouth.ignore-serial-consoles"
-GRUB_CMDLINE_LINUX=""
-GRUBEOF
+  echo "===== Ép Plymouth 'hyggshi-boot' làm theme mặc định + đóng gói vào initramfs ====="
+  # Không chỉ gọi plymouth-set-default-theme rồi hy vọng initramfs tự nhận.
+  # Ta ghi rõ plymouthd.conf + default.plymouth và thêm initramfs hook riêng.
+  # Cách này tránh tình trạng ISO vẫn hiện spinner 3 chấm của Ubuntu/Debian dù
+  # theme Hyggshi đã tồn tại trong /usr/share/plymouth/themes/.
+  sudo mkdir -p "$CHROOT/etc/plymouth" "$CHROOT/usr/share/plymouth/themes"
+  sudo tee "$CHROOT/etc/plymouth/plymouthd.conf" > /dev/null <<'PLYD_EOF'
+[Daemon]
+Theme=hyggshi-boot
+ShowDelay=0
+PLYD_EOF
+
+  if sudo chroot "$CHROOT" command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    sudo chroot "$CHROOT" plymouth-set-default-theme hyggshi-boot || true
   fi
-  # Chèn theme + plugin script vào initramfs theo cách deterministic.
-  sudo tee "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth" > /dev/null <<'HOOKEOF'
+
+  # plymouth-set-default-theme creates this symlink itself on Debian/Ubuntu.
+  # Re-create it explicitly so the choice survives package postinst scripts.
+  sudo rm -f "$CHROOT/usr/share/plymouth/themes/default.plymouth"
+  sudo ln -s "hyggshi-boot/hyggshi-boot.plymouth" \
+    "$CHROOT/usr/share/plymouth/themes/default.plymouth"
+
+  # Explicit initramfs hook: copy the complete Hyggshi theme, selected theme
+  # symlink, daemon config and the script plugin into every generated initrd.
+  sudo tee "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth" > /dev/null <<'HOOK_EOF'
 #!/bin/sh
 set -e
 PREREQ=""
 prereqs() { echo "$PREREQ"; }
-case "$1" in
+case "${1:-}" in
   prereqs) prereqs; exit 0 ;;
 esac
 . /usr/share/initramfs-tools/hook-functions
-THEME_DIR=/usr/share/plymouth/themes/hyggshi-boot
-if [ -d "$THEME_DIR" ]; then
-  copy_dir "$THEME_DIR"
+THEME=/usr/share/plymouth/themes/hyggshi-boot
+if [ -d "$THEME" ]; then
+  mkdir -p "${DESTDIR}${THEME}"
+  cp -a "$THEME/." "${DESTDIR}${THEME}/"
 fi
-for f in /etc/plymouth/plymouthd.conf /etc/default/plymouth; do
-  [ -f "$f" ] && copy_file "$f"
+mkdir -p "${DESTDIR}/usr/share/plymouth/themes"
+rm -f "${DESTDIR}/usr/share/plymouth/themes/default.plymouth"
+ln -s "hyggshi-boot/hyggshi-boot.plymouth" \
+  "${DESTDIR}/usr/share/plymouth/themes/default.plymouth"
+if [ -f /etc/plymouth/plymouthd.conf ]; then
+  copy_file config /etc/plymouth/plymouthd.conf
+fi
+for so in \
+  /usr/lib/x86_64-linux-gnu/plymouth/script.so \
+  /usr/lib/x86_64-linux-gnu/plymouth/drm.so \
+  /usr/lib/x86_64-linux-gnu/plymouth/renderers/drm.so \
+  /usr/lib/x86_64-linux-gnu/plymouth/renderers/frame-buffer.so; do
+  [ -f "$so" ] && copy_exec "$so" "$so" || true
 done
-# Plymouth script plugin is needed by the Hyggshi custom theme.
-for f in /usr/lib/*/plymouth/script.so /usr/lib/plymouth/script.so; do
-  [ -f "$f" ] && copy_file "$f"
-done
-HOOKEOF
+HOOK_EOF
   sudo chmod 0755 "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth"
 
-  echo "===== Đặt 'hyggshi-boot' làm Plymouth theme mặc định (-R tự rebuild initramfs) ====="
-  # BẮT BUỘC rebuild initramfs mỗi khi đổi theme Plymouth, nếu không initrd
-  # cũ (không có theme mới) vẫn được iso.sh lấy vào ISO — cờ -R của
-  # plymouth-set-default-theme tự làm việc này (gọi update-initramfs -u).
-  if sudo chroot "$CHROOT" bash -c 'command -v plymouth-set-default-theme' > /dev/null 2>&1; then
-    sudo chroot "$CHROOT" plymouth-set-default-theme hyggshi-boot 2>&1 || true
-  else
-    # Debian/Ubuntu bản mới có thể không cài helper này; plymouthd.conf +
-    # hook initramfs phía trên vẫn đủ để dùng theme custom.
-    echo "CẢNH BÁO: không có plymouth-set-default-theme — dùng plymouthd.conf trực tiếp."
+  # The hook above makes the initrd self-contained. Rebuild ALL kernels, not
+  # only the newest one, because Calamares may install a different kernel on
+  # the target and ISO generation picks the newest initrd.
+  if sudo chroot "$CHROOT" command -v update-initramfs >/dev/null 2>&1; then
+    sudo chroot "$CHROOT" update-initramfs -u -k all
+  fi
+  if sudo chroot "$CHROOT" command -v plymouth-update-initrd >/dev/null 2>&1; then
+    sudo chroot "$CHROOT" plymouth-update-initrd || true
   fi
 
-  # Luôn rebuild initramfs sau khi theme đã hoàn chỉnh. Kiểm tra cả file
-  # initrd để tránh trường hợp ISO lấy phải initrd cũ không chứa theme.
-  if sudo chroot "$CHROOT" update-initramfs -u -k all 2>&1; then
-    echo "OK: đã rebuild toàn bộ initramfs với Hyggshi Plymouth."
-  else
-    echo "LỖI: update-initramfs thất bại — Plymouth custom có thể không xuất hiện." >&2
-  fi
-  if sudo ls "$CHROOT/boot/initrd.img-"* >/dev/null 2>&1; then
-    echo "OK: đã có initrd sau khi build Plymouth:"
-    sudo ls -lh "$CHROOT/boot/initrd.img-"*
+  # Hard validation: if the selected initrd does not contain the theme, fail
+  # the build rather than producing another ISO that shows the default dots.
+  INITRD_CHECK=$(sudo ls -t "$CHROOT"/boot/initrd.img-* 2>/dev/null | head -n1 || true)
+  if [ -n "$INITRD_CHECK" ] && command -v lsinitramfs >/dev/null 2>&1; then
+    if ! sudo lsinitramfs "$INITRD_CHECK" 2>/dev/null | grep -q 'usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.plymouth'; then
+      echo "LỖI: initramfs mới không chứa Hyggshi Plymouth theme." >&2
+      echo "Kiểm tra lại /etc/initramfs-tools/hooks/hyggshi-plymouth." >&2
+      exit 1
+    fi
+    echo "OK: Hyggshi Plymouth theme đã nằm trong $INITRD_CHECK"
   fi
 fi
 
@@ -1235,13 +1233,35 @@ apply_wallpaper_lxqt() {
 }
 
 apply_wallpaper_kde() {
+  # Plasma phải chạy hoàn chỉnh trước khi gọi plasma-apply-wallpaperimage.
+  # Không dùng random pool cho KDE: wallpaper mặc định của Hyggshi là
+  # Verdant-Valley.png; wallpaper.png là fallback nếu file này không có.
   wait_for_de_process plasmashell
-  if command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
-    plasma-apply-wallpaperimage "$WALL" 2>>"$LOG"
-    echo "Đã set wallpaper KDE Plasma (plasma-apply-wallpaperimage) -> $WALL"
-  else
-    echo "CẢNH BÁO: không có plasma-apply-wallpaperimage (Plasma < 5.27?) — bỏ qua set wallpaper KDE." >&2
+
+  if [ -z "$1" ] && [ -f "/usr/share/backgrounds/hyggshi/Verdant-Valley.png" ]; then
+    WALL="/usr/share/backgrounds/hyggshi/Verdant-Valley.png"
+  elif [ -z "$1" ] && [ -f "/usr/share/backgrounds/hyggshi/wallpaper.png" ]; then
+    WALL="/usr/share/backgrounds/hyggshi/wallpaper.png"
   fi
+
+  if ! command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
+    echo "CẢNH BÁO: thiếu plasma-apply-wallpaperimage — kiểm tra plasma-workspace." >&2
+    return 0
+  fi
+
+  # Plasma 6/Wayland có thể cần thêm vài giây sau khi plasmashell xuất hiện.
+  # Retry để tránh race condition khi autostart chạy rất sớm.
+  for attempt in 1 2 3 4 5; do
+    if plasma-apply-wallpaperimage "$WALL" >>"$LOG" 2>&1; then
+      echo "Đã set wallpaper KDE Plasma -> $WALL (lần thử $attempt)"
+      sleep 1
+      return 0
+    fi
+    echo "KDE wallpaper lần thử $attempt thất bại, chờ Plasma..." >>"$LOG"
+    sleep 2
+  done
+
+  echo "CẢNH BÁO: không thể áp wallpaper KDE sau 5 lần thử: $WALL" >&2
 }
 
 apply_wallpaper_fallback() {
@@ -1317,10 +1337,17 @@ cat <<'DESKTOP' | sudo tee "$CHROOT/etc/skel/.config/autostart/hyggshi-wallpaper
 [Desktop Entry]
 Type=Application
 Name=Hyggshi Wallpaper Setup
+Name[vi]=Thiết lập hình nền Hyggshi
+Comment=Áp dụng hình nền Hyggshi tự động sau khi đăng nhập
 Exec=/usr/local/bin/hyggshi-set-wallpaper.sh
+TryExec=/usr/local/bin/hyggshi-set-wallpaper.sh
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=8
+X-KDE-autostart-after=panel
+X-KDE-autostart-phase=2
+OnlyShowIn=Cinnamon;GNOME;XFCE;MATE;KDE;LXQt;
 NoDisplay=true
+Terminal=false
 DESKTOP
 
 # === QUAN TRỌNG: cài vào /etc/xdg/autostart (system-wide, chuẩn XDG) thay vì

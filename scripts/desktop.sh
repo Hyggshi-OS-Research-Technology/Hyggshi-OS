@@ -53,10 +53,10 @@ DPKGCFGEOF
 
 echo "===== Cài kernel + base system (fallback giữa generic/amd64) ====="
 apt-get install -y linux-image-generic live-boot systemd-sysv \
-  plymouth plymouth-themes plymouth-label initramfs-tools network-manager sudo locales tzdata \
+  initramfs-tools plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release || \
 apt-get install -y linux-image-amd64 live-boot systemd-sysv \
-  plymouth plymouth-themes plymouth-label initramfs-tools network-manager sudo locales tzdata \
+  initramfs-tools plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release
 
 if [ "$BASE_DISTRO" = "ubuntu" ] || [ "$BASE_DISTRO" = "linuxmint" ]; then
@@ -334,6 +334,24 @@ if ! ls /boot/vmlinuz-* >/dev/null 2>&1 || ! ls /boot/initrd.img-* >/dev/null 2>
 fi
 echo "OK: tìm thấy $(ls /boot/vmlinuz-* | head -n1) và $(ls /boot/initrd.img-* | head -n1)"
 
+# Cấu hình kernel boot của hệ thống ĐÃ CÀI. Calamares chạy update-grub trên
+# target, vì vậy chỉ sửa grub.cfg của ISO là chưa đủ. Luôn giữ splash + KMS
+# và cho phép GRUB dùng framebuffer hiện tại để Plymouth có nền đồ hoạ ổn định.
+mkdir -p /etc/default
+if [ -f /etc/default/grub ]; then
+  sed -i -E 's#^GRUB_CMDLINE_LINUX_DEFAULT=.*#GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"#' /etc/default/grub
+else
+  cat > /etc/default/grub <<'GRUBEOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="Hyggshi OS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+GRUB_CMDLINE_LINUX=""
+GRUB_GFXPAYLOAD_LINUX=auto
+GRUBEOF
+fi
+grep -q '^GRUB_GFXPAYLOAD_LINUX=' /etc/default/grub || echo 'GRUB_GFXPAYLOAD_LINUX=auto' >> /etc/default/grub
+
 # Khóa gói kernel thật sự (linux-image-X.Y.Z-generic, linux-modules-*,
 # thường bị apt đánh dấu "auto-installed" vì chỉ là dependency của
 # metapackage linux-image-generic) để KHÔNG BAO GIỜ bị autoremove động tới.
@@ -358,49 +376,111 @@ else
   echo "CẢNH BÁO: không tìm thấy gói linux-image-*/linux-modules-*/linux-headers-* nào đã cài — kiểm tra lại bước cài kernel ở trên." >&2
 fi
 
-echo "===== Firmware / driver phần cứng (wifi, GPU...) ====="
-# Tên gói khác nhau giữa Debian và Ubuntu/Mint (nền Ubuntu) nên phải tách
-# riêng, y như phần kernel ở trên. Thiếu firmware là lý do phổ biến khiến
-# live USB không bắt được wifi hoặc không lên được giao diện đồ hoạ trên
-# máy thật (dù chạy tốt trên VM vì QEMU/VirtualBox không cần firmware này).
+echo "===== Firmware / driver phần cứng (wifi, GPU, virtio...) ====="
+# Cài firmware + các module đồ hoạ/network phổ biến thay vì chỉ cài
+# linux-firmware/firmware-linux ở mức tối thiểu. Quan trọng: firmware phải
+# thực sự được cài vào ROOTFS và initramfs phải được rebuild SAU CÙNG; nếu chỉ
+# cài package mà giữ initrd cũ thì Plymouth/KMS có thể vẫn boot bằng fallback
+# và máy thật có thể mất Wi-Fi/GPU firmware.
 if [ "$BASE_DISTRO" = "debian" ]; then
-  # Debian: cài cả firmware Wi-Fi/Bluetooth/GPU phổ biến. Một số máy mới
-  # không chỉ cần firmware-realtek/iwlwifi mà còn firmware cho MediaTek,
-  # Broadcom và AMD/Intel graphics. Các gói không có trên một suite cụ thể
-  # được cài best-effort để không làm hỏng build.
-  apt-get install -y \
-    firmware-linux-free firmware-misc-nonfree firmware-linux-nonfree \
-    firmware-realtek firmware-iwlwifi firmware-atheros \
-    firmware-brcm80211 firmware-libertas firmware-mediatek \
-    firmware-amd-graphics firmware-intel-graphics firmware-nvidia-graphics \
-    os-prober pciutils usbutils || true
-  # Stack đồ họa + driver Xorg phổ biến; kernel vẫn tự chọn module phù hợp
-  # với GPU thật, không ép một driver cụ thể.
-  apt-get install -y \
-    mesa-vulkan-drivers mesa-utils libgl1-mesa-dri \
-    xserver-xorg-video-amdgpu xserver-xorg-video-intel \
-    xserver-xorg-video-nouveau || true
+  DEBIAN_FW_PKGS="
+    firmware-linux-free
+    firmware-misc-nonfree
+    firmware-realtek
+    firmware-iwlwifi
+    firmware-atheros
+    firmware-brcm80211
+    firmware-mediatek
+    firmware-libertas
+    firmware-amd-graphics
+    firmware-intel-sound
+    firmware-sof-signed
+    firmware-qcom
+    firmware-qcom-soc
+    firmware-nvidia-gsp
+    intel-microcode
+    amd64-microcode
+    firmware-ralink
+    firmware-ath9k-htc
+    firmware-zd1211
+    firmware-marvell
+    firmware-ti-connectivity
+    firmware-bnx2
+    firmware-bnx2x
+  "
+  FW_AVAILABLE=""
+  for pkg in $DEBIAN_FW_PKGS; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+      FW_AVAILABLE="$FW_AVAILABLE $pkg"
+    else
+      echo "FW: bỏ qua $pkg (không có trong repo suite hiện tại)."
+    fi
+  done
+  apt-get install -y $FW_AVAILABLE
 else
-  apt-get install -y linux-firmware os-prober pciutils usbutils || true
-  apt-get install -y \
-    mesa-vulkan-drivers mesa-utils libgl1-mesa-dri \
-    xserver-xorg-video-amdgpu xserver-xorg-video-intel \
-    xserver-xorg-video-nouveau || true
-
-  # Ubuntu/Mint tách RIÊNG các driver wifi/bluetooth "ngoài luồng" (không
-  # nằm trong mainline kernel, ví dụ rtl8821ce, rtw88/89 cho card Realtek
-  # đời mới, mt7921 MediaTek...) vào gói linux-modules-extra-<flavour>,
-  # KHÔNG nằm trong linux-image-generic/linux-modules-generic. Thiếu gói
-  # này là lý do phổ biến nhất khiến "có firmware nhưng vẫn không thấy
-  # card wifi" trên Ubuntu — firmware có nhưng module driver thì không.
-  # Dò đúng flavour kernel vừa cài (generic/lowlatency...) thay vì hardcode
-  # "generic", để không cài nhầm module cho kernel không chạy.
+  # Ubuntu/Mint: linux-firmware là gói firmware chính; linux-modules-extra
+  # chứa nhiều driver Wi-Fi/GPU/USB không nằm trong image tối thiểu.
+  apt-get install -y linux-firmware
   KERNEL_FLAVOUR=$(dpkg-query -W -f='${Package}\n' 'linux-image-*-generic' 'linux-image-*-lowlatency' 2>/dev/null \
-    | sed -E 's/^linux-image-[0-9.]+-[0-9]+-//' | sort -u | head -n1)
+    | sed -E 's/^linux-image-[0-9.]+-[0-9]+-//' | sort -u | head -n1 || true)
   : "${KERNEL_FLAVOUR:=generic}"
   apt-get install -y "linux-modules-extra-${KERNEL_FLAVOUR}" || \
     apt-get install -y linux-modules-extra-generic || \
-    echo "CẢNH BÁO: không cài được linux-modules-extra-* — một số card wifi/bluetooth USB đời mới (Realtek rtw88/89, MediaTek mt7921...) có thể không được nhận diện." >&2
+    echo "CẢNH BÁO: không cài được linux-modules-extra-* — một số driver ngoài kernel core có thể thiếu." >&2
+fi
+
+# Driver Xorg/Mesa cho máy thật và QEMU (virtio-gpu). Không cài NVIDIA
+# proprietary mặc định; nouveau + Mesa an toàn hơn cho ISO dùng chung.
+GPU_PKGS="
+  mesa-vulkan-drivers
+  libgl1-mesa-dri
+  libegl1-mesa
+  libglx-mesa0
+  xserver-xorg-video-amdgpu
+  xserver-xorg-video-intel
+  xserver-xorg-video-nouveau
+  xserver-xorg-video-fbdev
+"
+GPU_AVAILABLE=""
+for pkg in $GPU_PKGS; do
+  if apt-cache show "$pkg" >/dev/null 2>&1; then
+    GPU_AVAILABLE="$GPU_AVAILABLE $pkg"
+  fi
+done
+apt-get install -y $GPU_AVAILABLE || true
+
+# Các module KMS/virtio cần có trong initramfs để Plymouth có framebuffer/KMS
+# thay vì rơi vào màn hình đen. MODULES=most cũng bảo đảm initramfs không bị
+# tối giản quá mức sau khi Calamares cài hệ thống.
+mkdir -p /etc/initramfs-tools
+cat > /etc/initramfs-tools/conf.d/hyggshi-kms <<'EOF'
+MODULES=most
+EOF
+touch /etc/initramfs-tools/modules
+for mod in i915 amdgpu nouveau virtio_gpu virtio_pci drm drm_kms_helper e1000e r8169; do
+  grep -qxF "$mod" /etc/initramfs-tools/modules || echo "$mod" >> /etc/initramfs-tools/modules
+done
+
+# Build a small helper so a newly installed system can regenerate firmware/KMS
+# initramfs after a kernel or firmware update as well.
+cat > /usr/local/sbin/hyggshi-refresh-initramfs <<'EOF'
+#!/bin/sh
+set -eu
+if command -v update-initramfs >/dev/null 2>&1; then
+  update-initramfs -u -k all
+fi
+EOF
+chmod 0755 /usr/local/sbin/hyggshi-refresh-initramfs
+
+# Rebuild NOW, after firmware + drivers + Plymouth have been installed.
+echo "===== Rebuild initramfs sau khi cài firmware/driver ====="
+update-initramfs -u -k all
+
+# Bảo đảm NetworkManager được bật khi boot hệ thống đã cài. Trong chroot
+# không start daemon, chỉ tạo symlink enable; Calamares sau đó giữ nguyên
+# trạng thái này trên target.
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable NetworkManager 2>/dev/null || systemctl enable NetworkManager.service 2>/dev/null || true
 fi
 
 echo "===== Bluetooth + tiện ích quản lý mạng không dây (mọi distro) ====="
@@ -423,9 +503,6 @@ apt-get install -y bluez bluez-obexd blueman rfkill wireless-tools iw wpasupplic
 # không cần chạy `systemctl start`, chỉ enable là đủ để boot thật tự bật.
 if command -v systemctl > /dev/null 2>&1; then
   systemctl enable bluetooth 2>/dev/null || true
-  # NetworkManager phải tự khởi động sau khi cài thật; trong chroot chỉ
-  # enable symlink, không cố start daemon vì PID 1 là của host.
-  systemctl enable NetworkManager 2>/dev/null || systemctl enable network-manager 2>/dev/null || true
 fi
 mkdir -p /etc/systemd/system/multi-user.target.wants
 cat <<'RFKILLEOF' > /usr/local/bin/hyggshi-rfkill-unblock.sh
@@ -462,7 +539,7 @@ dpkg-reconfigure -f noninteractive tzdata || true
 
 case "$DE" in
   kde)
-    apt-get install -y kde-plasma-desktop sddm
+    apt-get install -y kde-plasma-desktop plasma-workspace sddm
     ;;
 
   lxqt)
