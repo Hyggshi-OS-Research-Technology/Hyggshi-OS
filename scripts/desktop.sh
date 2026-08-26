@@ -53,10 +53,10 @@ DPKGCFGEOF
 
 echo "===== Cài kernel + base system (fallback giữa generic/amd64) ====="
 apt-get install -y linux-image-generic live-boot systemd-sysv \
-  plymouth plymouth-themes network-manager sudo locales tzdata \
+  plymouth plymouth-themes plymouth-label initramfs-tools network-manager sudo locales tzdata \
   lsb-release || \
 apt-get install -y linux-image-amd64 live-boot systemd-sysv \
-  plymouth plymouth-themes network-manager sudo locales tzdata \
+  plymouth plymouth-themes plymouth-label initramfs-tools network-manager sudo locales tzdata \
   lsb-release
 
 if [ "$BASE_DISTRO" = "ubuntu" ] || [ "$BASE_DISTRO" = "linuxmint" ]; then
@@ -364,11 +364,28 @@ echo "===== Firmware / driver phần cứng (wifi, GPU...) ====="
 # live USB không bắt được wifi hoặc không lên được giao diện đồ hoạ trên
 # máy thật (dù chạy tốt trên VM vì QEMU/VirtualBox không cần firmware này).
 if [ "$BASE_DISTRO" = "debian" ]; then
-  apt-get install -y firmware-linux-free firmware-misc-nonfree \
+  # Debian: cài cả firmware Wi-Fi/Bluetooth/GPU phổ biến. Một số máy mới
+  # không chỉ cần firmware-realtek/iwlwifi mà còn firmware cho MediaTek,
+  # Broadcom và AMD/Intel graphics. Các gói không có trên một suite cụ thể
+  # được cài best-effort để không làm hỏng build.
+  apt-get install -y \
+    firmware-linux-free firmware-misc-nonfree firmware-linux-nonfree \
     firmware-realtek firmware-iwlwifi firmware-atheros \
+    firmware-brcm80211 firmware-libertas firmware-mediatek \
+    firmware-amd-graphics firmware-intel-graphics firmware-nvidia-graphics \
     os-prober pciutils usbutils || true
+  # Stack đồ họa + driver Xorg phổ biến; kernel vẫn tự chọn module phù hợp
+  # với GPU thật, không ép một driver cụ thể.
+  apt-get install -y \
+    mesa-vulkan-drivers mesa-utils libgl1-mesa-dri \
+    xserver-xorg-video-amdgpu xserver-xorg-video-intel \
+    xserver-xorg-video-nouveau || true
 else
   apt-get install -y linux-firmware os-prober pciutils usbutils || true
+  apt-get install -y \
+    mesa-vulkan-drivers mesa-utils libgl1-mesa-dri \
+    xserver-xorg-video-amdgpu xserver-xorg-video-intel \
+    xserver-xorg-video-nouveau || true
 
   # Ubuntu/Mint tách RIÊNG các driver wifi/bluetooth "ngoài luồng" (không
   # nằm trong mainline kernel, ví dụ rtl8821ce, rtw88/89 cho card Realtek
@@ -406,6 +423,9 @@ apt-get install -y bluez bluez-obexd blueman rfkill wireless-tools iw wpasupplic
 # không cần chạy `systemctl start`, chỉ enable là đủ để boot thật tự bật.
 if command -v systemctl > /dev/null 2>&1; then
   systemctl enable bluetooth 2>/dev/null || true
+  # NetworkManager phải tự khởi động sau khi cài thật; trong chroot chỉ
+  # enable symlink, không cố start daemon vì PID 1 là của host.
+  systemctl enable NetworkManager 2>/dev/null || systemctl enable network-manager 2>/dev/null || true
 fi
 mkdir -p /etc/systemd/system/multi-user.target.wants
 cat <<'RFKILLEOF' > /usr/local/bin/hyggshi-rfkill-unblock.sh

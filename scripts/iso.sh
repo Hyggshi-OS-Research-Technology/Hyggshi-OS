@@ -45,6 +45,14 @@ mkdir -p live-build/image/live
 sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
   -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)"
 
+echo "===== Verify Hyggshi Plymouth is embedded before copying initrd ====="
+if sudo test -f live-build/chroot/usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.plymouth && \
+   sudo test -f live-build/chroot/usr/share/plymouth/themes/hyggshi-boot/hyggshi-boot.script; then
+  echo "OK: Hyggshi Plymouth theme tồn tại trong chroot."
+else
+  echo "CẢNH BÁO: thiếu Hyggshi Plymouth theme trong chroot — ISO có thể dùng splash mặc định." >&2
+fi
+
 echo "===== Prepare boot files (kernel + initrd) ====="
 # Dùng ls -t + head -n1 thay vì cp trực tiếp theo glob: nếu vì lý do gì đó
 # /boot có nhiều hơn 1 vmlinuz-*/initrd.img-* (ví dụ update kernel giữa

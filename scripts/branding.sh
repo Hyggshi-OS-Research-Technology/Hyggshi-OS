@@ -561,6 +561,22 @@ if [ -z "$PLYMOUTH_LOGO_FILE" ]; then
 else
   THEME_DIR="$CHROOT/usr/share/plymouth/themes/hyggshi-boot"
   sudo mkdir -p "$THEME_DIR"
+
+  # Plymouth phải chạy ở chế độ đồ họa ngay từ initramfs. Ghi rõ cấu hình
+  # thay vì phụ thuộc vào theme mặc định của distro; đồng thời bật splash
+  # cho cả lần boot live và hệ thống sau khi Calamares cài xong.
+  sudo mkdir -p "$CHROOT/etc/plymouth" "$CHROOT/etc/initramfs-tools/conf.d"
+  sudo tee "$CHROOT/etc/plymouth/plymouthd.conf" > /dev/null <<'PLYD_CONF'
+[Daemon]
+Theme=hyggshi-boot
+ShowDelay=0
+DeviceTimeout=8
+PLYD_CONF
+  sudo tee "$CHROOT/etc/initramfs-tools/conf.d/hyggshi-plymouth" > /dev/null <<'INITRAMFS_CONF'
+# Hyggshi OS: keep Plymouth in the initramfs so the custom splash is visible
+# before the real root filesystem is mounted.
+FRAMEBUFFER=y
+INITRAMFS_CONF
   # Bỏ dấu " khỏi DISTRO_NAME trước khi chèn vào file .plymouth (ini) và
   # .script (chuỗi kiểu C) — nếu không, 1 dấu " trong distro_name (input
   # người dùng tự đặt) sẽ làm hỏng cú pháp cả 2 file này.
@@ -699,20 +715,67 @@ if (spinner_frame_count > 0) {
 }
 SCRIPTEOF
 
+  echo "===== Bật Plymouth splash cho GRUB + systemd ====="
+  if [ -f "$CHROOT/etc/default/grub" ]; then
+    sudo sed -i -E 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash plymouth.ignore-serial-consoles"/' "$CHROOT/etc/default/grub"
+    if ! sudo grep -q '^GRUB_GFXPAYLOAD_LINUX=' "$CHROOT/etc/default/grub"; then
+      echo 'GRUB_GFXPAYLOAD_LINUX=auto' | sudo tee -a "$CHROOT/etc/default/grub" > /dev/null
+    fi
+  else
+    sudo tee "$CHROOT/etc/default/grub" > /dev/null <<'GRUBEOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_GFXPAYLOAD_LINUX=auto
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash plymouth.ignore-serial-consoles"
+GRUB_CMDLINE_LINUX=""
+GRUBEOF
+  fi
+  # Chèn theme + plugin script vào initramfs theo cách deterministic.
+  sudo tee "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth" > /dev/null <<'HOOKEOF'
+#!/bin/sh
+set -e
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+  prereqs) prereqs; exit 0 ;;
+esac
+. /usr/share/initramfs-tools/hook-functions
+THEME_DIR=/usr/share/plymouth/themes/hyggshi-boot
+if [ -d "$THEME_DIR" ]; then
+  copy_dir "$THEME_DIR"
+fi
+for f in /etc/plymouth/plymouthd.conf /etc/default/plymouth; do
+  [ -f "$f" ] && copy_file "$f"
+done
+# Plymouth script plugin is needed by the Hyggshi custom theme.
+for f in /usr/lib/*/plymouth/script.so /usr/lib/plymouth/script.so; do
+  [ -f "$f" ] && copy_file "$f"
+done
+HOOKEOF
+  sudo chmod 0755 "$CHROOT/etc/initramfs-tools/hooks/hyggshi-plymouth"
+
   echo "===== Đặt 'hyggshi-boot' làm Plymouth theme mặc định (-R tự rebuild initramfs) ====="
   # BẮT BUỘC rebuild initramfs mỗi khi đổi theme Plymouth, nếu không initrd
   # cũ (không có theme mới) vẫn được iso.sh lấy vào ISO — cờ -R của
   # plymouth-set-default-theme tự làm việc này (gọi update-initramfs -u).
   if sudo chroot "$CHROOT" bash -c 'command -v plymouth-set-default-theme' > /dev/null 2>&1; then
-    if sudo chroot "$CHROOT" plymouth-set-default-theme -R hyggshi-boot 2>&1; then
-      echo "OK: đã đặt Plymouth theme 'hyggshi-boot' làm mặc định."
-    else
-      echo "⚠️  plymouth-set-default-theme -R lỗi — thử lại không rebuild rồi tự update-initramfs."
-      sudo chroot "$CHROOT" plymouth-set-default-theme hyggshi-boot || true
-      sudo chroot "$CHROOT" update-initramfs -u || true
-    fi
+    sudo chroot "$CHROOT" plymouth-set-default-theme hyggshi-boot 2>&1 || true
   else
-    echo "⚠️  Không tìm thấy plymouth-set-default-theme trong chroot — bỏ qua, giữ Plymouth theme mặc định."
+    # Debian/Ubuntu bản mới có thể không cài helper này; plymouthd.conf +
+    # hook initramfs phía trên vẫn đủ để dùng theme custom.
+    echo "CẢNH BÁO: không có plymouth-set-default-theme — dùng plymouthd.conf trực tiếp."
+  fi
+
+  # Luôn rebuild initramfs sau khi theme đã hoàn chỉnh. Kiểm tra cả file
+  # initrd để tránh trường hợp ISO lấy phải initrd cũ không chứa theme.
+  if sudo chroot "$CHROOT" update-initramfs -u -k all 2>&1; then
+    echo "OK: đã rebuild toàn bộ initramfs với Hyggshi Plymouth."
+  else
+    echo "LỖI: update-initramfs thất bại — Plymouth custom có thể không xuất hiện." >&2
+  fi
+  if sudo ls "$CHROOT/boot/initrd.img-"* >/dev/null 2>&1; then
+    echo "OK: đã có initrd sau khi build Plymouth:"
+    sudo ls -lh "$CHROOT/boot/initrd.img-"*
   fi
 fi
 
