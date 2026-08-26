@@ -505,7 +505,12 @@ esac
 # kể cả khi còn phiên khác đang mở) mà KHÔNG cần hỏi mật khẩu — hợp lý cho
 # máy cá nhân/live session, không phải máy chia sẻ nhiều người dùng.
 echo "===== Cài polkit agent + rule cho phép Restart/Shut Down không bị treo ====="
-apt-get install -y policykit-1 || true
+# Ubuntu 26.04/Resolute không còn package meta `policykit-1`; nó đã được
+# thay bằng `polkitd` + `pkexec`. Không để lệnh cũ thất bại rồi vẫn đóng ISO
+# thiếu polkit daemon. Với Debian cũ, fallback về policykit-1 vẫn được giữ.
+if ! apt-get install -y polkitd pkexec; then
+  apt-get install -y policykit-1 || true
+fi
 case "$DE" in
   xfce)     apt-get install -y xfce-polkit || apt-get install -y policykit-1-gnome || true ;;
   mate)     apt-get install -y mate-polkit || true ;;
@@ -550,7 +555,46 @@ fi
 
 # trình duyệt / office (tùy chọn)
 if [ "$INCLUDE_BROWSER" = "true" ]; then
-  apt-get install -y firefox-esr || apt-get install -y firefox
+  if [ "$BASE_DISTRO" = "debian" ]; then
+    # Debian cung cấp firefox-esr trực tiếp dưới dạng .deb.
+    apt-get install -y firefox-esr || apt-get install -y firefox
+  elif [ "$BASE_DISTRO" = "ubuntu" ] || [ "$BASE_DISTRO" = "linuxmint" ]; then
+    # Ubuntu 26.04/Resolute (và Ubuntu-based Mint) cung cấp `firefox` como
+    # snap-transition package. apt cài gói đó sẽ chạy preinst của snapd,
+    # nhưng trong chroot build không có snapd/systemd/dev/tty đầy đủ:
+    #   cannot create /dev/tty: No such device or address
+    # Vì vậy KHÔNG cài gói snap-transition trong chroot. Dùng tarball chính
+    # thức của Mozilla, chạy độc lập với snapd và phù hợp cho ISO offline.
+    echo "===== Cài Firefox Mozilla tarball (không dùng snap trong chroot) ====="
+    apt-get install -y curl ca-certificates bzip2
+    FIREFOX_TMP="$(mktemp -d)"
+    trap 'rm -rf "$FIREFOX_TMP"' EXIT
+    curl -fL --retry 3 --retry-delay 2 \
+      "https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US" \
+      -o "$FIREFOX_TMP/firefox.tar.bz2"
+    rm -rf /opt/firefox
+    mkdir -p /opt
+    tar -xjf "$FIREFOX_TMP/firefox.tar.bz2" -C /opt
+    test -x /opt/firefox/firefox
+    ln -sf /opt/firefox/firefox /usr/local/bin/firefox
+    cat > /usr/share/applications/firefox.desktop <<'FIREFOX_DESKTOP'
+[Desktop Entry]
+Name=Firefox
+Comment=Web Browser
+Exec=/opt/firefox/firefox %u
+Icon=/opt/firefox/browser/chrome/icons/default/default128.png
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;application/xml;image/webp;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+FIREFOX_DESKTOP
+    chmod 0755 /opt/firefox/firefox
+    rm -rf "$FIREFOX_TMP"
+    trap - EXIT
+  else
+    apt-get install -y firefox || true
+  fi
 fi
 
 if [ "$INCLUDE_OFFICE" = "true" ]; then

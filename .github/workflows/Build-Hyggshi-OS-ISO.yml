@@ -292,6 +292,10 @@ jobs:
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
         run: |
           set -o pipefail
+          # Chỉ để các gói/postinst cần pseudo-terminal nhìn thấy /dev/pts.
+          # Firefox trên Ubuntu Resolute không dùng snap trong chroot nữa,
+          # nhưng các package khác vẫn có thể cần pseudo-terminal.
+          sudo mountpoint -q "${CHROOT_DIR}/dev/pts" || sudo mount --bind /dev/pts "${CHROOT_DIR}/dev/pts" || true
           sudo chroot "${CHROOT_DIR}" env \
             BASE_DISTRO="$BASE_DISTRO" \
             DE="$DE" \
