@@ -6,14 +6,49 @@ set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 CHROOT=live-build/chroot
 
+# ===== HCL: đọc config.ini làm nguồn version/codename =====
+# TRƯỚC ĐÂY: HYGGSHI_VERSION_ID/HYGGSHI_CODENAME chỉ tới từ input
+# workflow_dispatch (hoặc mặc định "1.0" + bảng HYGGSHI_CODENAMES cứng ở
+# dưới) — [my-version-os-base] Version/codename trong config.ini CHƯA BAO
+# GIỜ được đọc, dù file đó có sẵn 2 field y hệt mục đích này (đây chính là
+# lỗi bị phát hiện: script không hề gọi .ini để lấy data).
+#
+# Giờ nếu tồn tại config.ini + tools/hcl_parser.py, resolve nó và LẤY LÀM
+# NGUỒN CHÍNH — ghi đè lên input/mặc định. Tắt bằng HCL_CONFIG_OVERRIDE=false
+# nếu muốn quay lại hành vi cũ (chỉ dùng input thủ công của workflow).
+HCL_CONFIG_FILE="${HCL_CONFIG_FILE:-iso-config/config/config.ini}"
+HCL_PARSER="${HCL_PARSER:-tools/hcl_parser.py}"
+: "${HCL_CONFIG_OVERRIDE:=true}"
+
+if [ "$HCL_CONFIG_OVERRIDE" = "true" ] && [ -f "$HCL_CONFIG_FILE" ] && [ -f "$HCL_PARSER" ]; then
+  echo "===== HCL: resolve $HCL_CONFIG_FILE ====="
+  HCL_JSON="$(mktemp)"
+  if python3 "$HCL_PARSER" "$HCL_CONFIG_FILE" --root . --emit-json "$HCL_JSON" --strict; then
+    HCL_CFG_VERSION="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['base_profile'].get('version') or '')" "$HCL_JSON" 2>/dev/null || true)"
+    HCL_CFG_CODENAME="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['base_profile'].get('codename') or '')" "$HCL_JSON" 2>/dev/null || true)"
+    if [ -n "$HCL_CFG_VERSION" ]; then
+      HYGGSHI_VERSION_ID="$HCL_CFG_VERSION"
+      echo "  -> HYGGSHI_VERSION_ID lấy từ config.ini: $HYGGSHI_VERSION_ID"
+    fi
+    if [ -n "$HCL_CFG_CODENAME" ]; then
+      HYGGSHI_CODENAME="$HCL_CFG_CODENAME"
+      echo "  -> HYGGSHI_CODENAME lấy từ config.ini: $HYGGSHI_CODENAME"
+    fi
+  else
+    echo "!! HCL: config.ini có lỗi validate (xem log ở trên) — bỏ qua, dùng input/mặc định như cũ." >&2
+  fi
+  rm -f "$HCL_JSON"
+else
+  echo "===== HCL: bỏ qua config.ini (không thấy $HCL_CONFIG_FILE / $HCL_PARSER, hoặc HCL_CONFIG_OVERRIDE=false) — dùng input/mặc định như cũ ====="
+fi
+
 # ===== Hyggshi OS Codename =====
 # Codename RIÊNG của Hyggshi OS (kiểu Ubuntu "Jammy Jellyfish"), KHÔNG phải
 # codename của base distro ($BASE_CODENAME, vd "bookworm"/"noble" — cái đó
 # vẫn được giữ nguyên, chỉ đổi vai trò sang HYGGSHI_BASE_CODENAME trong
-# os-release). Không thêm workflow input mới (đã chạm giới hạn 25 input của
-# workflow_dispatch — xem ghi chú trong Build-Hyggshi-OS-ISO.yml), nên chọn
-# theo VERSION_ID hiện có, có thể override bằng biến môi trường
-# HYGGSHI_CODENAME nếu build script nào đó (local-build.sh...) muốn set tay.
+# os-release). Đây là fallback nếu HCL ở trên không set được (config.ini
+# không tồn tại, hoặc HCL_CONFIG_OVERRIDE=false) — giữ nguyên hành vi cũ:
+# chọn theo VERSION_ID hoặc override bằng HYGGSHI_CODENAME thủ công.
 : "${HYGGSHI_VERSION_ID:=1.0}"
 declare -A HYGGSHI_CODENAMES=(
   ["1.0"]="Sen Vàng"
