@@ -368,8 +368,21 @@ else
   ID_LIKE_VALUE="ubuntu debian"
 fi
 
+# Tránh lặp lại version/codename nếu DISTRO_NAME đã chứa sẵn (ví dụ load từ config.ini)
+if [[ "$DISTRO_NAME" == *"$HYGGSHI_VERSION_ID"* ]] || [[ -n "$HYGGSHI_CODENAME" && "$DISTRO_NAME" == *"$HYGGSHI_CODENAME"* ]]; then
+  PRETTY_NAME="$DISTRO_NAME"
+  DISTRIB_DESCRIPTION="$DISTRO_NAME ($DISTRO_LABEL)"
+  ISSUE_TITLE="$DISTRO_NAME"
+  MOTD_TITLE="$DISTRO_NAME"
+else
+  PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
+  DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
+  ISSUE_TITLE="$DISTRO_NAME \"$HYGGSHI_CODENAME\""
+  MOTD_TITLE="$DISTRO_NAME \"$HYGGSHI_CODENAME\""
+fi
+
 cat <<EOF | sudo tee "$CHROOT/usr/lib/os-release" > /dev/null
-PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID $HYGGSHI_CODENAME"
+PRETTY_NAME="$PRETTY_NAME"
 NAME="$DISTRO_NAME"
 VERSION_ID="$HYGGSHI_VERSION_ID"
 VERSION="$HYGGSHI_VERSION_ID ($HYGGSHI_CODENAME) ($DISTRO_LABEL)"
@@ -391,11 +404,11 @@ cat <<EOF | sudo tee "$CHROOT/etc/lsb-release" > /dev/null
 DISTRIB_ID=HyggshiOS
 DISTRIB_RELEASE=$HYGGSHI_VERSION_ID
 DISTRIB_CODENAME="$HYGGSHI_CODENAME"
-DISTRIB_DESCRIPTION="$DISTRO_NAME $HYGGSHI_VERSION_ID \"$HYGGSHI_CODENAME\" ($DISTRO_LABEL)"
+DISTRIB_DESCRIPTION="$DISTRIB_DESCRIPTION"
 EOF
 
-printf "%s \"%s\" \\n \\l\n\n" "$DISTRO_NAME" "$HYGGSHI_CODENAME" | sudo tee "$CHROOT/etc/issue" > /dev/null
-echo "Welcome to $DISTRO_NAME \"$HYGGSHI_CODENAME\" — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
+printf "%s \\n \\l\n\n" "$ISSUE_TITLE" | sudo tee "$CHROOT/etc/issue" > /dev/null
+echo "Welcome to $MOTD_TITLE — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
 echo "===== Distributor logo ====="
 # 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
@@ -596,10 +609,11 @@ if [ -z "$PLYMOUTH_LOGO_FILE" ]; then
 else
   THEME_DIR="$CHROOT/usr/share/plymouth/themes/hyggshi-boot"
   sudo mkdir -p "$THEME_DIR"
-  # Bỏ dấu " khỏi DISTRO_NAME trước khi chèn vào file .plymouth (ini) và
-  # .script (chuỗi kiểu C) — nếu không, 1 dấu " trong distro_name (input
-  # người dùng tự đặt) sẽ làm hỏng cú pháp cả 2 file này.
-  DISTRO_NAME_SAFE="${DISTRO_NAME//\"/} ${HYGGSHI_CODENAME}"
+  if [[ -n "$HYGGSHI_CODENAME" && "$DISTRO_NAME" == *"$HYGGSHI_CODENAME"* ]]; then
+    DISTRO_NAME_SAFE="${DISTRO_NAME//\"/}"
+  else
+    DISTRO_NAME_SAFE="${DISTRO_NAME//\"/} ${HYGGSHI_CODENAME}"
+  fi
 
   sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
   if command -v convert > /dev/null 2>&1; then
