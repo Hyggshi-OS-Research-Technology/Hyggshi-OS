@@ -522,14 +522,8 @@ def to_env_lines(resolved: dict) -> list:
 
     def put(k, v):
         v = "" if v is None else v
-        # Tiền tố HCL_ CỐ Ý — workflow hiện tại đã có BASE_DISTRO/DESKTOP_ENV
-        # riêng lấy từ workflow_dispatch input (xem env: đầu file YAML).
-        # Nếu emit trùng tên thẳng ra $GITHUB_ENV, giá trị từ config.ini sẽ
-        # ÂM THẦM ĐÈ giá trị người dùng chọn trên UI Actions cho các step
-        # chạy sau — lỗi khó thấy vì log không báo gì, build vẫn chạy
-        # nhưng ra sai distro/desktop. Giữ prefix để 2 nguồn tách biệt; khi
-        # nào quyết định để config.ini là nguồn sự thật duy nhất thì đổi
-        # workflow dùng thẳng biến HCL_* thay vì input nữa.
+        # Prefix HCL_ giữ lại để debug/backward-compat — các biến này KHÔNG
+        # ghi đè workflow_dispatch inputs vì tên khác nhau.
         lines.append(f"HCL_{k}={v}")
 
     put("HYGGSHI_NAME", bp.get("name"))
@@ -572,6 +566,38 @@ def to_env_lines(resolved: dict) -> list:
     welcome = resolved.get("welcome", {}).get("linkhyggshi-welcome", {})
     put("WELCOME_SCRIPT", welcome.get("file", ""))
     put("WELCOME_ACTION", welcome.get("action", ""))
+
+    # -----------------------------------------------------------------------
+    # config.ini là NGUỒN SỰ THẬT duy nhất.
+    # Export thêm các biến trùng tên với workflow env / workflow_dispatch inputs
+    # để ghi đè chúng trong $GITHUB_ENV ($GITHUB_ENV dùng LAST-WRITE-WINS:
+    # dòng cuối cùng có cùng KEY sẽ thắng, nên khối này append SAU HCL_*).
+    #
+    # Mapping config.ini            → biến workflow
+    # ─────────────────────────────────────────────
+    # Base (Debian/Ubuntu/...)      → BASE_DISTRO     (lower-cased)
+    # kernel_profile.desktop        → DE              (lower-cased)
+    # name (full OS name)           → DISTRO_NAME
+    # version                       → HYGGSHI_VERSION_ID
+    # codename                      → HYGGSHI_CODENAME
+    # -----------------------------------------------------------------------
+    base_val     = str(bp.get("base") or "").lower()
+    kp_val       = bp.get("kernel_profile") or {}
+    de_val       = str(kp_val.get("desktop") or "").lower()
+    name_val     = bp.get("name")
+    version_val  = bp.get("version")
+    codename_val = bp.get("codename")
+
+    if base_val:
+        lines.append(f"BASE_DISTRO={base_val}")
+    if de_val:
+        lines.append(f"DE={de_val}")
+    if name_val:
+        lines.append(f"DISTRO_NAME={name_val}")
+    if version_val:
+        lines.append(f"HYGGSHI_VERSION_ID={version_val}")
+    if codename_val:
+        lines.append(f"HYGGSHI_CODENAME={codename_val}")
 
     return lines
 
