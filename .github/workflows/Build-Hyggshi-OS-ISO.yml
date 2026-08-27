@@ -205,6 +205,31 @@ jobs:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
 
+      # HCL (Hyggshi Configuration Language) — parse + resolve + validate
+      # iso-config/config/config.ini TRƯỚC khi bất kỳ step nào dùng $BASE_DISTRO.
+      # --strict: nếu config.ini có lỗi (function tên sai, ${ref} không trỏ
+      # đâu, 2 base cùng true, path fileinstall()/filecustom() không tồn
+      # tại...) job FAIL NGAY Ở ĐÂY, không tốn 15-20 phút debootstrap rồi
+      # mới biết config sai. Biến xuất ra đều có prefix HCL_ (HCL_BASE_DISTRO,
+      # HCL_DESKTOP_ENV, HCL_SWAP_MB...) — CỐ Ý không trùng BASE_DISTRO/DESKTOP_ENV
+      # ở dưới (lấy từ workflow_dispatch input) để không âm thầm đè giá trị
+      # người dùng chọn trên UI Actions. Chỉ dùng tools/hcl_parser.py Python
+      # stdlib, không cần pip install.
+      - name: Validate & resolve config.ini (HCL)
+        run: |
+          python3 tools/hcl_parser.py iso-config/config/config.ini \
+            --root "$GITHUB_WORKSPACE" \
+            --emit-json /tmp/hcl-resolved.json \
+            --emit-env "$GITHUB_ENV" \
+            --strict
+
+      - name: Upload resolved config.ini (debug)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hcl-resolved-config
+          path: /tmp/hcl-resolved.json
+          retention-days: 14
+
       - name: Validate Hyggshi OS version
         run: |
           if ! printf '%s' "$HYGGSHI_VERSION_ID" | grep -Eq '^[0-9]+([.][0-9]+)*$'; then
