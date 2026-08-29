@@ -945,13 +945,74 @@ for pkg in fcitx5 fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5 fcit
   fi
 done
 
-if [ "$LOTUS_REPO_ADDED" = "1" ]; then
-  if apt-get install -y fcitx5-lotus; then
+# ---------------------------------------------------------------------------
+# Cài fcitx5-lotus AN TOÀN.
+#
+# BUG ĐÃ GẶP: gói .deb từ repo riêng (fcitx5-lotus.pages.dev) có postinst
+# lỗi cú pháp dash ("Syntax error: 'else' unexpected", dòng ~23) trên bản
+# hiện tại. Bản CŨ của khối này chỉ làm:
+#     if apt-get install -y fcitx5-lotus; then ok; else cảnh báo; fi
+# — nếu apt-get install thất bại vì postinst lỗi, gói bị BỎ LẠI ở trạng
+# thái "half-configured" (unpacked nhưng chưa configure) trong CSDL dpkg
+# của CHROOT_DIR. dpkg/apt sẽ tự CỐ configure lại gói này ở LẦN apt-get
+# install KẾ TIẾP BẤT KỲ — kể cả ở một bước/job hoàn toàn khác sau này dùng
+# chung CHROOT_DIR (ví dụ workflow step "[cinnamon-fix] Fix Dark/Light mode
+# + Cinnamon Spices downloader" chỉ cài lại gói Cinnamon, không hề đụng tới
+# fcitx5-lotus) — và làm bước đó fail với đúng lỗi postinst syntax error ở
+# trên, dù bước đó không liên quan.
+#
+# Xử lý dứt điểm NGAY TẠI ĐÂY, không để lại nợ cho các bước sau:
+#   1. Cài fcitx5-lotus.
+#   2. Nếu configure thất bại (gói ở trạng thái iF/iH/iU/iW...), in 30 dòng
+#      đầu của postinst ra log để debug, backup lại, rồi thử vá lỗi
+#      thường gặp nhất: cú pháp chỉ bash hiểu ([[ ]]) trong 1 script khai
+#      #!/bin/sh — dash (sh mặc định Debian/Ubuntu) không parse được điều
+#      này ngay từ bước PARSE, bất kể môi trường runtime (có D-Bus/systemd
+#      hay không).
+#   3. Nếu vá xong vẫn lỗi, GỠ SẠCH (dpkg --remove --force-remove-reinstreq)
+#      để KHÔNG để lại trạng thái half-configured cho bất kỳ bước build nào
+#      sau này — giữ fcitx5-unikey làm fallback gõ tiếng Việt.
+# ---------------------------------------------------------------------------
+install_fcitx5_lotus_safe() {
+  [ "$LOTUS_REPO_ADDED" = "1" ] || return 0
+
+  apt-get install -y --no-install-recommends fcitx5-lotus || true
+
+  local state
+  state=$(dpkg -l fcitx5-lotus 2>/dev/null | awk '$2=="fcitx5-lotus"{print $1}')
+
+  if [ "$state" = "ii" ]; then
     echo "OK: đã cài Fcitx5 Lotus."
-  else
-    echo "CẢNH BÁO: không cài được fcitx5-lotus — giữ fcitx5-unikey làm fallback." >&2
+    return 0
   fi
-fi
+
+  if [ -z "$state" ]; then
+    echo "CẢNH BÁO: không cài được fcitx5-lotus (gói không có trong dpkg sau khi cài) — giữ fcitx5-unikey làm fallback." >&2
+    return 0
+  fi
+
+  echo "CẢNH BÁO: fcitx5-lotus ở trạng thái '$state' (chưa configure xong) — postinst upstream có thể bị lỗi cú pháp dash." >&2
+  local postinst="/var/lib/dpkg/info/fcitx5-lotus.postinst"
+  if [ -f "$postinst" ]; then
+    echo "--- fcitx5-lotus.postinst (30 dòng đầu, để debug) ---" >&2
+    sed -n '1,30p' "$postinst" >&2
+
+    cp -a "$postinst" "${postinst}.hyggshi-backup"
+    sed -i -E 's/\[\[ (.*) \]\]/[ \1 ]/g' "$postinst"
+
+    if dpkg --configure fcitx5-lotus 2>/tmp/fcitx5-lotus-configure.log; then
+      echo "OK: fcitx5-lotus đã configure thành công sau khi vá postinst."
+      return 0
+    fi
+    echo "CẢNH BÁO: fcitx5-lotus vẫn lỗi sau khi vá postinst (xem /tmp/fcitx5-lotus-configure.log và ${postinst}.hyggshi-backup)." >&2
+  fi
+
+  echo "CẢNH BÁO: gỡ sạch fcitx5-lotus để không để lại trạng thái half-configured cho các bước build sau — giữ fcitx5-unikey làm fallback." >&2
+  dpkg --remove --force-remove-reinstreq fcitx5-lotus 2>/dev/null || \
+    dpkg --purge --force-remove-reinstreq fcitx5-lotus 2>/dev/null || true
+}
+
+install_fcitx5_lotus_safe
 
 if command -v fcitx5 > /dev/null 2>&1; then
   echo "OK: đã cài fcitx5."
