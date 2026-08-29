@@ -1,8 +1,9 @@
 #!/bin/bash
 # install-ecosystem-for-hyggshi.sh — cài đặt hệ sinh thái ứng dụng Hyggshi OS:
-#   1) Tự động mở mọi file .zip trong app-for-hyggshi/
-#   2) Cài mọi file .deb tìm thấy bên trong (apt install, fallback dpkg -i)
-#   3) Ghi lại config.json (logo, plugin, module) cho nexfetch
+#   1) Tự động cài mọi file .deb trong app-for-hyggshi/ (nexcode, nexfetch...)
+#   2) Tự động mở mọi file .zip trong app-for-hyggshi/, cài .deb và binary (nexwm, nex-panel...)
+#   3) Tải và cài đặt mọi app khai báo qua URL/fileinstall() từ config.ini (HCL_APP_INSTALLS)
+#   4) Ghi lại config.json (logo, plugin, module) cho nexfetch
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
@@ -38,51 +39,157 @@ echo "===== Cài đặt hệ sinh thái Hyggshi OS ====="
 echo "Repo root : $REPO_ROOT"
 echo "App dir   : $APP_DIR"
 
-# ----- 0. Đảm bảo có unzip -----
-if ! command -v unzip > /dev/null 2>&1; then
-  echo "Không tìm thấy 'unzip', đang cài đặt..."
-  $SUDO apt-get update -qq
-  $SUDO apt-get install -y unzip
-fi
-
-if [ ! -d "$APP_DIR" ]; then
-  echo "⚠️  Không tìm thấy thư mục '$APP_DIR' — không có gì để cài, dừng lại."
-  exit 0
-fi
-
-# ----- 1. Mở mọi file .zip trong app-for-hyggshi/ -----
-ZIP_COUNT=0
-DEB_FILES=()
-
-shopt -s nullglob
-for ZIP in "$APP_DIR"/*.zip; do
-  ZIP_COUNT=$((ZIP_COUNT + 1))
-  BASENAME="$(basename "$ZIP" .zip)"
-  DEST="$WORK_DIR/$BASENAME"
-  mkdir -p "$DEST"
-  echo "📦 Giải nén: $ZIP -> $DEST"
-  unzip -oq "$ZIP" -d "$DEST"
-
-  while IFS= read -r -d '' DEB; do
-    DEB_FILES+=("$DEB")
-  done < <(find "$DEST" -type f -iname "*.deb" -print0)
+# ----- 0. Đảm bảo có các công cụ cần thiết (unzip, curl, file) -----
+MISSING_TOOLS=()
+for tool in unzip curl file; do
+  if ! command -v "$tool" > /dev/null 2>&1; then
+    MISSING_TOOLS+=("$tool")
+  fi
 done
-shopt -u nullglob
 
-if [ "$ZIP_COUNT" -eq 0 ]; then
-  echo "⚠️  Không tìm thấy file .zip nào trong '$APP_DIR'."
+if [ "${#MISSING_TOOLS[@]}" -gt 0 ]; then
+  echo "Đang cài đặt các công cụ còn thiếu: ${MISSING_TOOLS[*]}..."
+  $SUDO apt-get update -qq || true
+  $SUDO apt-get install -y "${MISSING_TOOLS[@]}" || true
 fi
 
-# ----- 2. Cài mọi file .deb tìm được -----
+DEB_FILES=()
+BIN_FILES=()
+
+# Helper: thêm gói .deb vào danh sách nếu chưa có
+add_deb() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  for existing in "${DEB_FILES[@]}"; do
+    if [ "$existing" = "$f" ]; then
+      return 0
+    fi
+  done
+  DEB_FILES+=("$f")
+}
+
+# Helper: cài đặt file binary ELF vào /usr/local/bin
+install_binary() {
+  local bin="$1"
+  local name
+  name="$(basename "$bin")"
+  echo "⚙️  Cài binary vào /usr/local/bin: $name"
+  $SUDO cp "$bin" "/usr/local/bin/$name"
+  $SUDO chmod 755 "/usr/local/bin/$name"
+}
+
+# ----- 1. Quét và thu thập các file .deb trực tiếp trong APP_DIR -----
+if [ -d "$APP_DIR" ]; then
+  shopt -s nullglob
+  for DEB in "$APP_DIR"/*.deb; do
+    echo "📦 Tìm thấy gói .deb trực tiếp: $(basename "$DEB")"
+    add_deb "$DEB"
+  done
+
+  # ----- 2. Mở mọi file .zip trong app-for-hyggshi/ -----
+  ZIP_COUNT=0
+  for ZIP in "$APP_DIR"/*.zip; do
+    ZIP_COUNT=$((ZIP_COUNT + 1))
+    BASENAME="$(basename "$ZIP" .zip)"
+    DEST="$WORK_DIR/$BASENAME"
+    mkdir -p "$DEST"
+    echo "📦 Giải nén: $ZIP -> $DEST"
+    unzip -oq "$ZIP" -d "$DEST"
+
+    # Thu thập file .deb bên trong zip
+    while IFS= read -r -d '' DEB; do
+      add_deb "$DEB"
+    done < <(find "$DEST" -type f -iname "*.deb" -print0)
+
+    # Thu thập binary ELF thực thi bên trong zip (như nexwm, nex-panel, nex-launcher...)
+    while IFS= read -r -d '' BIN; do
+      if [ -f "$BIN" ] && file "$BIN" 2>/dev/null | grep -q "ELF.*executable"; then
+        install_binary "$BIN"
+      fi
+    done < <(find "$DEST" -type f -print0)
+  done
+  shopt -u nullglob
+
+  if [ "$ZIP_COUNT" -eq 0 ]; then
+    echo "ℹ️  Không có file .zip nào trong '$APP_DIR'."
+  fi
+fi
+
+# ----- 3. Tải và xử lý các app khai báo qua HCL_APP_INSTALLS / fileinstall() -----
+# HCL_APP_INSTALLS chứa danh sách file path hoặc URL (http/https)
+if [ -n "${HCL_APP_INSTALLS:-}" ]; then
+  echo "===== Xử lý ứng dụng từ config.ini (HCL_APP_INSTALLS) ====="
+  DOWNLOAD_DIR="$WORK_DIR/downloads"
+  mkdir -p "$DOWNLOAD_DIR"
+
+  for ITEM in $HCL_APP_INSTALLS; do
+    # Bỏ qua nếu item rỗng
+    [ -z "$ITEM" ] && continue
+
+    if [[ "$ITEM" =~ ^https?:// ]]; then
+      echo "🌐 Tải ứng dụng từ URL: $ITEM"
+      URL_BASENAME="$(basename "${ITEM%%\?*}")"
+      [ -z "$URL_BASENAME" ] && URL_BASENAME="downloaded_app_$(date +%s)"
+      TARGET_FILE="$DOWNLOAD_DIR/$URL_BASENAME"
+
+      if command -v curl > /dev/null 2>&1; then
+        curl -fsSL "$ITEM" -o "$TARGET_FILE" || echo "⚠️  Tải thất bại: $ITEM"
+      elif command -v wget > /dev/null 2>&1; then
+        wget -q "$ITEM" -O "$TARGET_FILE" || echo "⚠️  Tải thất bại: $ITEM"
+      fi
+
+      if [ -f "$TARGET_FILE" ]; then
+        MIME_TYPE="$(file -b --mime-type "$TARGET_FILE" 2>/dev/null || true)"
+        if [[ "$TARGET_FILE" == *.deb ]] || [ "$MIME_TYPE" = "application/vnd.debian.binary-package" ]; then
+          add_deb "$TARGET_FILE"
+        elif [[ "$TARGET_FILE" == *.zip ]] || [ "$MIME_TYPE" = "application/zip" ]; then
+          UNZIP_DEST="$DOWNLOAD_DIR/unpacked_${URL_BASENAME}"
+          mkdir -p "$UNZIP_DEST"
+          unzip -oq "$TARGET_FILE" -d "$UNZIP_DEST"
+          while IFS= read -r -d '' DEB; do add_deb "$DEB"; done < <(find "$UNZIP_DEST" -type f -iname "*.deb" -print0)
+          while IFS= read -r -d '' BIN; do
+            if [ -f "$BIN" ] && file "$BIN" 2>/dev/null | grep -q "ELF.*executable"; then
+              install_binary "$BIN"
+            fi
+          done < <(find "$UNZIP_DEST" -type f -print0)
+        elif [[ "$TARGET_FILE" == *.tar.gz ]] || [[ "$TARGET_FILE" == *.tgz ]]; then
+          TAR_DEST="$DOWNLOAD_DIR/unpacked_${URL_BASENAME}"
+          mkdir -p "$TAR_DEST"
+          tar -xzf "$TARGET_FILE" -C "$TAR_DEST" || true
+          while IFS= read -r -d '' DEB; do add_deb "$DEB"; done < <(find "$TAR_DEST" -type f -iname "*.deb" -print0)
+        elif file "$TARGET_FILE" 2>/dev/null | grep -q "ELF.*executable"; then
+          install_binary "$TARGET_FILE"
+        fi
+      fi
+    else
+      # Đường dẫn file local (ví dụ ./app-for-hyggshi/nexcode... hoặc /tmp/app-for-hyggshi/...)
+      LOCAL_CANDIDATE=""
+      BASE_NAME="$(basename "$ITEM")"
+      if [ -f "$ITEM" ]; then
+        LOCAL_CANDIDATE="$ITEM"
+      elif [ -f "$APP_DIR/$BASE_NAME" ]; then
+        LOCAL_CANDIDATE="$APP_DIR/$BASE_NAME"
+      elif [ -f "$REPO_ROOT/$ITEM" ]; then
+        LOCAL_CANDIDATE="$REPO_ROOT/$ITEM"
+      fi
+
+      if [ -n "$LOCAL_CANDIDATE" ]; then
+        if [[ "$LOCAL_CANDIDATE" == *.deb ]]; then
+          add_deb "$LOCAL_CANDIDATE"
+        fi
+      fi
+    fi
+  done
+fi
+
+# ----- 4. Cài mọi file .deb tìm được -----
 if [ "${#DEB_FILES[@]}" -eq 0 ]; then
-  echo "⚠️  Không tìm thấy file .deb nào sau khi giải nén — bỏ qua bước cài gói."
+  echo "⚠️  Không tìm thấy file .deb nào — bỏ qua bước cài gói deb."
 else
-  echo "===== Cài đặt ${#DEB_FILES[@]} gói .deb tìm thấy ====="
+  echo "===== Cài đặt ${#DEB_FILES[@]} gói .deb ====="
   $SUDO apt-get update -qq || true
   for DEB in "${DEB_FILES[@]}"; do
     echo "📥 Cài đặt: $(basename "$DEB")"
-    # apt-get install tự resolve dependency cho file .deb local (apt >= 1.1);
-    # nếu không có/không hoạt động thì fallback sang dpkg -i + apt -f install
     if ! $SUDO apt-get install -y "$DEB"; then
       echo "   apt-get install thất bại, thử dpkg -i ..."
       $SUDO dpkg -i "$DEB" || true
@@ -92,25 +199,14 @@ else
   done
 fi
 
-# ----- 3. Cấu hình logo + module cho nexfetch -----
+# ----- 5. Cấu hình logo + module cho nexfetch -----
 echo "===== Cấu hình config.json (logo, plugin, module) cho nexfetch ====="
 
-# nexfetch đọc config từ /etc/nexfetch/config.json (conffile của gói .deb)
-# và có bản mặc định ở /usr/share/nexfetch/config/config.json — ghi cả hai
-# để chắc chắn logo/module áp dụng dù bản nào được nexfetch dùng.
 NEXFETCH_CONFIG_DIRS=(
   "/etc/nexfetch"
   "/usr/share/nexfetch/config"
 )
 
-# Dùng logo ASCII có SẴN bên trong gói nexfetch (logos/hyggshi_OS.txt, đã
-# render ANSI/truecolor block art) thay vì Logo.png ngoài repo — file này do
-# chính .deb cài vào, nên KHÔNG cần copy/tính path tương đối gì thêm, luôn
-# tồn tại ngay sau bước cài .deb ở trên và không phụ thuộc REPO_ROOT.
-#
-# LƯU Ý: gói nexfetch KHÔNG ship file tên "logo.txt" — tên file thật trong
-# logos/ là "hyggshi_OS.txt" (kèm theo debian.txt, arch.txt, tux.txt, ...).
-# Dò qua vài tên khả dĩ để không vỡ nếu tên file đổi giữa các bản nexfetch.
 NEXFETCH_LOGO_DIR="/usr/share/nexfetch/logos"
 NEXFETCH_LOGO_PATH=""
 for CANDIDATE in "hyggshi_OS.txt" "hyggshi-os.txt" "logo.txt" "nexfetch.txt"; do

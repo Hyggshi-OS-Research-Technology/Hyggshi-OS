@@ -312,6 +312,7 @@ jobs:
           # Stage installer branding so desktop.sh can rebrand the Calamares launcher.
           sudo cp iso-config/branding/Hyggshi-OS-Installer.png "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo chmod 0644 "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
+          sudo cp -f /tmp/hcl-resolved.json "${CHROOT_DIR}/tmp/hcl-resolved.json" 2>/dev/null || true
           sudo chmod +x "${CHROOT_DIR}/tmp/desktop.sh"
           
       # === 3) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
@@ -334,7 +335,7 @@ jobs:
             OS_TIMEZONE="$OS_TIMEZONE" \
             INCLUDE_BROWSER="$INCLUDE_BROWSER" \
             INCLUDE_OFFICE="$INCLUDE_OFFICE" \
-            EXTRA_PACKAGES="$EXTRA_PACKAGES" \
+            EXTRA_PACKAGES="${EXTRA_PACKAGES} ${HCL_PACKAGES:-}" \
             AUTOLOGIN="$AUTOLOGIN" \
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
@@ -492,6 +493,7 @@ jobs:
           sudo chroot "${CHROOT_DIR}" env \
             DEBUG_MODE="$DEBUG_MODE" \
             APP_DIR="/tmp/app-for-hyggshi" \
+            HCL_APP_INSTALLS="${HCL_APP_INSTALLS:-}" \
             /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
 
       # === 4.5) WELCOME: build trực tiếp source đã commit trong

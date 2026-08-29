@@ -358,11 +358,16 @@ class Resolver:
             arg = fn["arg"]
             result = {"call": name, "path": arg}
             if name in ("fileinstall", "filecustom", "make") and arg:
-                full = os.path.normpath(os.path.join(self.root, arg))
-                if not os.path.exists(full):
-                    self.diags.append(Diagnostic(
-                        "error", f"{name}({arg}) — file/thư mục không tồn tại: {full}"))
-                result["exists"] = os.path.exists(os.path.join(self.root, arg)) if arg else None
+                if arg.startswith("http://") or arg.startswith("https://"):
+                    result["is_url"] = True
+                    result["url"] = arg
+                else:
+                    result["is_url"] = False
+                    full = os.path.normpath(os.path.join(self.root, arg))
+                    if not os.path.exists(full):
+                        self.diags.append(Diagnostic(
+                            "error", f"{name}({arg}) — file/thư mục không tồn tại: {full}"))
+                    result["exists"] = os.path.exists(full)
             return result
         # named-arg (command)
         kwargs = fn["kwargs"]
@@ -504,6 +509,10 @@ class Resolver:
         result = {}
         result["base_profile"] = self.resolve_my_version_os_base()
         result["package_groups"] = self.resolve_package_groups()
+        if "customization" in self.sections:
+            result["customization"] = {
+                k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
+            }
         result["easter_egg"] = self.resolve_easter_egg()
         welcome_kv = self._kv_scan("linkhyggshi-welcome")
         result["welcome"] = {
@@ -544,19 +553,42 @@ def to_env_lines(resolved: dict) -> list:
 
     pkg_groups = resolved.get("package_groups", {})
     de = (kp.get("desktop") or "").lower()
-    # tìm group package khớp tên desktop đang chọn (vd 'Cinnamon' ~ group 'Cinnamon')
-    active_group = next(
-        (g for g in pkg_groups if g.lower() == de or de in g.lower()), None
-    )
-    if active_group:
-        active_pkgs = [
-            k for k, v in pkg_groups[active_group].items() if v is True
-        ]
-        put("DESKTOP_PACKAGES", " ".join(active_pkgs))
-        put("DESKTOP_PACKAGE_GROUP", active_group)
-    else:
-        put("DESKTOP_PACKAGES", "")
-        put("DESKTOP_PACKAGE_GROUP", "")
+    de_group_names = {"xfce", "cinnamon", "kde", "kde plasma", "lxqt", "gnome", "mate", "cli"}
+
+    app_installs = []
+    app_urls = []
+    all_packages = []
+    desktop_packages = []
+    desktop_group = ""
+
+    for g_name, g_pkgs in pkg_groups.items():
+        g_lower = g_name.lower().strip()
+        is_de_group = any(de_name in g_lower for de_name in de_group_names)
+        is_active_de = (de in g_lower) or (g_lower in de) if is_de_group else False
+
+        if is_active_de:
+            desktop_group = g_name
+
+        for k, v in g_pkgs.items():
+            if isinstance(v, dict) and v.get("call") == "fileinstall":
+                p = v.get("path", "")
+                if p:
+                    app_installs.append(p)
+                    if v.get("is_url"):
+                        app_urls.append(p)
+            elif v is True:
+                if is_de_group:
+                    if is_active_de:
+                        desktop_packages.append(k)
+                        all_packages.append(k)
+                else:
+                    all_packages.append(k)
+
+    put("APP_INSTALLS", " ".join(app_installs))
+    put("APP_URLS", " ".join(app_urls))
+    put("DESKTOP_PACKAGES", " ".join(desktop_packages))
+    put("DESKTOP_PACKAGE_GROUP", desktop_group)
+    put("ALL_PACKAGES", " ".join(all_packages))
 
     ee = resolved.get("easter_egg", {})
     put("EASTER_EGG_ENABLED", str(bool(ee.get("make-Easter-Egg"))).lower())
@@ -580,6 +612,8 @@ def to_env_lines(resolved: dict) -> list:
     # name (full OS name)           → DISTRO_NAME
     # version                       → HYGGSHI_VERSION_ID
     # codename                      → HYGGSHI_CODENAME
+    # app_installs                  → HCL_APP_INSTALLS
+    # all_packages                  → HCL_PACKAGES
     # -----------------------------------------------------------------------
     base_val     = str(bp.get("base") or "").lower()
     kp_val       = bp.get("kernel_profile") or {}
@@ -598,6 +632,12 @@ def to_env_lines(resolved: dict) -> list:
         lines.append(f"HYGGSHI_VERSION_ID={version_val}")
     if codename_val:
         lines.append(f"HYGGSHI_CODENAME={codename_val}")
+    if app_installs:
+        lines.append(f"HCL_APP_INSTALLS={' '.join(app_installs)}")
+    if app_urls:
+        lines.append(f"HCL_APP_URLS={' '.join(app_urls)}")
+    if all_packages:
+        lines.append(f"HCL_PACKAGES={' '.join(all_packages)}")
 
     return lines
 
