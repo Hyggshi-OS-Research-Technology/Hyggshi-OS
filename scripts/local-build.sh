@@ -72,7 +72,19 @@ sudo chroot live-build/chroot env \
   ICON_THEME="$ICON_THEME" OS_USERNAME="$OS_USERNAME" OS_PASSWORD="$OS_PASSWORD" \
   OS_HOSTNAME="$OS_HOSTNAME" OS_TIMEZONE="$OS_TIMEZONE" \
   INCLUDE_BROWSER="$INCLUDE_BROWSER" INCLUDE_OFFICE="$INCLUDE_OFFICE" \
-  EXTRA_PACKAGES="$EXTRA_PACKAGES" /tmp/desktop.sh
+  EXTRA_PACKAGES="$EXTRA_PACKAGES ${HCL_PACKAGES:-}" /tmp/desktop.sh
+
+# ===== ECOSYSTEM: cài nexfetch, nexcode, nexwm... =====
+echo "===== Cài hệ sinh thái Hyggshi (trong chroot) ====="
+sudo mkdir -p live-build/chroot/tmp/app-for-hyggshi
+sudo cp -r app-for-hyggshi/. live-build/chroot/tmp/app-for-hyggshi/
+sudo cp scripts/install-ecosystem-for-hyggshi.sh live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
+sudo chmod +x live-build/chroot/tmp/install-ecosystem-for-hyggshi.sh
+sudo chroot live-build/chroot env \
+  DEBUG_MODE="$DEBUG_MODE" \
+  APP_DIR="/tmp/app-for-hyggshi" \
+  HCL_APP_INSTALLS="${HCL_APP_INSTALLS:-}" \
+  /tmp/install-ecosystem-for-hyggshi.sh
 
 # ===== WELCOME: build + cài Hyggshi Welcome (wizard chào mừng lần đầu đăng
 # nhập) từ source đã commit tại app-for-hyggshi/hyggshi-welcome/ =====

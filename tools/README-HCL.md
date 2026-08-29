@@ -68,13 +68,12 @@ python3 tools/hcl_parser.py iso-config/config/config.ini \
   --strict
 ```
 
-Biến xuất ra `$GITHUB_ENV` đều có prefix `HCL_` (VD `HCL_BASE_DISTRO`,
-`HCL_DESKTOP_ENV`, `HCL_SWAP_MB`, `HCL_FIRMWARE_PACKAGES`,
-`HCL_DESKTOP_PACKAGES`, `HCL_WELCOME_SCRIPT`...) — **cố ý không trùng**
-`BASE_DISTRO`/`DESKTOP_ENV` mà workflow hiện tại đang set từ
-`workflow_dispatch` input, để không âm thầm đè giá trị người dùng chọn
-trên UI Actions. Khi nào quyết định để `config.ini` là nguồn sự thật duy
-nhất (thay vì input thủ công), đổi các step dùng thẳng biến `HCL_*`.
+Biến xuất ra `$GITHUB_ENV` bao gồm:
+- `HCL_BASE_DISTRO`, `HCL_DESKTOP_ENV`, `HCL_SWAP_MB`
+- `HCL_FIRMWARE_PACKAGES`, `HCL_DESKTOP_PACKAGES`
+- `HCL_APP_INSTALLS`: danh sách tất cả file và URL app khai báo qua `fileinstall(...)` (ví dụ `./app-for-hyggshi/nexfetch...` hoặc `https://.../app.deb`)
+- `HCL_PACKAGES`: danh sách tất cả các gói hệ thống được bật `= true` trong `[package]` (được tự động chuyển tiếp vào `EXTRA_PACKAGES` cho `desktop.sh`)
+- `HCL_WELCOME_SCRIPT`: script wizard chào mừng `command(file=...)`
 
 ## Step YAML để nối vào `.github/workflows/Build-Hyggshi-OS-ISO.yml`
 
