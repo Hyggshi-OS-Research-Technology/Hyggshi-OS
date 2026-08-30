@@ -44,7 +44,13 @@ from dataclasses import dataclass, field
 # REFERENCE, FUNCTION, SECTION, COMMENT.
 
 SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLEAN
-FUNCTION_NAMES = {"fileinstall", "filecustom", "command", "make", "call"}
+
+# PATCH: thêm filetheme/filecopy — dùng trong block "apply theme cinnamon
+# custom" của config.ini nhưng trước đây chưa có trong set này, khiến
+# validate_every_entry() ném HclError và làm build --strict fail.
+FUNCTION_NAMES = {
+    "fileinstall", "filecustom", "filetheme", "filecopy", "command", "make", "call",
+}
 
 SIZE_RE = re.compile(
     r"^(?P<off>false)$"
@@ -76,14 +82,8 @@ class ParsedValue:
 # ---------------------------------------------------------------------------
 # 2. LEXER / SECTION READER
 # ---------------------------------------------------------------------------
-# Đọc file thành: sections (dict tên section -> list[(key, raw_value)]),
-# đồng thời giữ lại comment-block group (dùng để nhóm package theo DE ở
-# [package]), và giữ nguyên section order.
 
 def _strip_inline_comment(val: str) -> str:
-    """Cắt `; ...` cuối dòng, nhưng KHÔNG cắt nếu ';' nằm trong chuỗi "..."
-    (bug thật gặp khi test: `kernel = "Desktop" ; call kernel...` từng bị
-    dính nguyên cụm comment vào value)."""
     in_quotes = False
     for idx, ch in enumerate(val):
         if ch == '"':
@@ -116,7 +116,6 @@ def read_sections(path: str) -> list:
         raw_line = lines[i].rstrip("\n")
         stripped = raw_line.strip()
 
-        # ---- block header: 3 dòng liên tiếp ";=====" / "; Label" / ";=====" ----
         if (
             _is_delim(stripped)
             and i + 2 < n
@@ -130,7 +129,6 @@ def read_sections(path: str) -> list:
             i += 3
             continue
 
-        # ---- comment thường (không phải block header) ----
         if stripped.startswith(";"):
             i += 1
             continue
@@ -139,7 +137,6 @@ def read_sections(path: str) -> list:
             i += 1
             continue
 
-        # ---- section header ----
         m = re.fullmatch(r"\[(.+)\]", stripped)
         if m:
             current = RawSection(name=m.group(1))
@@ -148,13 +145,11 @@ def read_sections(path: str) -> list:
             i += 1
             continue
 
-        # ---- key = value (có thể multi-line nếu mở ngoặc "(" chưa đóng) ----
         if "=" in stripped:
             key, _, val = stripped.partition("=")
             key = key.strip()
             val = _strip_inline_comment(val.strip())
 
-            # multi-line function call: đếm ( ) cho tới khi cân bằng
             if val.count("(") > val.count(")"):
                 buf = [val]
                 depth = val.count("(") - val.count(")")
@@ -187,11 +182,7 @@ def read_sections(path: str) -> list:
 def classify(key: str, raw: str) -> ParsedValue:
     raw = raw.strip()
 
-    # SIZE (chỉ cho các key khai là size-type, vd swap)
     if key in SIZE_KEYS:
-        m = SIZE_RE.match(raw.replace(" ", "").replace("custom>", "custom > ").strip()) \
-            if False else SIZE_RE.match(raw.strip())
-        # normalize khoảng trắng quanh 'custom >' trước khi match
         norm = re.sub(r"custom\s*>\s*", "custom > ", raw.strip())
         m = SIZE_RE.match(norm)
         if not m:
@@ -208,19 +199,15 @@ def classify(key: str, raw: str) -> ParsedValue:
         mb = n * 1024 if unit == "GB" else n
         return ParsedValue("SIZE", raw, {"mode": "custom", "mb": mb})
 
-    # STRING có ngoặc kép
     if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
         return ParsedValue("STRING", raw, raw[1:-1])
 
-    # BOOLEAN
     if raw.lower() in ("true", "false"):
         return ParsedValue("BOOLEAN", raw, raw.lower() == "true")
 
-    # REFERENCE dạng ${...}
     if raw.startswith("${") and raw.endswith("}"):
         return ParsedValue("REFERENCE", raw, raw[2:-1])
 
-    # FUNCTION: name(...)
     fm = FUNC_CALL_RE.match(raw)
     if fm:
         fname, fargs = fm.group(1), fm.group(2).strip()
@@ -229,7 +216,6 @@ def classify(key: str, raw: str) -> ParsedValue:
                 f"Function '{fname}(...)' không nằm trong FUNCTION set hợp lệ "
                 f"của HCL 1.0: {sorted(FUNCTION_NAMES)}"
             )
-        # named args nhiều dòng: "file = \"x\"\naction = run"
         if "\n" in fargs or "=" in fargs and fname == "command":
             kwargs = {}
             for line in fargs.splitlines():
@@ -245,16 +231,12 @@ def classify(key: str, raw: str) -> ParsedValue:
             arg = fargs.strip()
             return ParsedValue("FUNCTION", raw, {"name": fname, "arg": arg})
 
-    # VERSION
     if VERSION_RE.match(raw):
         return ParsedValue("VERSION", raw, raw)
 
-    # NUMBER
     if re.fullmatch(r"-?\d+(\.\d+)?", raw):
         return ParsedValue("NUMBER", raw, float(raw) if "." in raw else int(raw))
 
-    # bare identifier không quote -> REFERENCE (trỏ tới 1 key/section khác)
-    # hoặc ENUM nếu không match bất kỳ section/key nào lúc resolve.
     if re.fullmatch(r"[A-Za-z_][\w\-]*", raw):
         return ParsedValue("REFERENCE_OR_ENUM", raw, raw)
 
@@ -262,7 +244,7 @@ def classify(key: str, raw: str) -> ParsedValue:
 
 
 # ---------------------------------------------------------------------------
-# 4. RESOLVER — dependency/reference resolution engine
+# 4. RESOLVER
 # ---------------------------------------------------------------------------
 
 class Resolver:
@@ -272,7 +254,6 @@ class Resolver:
         self.root = root
         self.diags: list[Diagnostic] = []
 
-    # ---- helpers ----
     def _entries(self, section_name: str):
         sec = self.sections.get(section_name)
         if sec is None:
@@ -283,8 +264,6 @@ class Resolver:
         return {k: v for k, v, _ in self._entries(section_name)}
 
     def resolve_enum_section(self, section_name: str) -> str | None:
-        """Trả về key duy nhất có value True trong 1 section boolean/enum
-        (vd [Base]: Debian=true -> 'Debian'). Cảnh báo nếu 0 hoặc >1 true."""
         kv = self._kv(section_name)
         true_keys = []
         for k, raw in kv.items():
@@ -303,13 +282,6 @@ class Resolver:
         return true_keys[0]
 
     def resolve_reference_value(self, ref_name: str):
-        """Resolve ${ref_name} hoặc bare-identifier reference:
-        - nếu tồn tại section [ref_name] gồm toàn BOOLEAN -> trả key true (ENUM)
-        - nếu tồn tại section [ref_name] không phải toàn boolean -> trả cả
-          section dạng dict đã resolve từng value (STRUCT)
-        - nếu ref_name là "key" nằm trong 1 section rồi (vd Call-debian-firmware
-          trong [firmware]) -> trả giá trị classify() của nó
-        """
         if ref_name in self.sections:
             kv = self._kv(ref_name)
             all_bool = all(
@@ -319,7 +291,6 @@ class Resolver:
                 return self.resolve_enum_section(ref_name)
             return {k: self.resolve_value(k, v) for k, v in kv.items()}
 
-        # tìm ref_name như 1 key nằm ở section nào đó (duyệt toàn bộ)
         for sec_name in self.order:
             kv = self._kv(sec_name)
             if ref_name in kv:
@@ -335,17 +306,9 @@ class Resolver:
         if pv.type == "REFERENCE":
             return self.resolve_reference_value(pv.value)
         if pv.type == "REFERENCE_OR_ENUM":
-            # Chỉ auto-deref khi identifier trùng TÊN 1 SECTION (vd 'Base'
-            # trong `base = ${Base}` hoặc bare `firmware = Call-debian-firmware`
-            # nếu sau này có section [Call-debian-firmware]).
-            # KHÔNG deref khi identifier chỉ trùng 1 key nằm rải rác ở section
-            # khác — đó là bug thật đã bắt được khi test: `desktop = Cinnamon`
-            # trong [kernel.Desktop] từng bị deref nhầm thành giá trị boolean
-            # của key 'Cinnamon' bên [Desktop-Environment], thay vì giữ đúng
-            # nghĩa ENUM literal "Cinnamon".
             if pv.value in self.sections:
                 return self.resolve_reference_value(pv.value)
-            return pv.value  # ENUM literal, vd 'run', 'full', 'default', 'Cinnamon'
+            return pv.value
         if pv.type == "FUNCTION":
             return self.resolve_function(pv.value)
         if pv.type == "SIZE":
@@ -357,7 +320,9 @@ class Resolver:
         if "arg" in fn:
             arg = fn["arg"]
             result = {"call": name, "path": arg}
-            if name in ("fileinstall", "filecustom", "make") and arg:
+            # PATCH: thêm filetheme/filecopy vào nhóm hàm có path cần
+            # existence-check, giống fileinstall/filecustom/make.
+            if name in ("fileinstall", "filecustom", "filetheme", "filecopy", "make") and arg:
                 if arg.startswith("http://") or arg.startswith("https://"):
                     result["is_url"] = True
                     result["url"] = arg
@@ -369,7 +334,6 @@ class Resolver:
                             "error", f"{name}({arg}) — file/thư mục không tồn tại: {full}"))
                     result["exists"] = os.path.exists(full)
             return result
-        # named-arg (command)
         kwargs = fn["kwargs"]
         result = {"call": name, **kwargs}
         if name == "command" and "file" in kwargs:
@@ -379,21 +343,15 @@ class Resolver:
                     "error", f"command(file={kwargs['file']}) — script không tồn tại: {full}"))
         return result
 
-    # ---- top-level well-known key dispatch ----
-    # Các key này có ngữ nghĩa đặc biệt do TÊN key quyết định (key-driven
-    # dispatch), không chỉ generic reference resolution.
-
     def resolve_my_version_os_base(self) -> dict:
         kv = self._kv("my-version-os-base")
         out = {}
         out["version"] = self.resolve_value("Version", kv["Version"])
         out["codename"] = self.resolve_value("codename", kv["codename"])
 
-        # base = ${Base} -> tên distro đang chọn (enum)
         base_choice = self.resolve_enum_section("Base")
         out["base"] = base_choice
 
-        # kernel = "Desktop" -> đọc section [kernel.Desktop]
         kernel_raw = classify("kernel", kv["kernel"]).value
         kernel_section = f"kernel.{kernel_raw}"
         if kernel_section not in self.sections:
@@ -406,12 +364,9 @@ class Resolver:
             profile = {k: self.resolve_value(k, v) for k, v in self._kv(kernel_section).items()}
             out["kernel_profile_name"] = kernel_raw
             out["kernel_profile"] = profile
-            # desktop bên trong kernel.<X> phải khớp 1 key true trong
-            # [Desktop-Environment], nếu không thì cảnh báo lệch cấu hình.
             de = profile.get("desktop")
             if de:
                 de_kv = self._kv("Desktop-Environment")
-                # so khớp không phân biệt hoa thường (Cinnamon vs cinnamon)
                 match = next((k for k in de_kv if k.lower() == str(de).lower()), None)
                 if match is None:
                     self.diags.append(Diagnostic(
@@ -424,8 +379,6 @@ class Resolver:
                         f"[kernel.{kernel_raw}] chọn desktop = {de}, nhưng "
                         f"[Desktop-Environment] {match} = false. Hai nơi đang lệch nhau."))
 
-        # firmware = Call-debian-firmware -> trỏ vào [firmware] rồi map
-        # sang đúng section firmware-<base>
         firmware_raw = classify("firmware", kv["firmware"]).value
         firmware_flag = self.resolve_reference_value(firmware_raw) \
             if firmware_raw not in self._kv("firmware") else \
@@ -434,7 +387,6 @@ class Resolver:
         out["firmware_enabled"] = firmware_flag
         fw_section_guess = f"firmware-{base_choice}" if base_choice else None
         if fw_section_guess and fw_section_guess not in self.sections:
-            # thử biến thể viết hoa/thường (firmware-Debian vs firmware-debian)
             fw_section_guess = next(
                 (s for s in self.order if s.lower() == f"firmware-{base_choice}".lower()),
                 None,
@@ -455,13 +407,9 @@ class Resolver:
                 f"ứng ([firmware-{base_choice}])."))
             out["firmware_packages"] = {}
 
-        # swap
         out["swap"] = self.resolve_value("swap", kv["swap"])
-
-        # config = ${config-setup-postpartum-care}
         out["config"] = self.resolve_value("config", kv["config"])
 
-        # name template — thay ${Version}/${codename}/${Base}
         name_tpl = classify("name", kv["name"]).value
         name = name_tpl
         name = name.replace("${Version}", str(out["version"]))
@@ -491,12 +439,6 @@ class Resolver:
         return found
 
     def validate_every_entry(self):
-        """Duyệt classify() trên MỌI key=value trong MỌI section, kể cả
-        những key không nằm trên đường resolve_all() có đi qua. Nếu chỉ
-        validate theo nhánh được dùng (như resolve_all() làm), 1 dòng
-        hỏng nằm ngoài nhánh đó (vd function-name sai chính tả trong 1
-        section chưa ai trỏ tới) sẽ lọt qua CI rồi vỡ giữa chừng lúc build
-        thật — đây là đúng loại lỗi 'chạy GitHub Actions mới lòi ra'."""
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
                 try:
@@ -531,8 +473,6 @@ def to_env_lines(resolved: dict) -> list:
 
     def put(k, v):
         v = "" if v is None else v
-        # Prefix HCL_ giữ lại để debug/backward-compat — các biến này KHÔNG
-        # ghi đè workflow_dispatch inputs vì tên khác nhau.
         lines.append(f"HCL_{k}={v}")
 
     put("HYGGSHI_NAME", bp.get("name"))
@@ -599,22 +539,6 @@ def to_env_lines(resolved: dict) -> list:
     put("WELCOME_SCRIPT", welcome.get("file", ""))
     put("WELCOME_ACTION", welcome.get("action", ""))
 
-    # -----------------------------------------------------------------------
-    # config.ini là NGUỒN SỰ THẬT duy nhất.
-    # Export thêm các biến trùng tên với workflow env / workflow_dispatch inputs
-    # để ghi đè chúng trong $GITHUB_ENV ($GITHUB_ENV dùng LAST-WRITE-WINS:
-    # dòng cuối cùng có cùng KEY sẽ thắng, nên khối này append SAU HCL_*).
-    #
-    # Mapping config.ini            → biến workflow
-    # ─────────────────────────────────────────────
-    # Base (Debian/Ubuntu/...)      → BASE_DISTRO     (lower-cased)
-    # kernel_profile.desktop        → DE              (lower-cased)
-    # name (full OS name)           → DISTRO_NAME
-    # version                       → HYGGSHI_VERSION_ID
-    # codename                      → HYGGSHI_CODENAME
-    # app_installs                  → HCL_APP_INSTALLS
-    # all_packages                  → HCL_PACKAGES
-    # -----------------------------------------------------------------------
     base_val     = str(bp.get("base") or "").lower()
     kp_val       = bp.get("kernel_profile") or {}
     de_val       = str(kp_val.get("desktop") or "").lower()
@@ -649,9 +573,9 @@ def to_env_lines(resolved: dict) -> list:
 def main():
     ap = argparse.ArgumentParser(description="HCL 1.0 parser/resolver cho Hyggshi OS config.ini")
     ap.add_argument("config", help="đường dẫn tới config.ini")
-    ap.add_argument("--root", default=".", help="root repo để resolve đường dẫn file (fileinstall/filecustom/command/make)")
+    ap.add_argument("--root", default=".", help="root repo để resolve đường dẫn file")
     ap.add_argument("--emit-json", help="ghi kết quả resolve ra file JSON")
-    ap.add_argument("--emit-env", help="ghi biến môi trường (KEY=VALUE) ra file, dùng cho $GITHUB_ENV")
+    ap.add_argument("--emit-env", help="ghi biến môi trường (KEY=VALUE) ra file")
     ap.add_argument("--strict", action="store_true", help="exit(1) nếu có bất kỳ error nào sau validate")
     args = ap.parse_args()
 
@@ -662,7 +586,7 @@ def main():
         sys.exit(1)
 
     resolver = Resolver(sections, root=args.root)
-    resolver.validate_every_entry()  # quét toàn file trước, không chỉ nhánh dùng tới
+    resolver.validate_every_entry()
 
     try:
         resolved = resolver.resolve_all()
