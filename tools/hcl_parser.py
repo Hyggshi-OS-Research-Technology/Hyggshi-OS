@@ -320,9 +320,13 @@ class Resolver:
         if "arg" in fn:
             arg = fn["arg"]
             result = {"call": name, "path": arg}
-            # PATCH: thêm filetheme/filecopy vào nhóm hàm có path cần
-            # existence-check, giống fileinstall/filecustom/make.
-            if name in ("fileinstall", "filecustom", "filetheme", "filecopy", "make") and arg:
+            # PATCH: filetheme trỏ path NGUỒN trong repo -> check tồn tại.
+            # filecopy trỏ path ĐÍCH trên rootfs ISO lúc build/cài đặt (vd
+            # /usr/share/themes/...) -> KHÔNG tồn tại trong repo lúc build,
+            # đó là bản chất của nó (đích sinh ra sau, không phải trước).
+            # Bug thật: gộp chung nhóm khiến build --strict fail oan ở CI
+            # (xem log: "filecopy(...) — file/thư mục không tồn tại").
+            if name in ("fileinstall", "filecustom", "filetheme", "make") and arg:
                 if arg.startswith("http://") or arg.startswith("https://"):
                     result["is_url"] = True
                     result["url"] = arg
