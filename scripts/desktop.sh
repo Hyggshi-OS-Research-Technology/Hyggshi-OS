@@ -633,6 +633,57 @@ case "$DE" in
     command -v gtk-update-icon-cache > /dev/null 2>&1 \
       && gtk-update-icon-cache -f /usr/share/icons/Tela 2>/dev/null || true
 
+    # ===== Hyggshi-Light / Hyggshi-Dark (theme riêng của Hyggshi OS) =====
+    # Nguồn: /tmp/theme/Hyggshi-Light|Hyggshi-Dark, được yml stage từ
+    # iso-config/theme/ (xem "Copy scripts vào chroot"). Đây chính là 2
+    # theme mà config.ini khai qua filetheme()/copy-to-add-theme (filecopy())
+    # — trước đây KHÔNG CÓ đoạn nào trong desktop.sh đọc/copy chúng, nên
+    # chúng không hề xuất hiện trong Cinnamon Settings dù build pass.
+    HYGGSHI_DEFAULT_GTK_THEME="Orchis"  # fallback nếu cả 2 theme Hyggshi đều tắt/lỗi
+    if [ -d /tmp/theme ]; then
+      mkdir -p /usr/share/themes
+      for t in Hyggshi-Light Hyggshi-Dark; do
+        if [ -d "/tmp/theme/$t" ]; then
+          rm -rf "/usr/share/themes/$t"
+          cp -r "/tmp/theme/$t" "/usr/share/themes/$t"
+          echo "OK: đã cài theme $t vào /usr/share/themes/"
+        else
+          echo "⚠️  /tmp/theme/$t không tồn tại — bỏ qua (kiểm tra iso-config/theme/$t trong repo)."
+        fi
+      done
+
+      # theme-light-enabled/theme-dark-enabled trong config.ini quyết định
+      # theme nào làm MẶC ĐỊNH hệ thống (đọc trực tiếp qua python3, tránh
+      # thêm phụ thuộc jq). Nếu cả 2 đều false/thiếu -> giữ Orchis như cũ,
+      # không phá hành vi hiện có.
+      if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
+        HYGGSHI_ACTIVE_THEME=$(python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+except Exception:
+    print('')
+    raise SystemExit
+groups = d.get('package_groups', {})
+flat = {}
+for kv in groups.values():
+    flat.update(kv)
+if flat.get('theme-light-enabled') is True:
+    print('Hyggshi-Light')
+elif flat.get('theme-dark-enabled') is True:
+    print('Hyggshi-Dark')
+else:
+    print('')
+" 2>/dev/null || true)
+        if [ -n "$HYGGSHI_ACTIVE_THEME" ] && [ -d "/usr/share/themes/$HYGGSHI_ACTIVE_THEME" ]; then
+          HYGGSHI_DEFAULT_GTK_THEME="$HYGGSHI_ACTIVE_THEME"
+          echo "OK: theme mặc định theo config.ini = $HYGGSHI_DEFAULT_GTK_THEME"
+        fi
+      fi
+    else
+      echo "⚠️  /tmp/theme không tồn tại — bỏ qua cài Hyggshi-Light/Hyggshi-Dark, giữ Orchis mặc định."
+    fi
+
     # Đặt làm mặc định qua dconf system-db — áp dụng cho MỌI user tạo sau này
     # (kể cả user do Calamares tạo lúc cài thật), không chỉ user live-session.
     mkdir -p /etc/dconf/profile /etc/dconf/db/local.d
@@ -642,15 +693,15 @@ system-db:local
 EOF
     cat <<EOF > /etc/dconf/db/local.d/01-hyggshi-theme
 [org/cinnamon/desktop/interface]
-gtk-theme='Orchis'
+gtk-theme='$HYGGSHI_DEFAULT_GTK_THEME'
 icon-theme='Tela'
 cursor-theme='Bibata-Modern-Classic'
 
 [org/cinnamon/desktop/wm/preferences]
-theme='Orchis'
+theme='$HYGGSHI_DEFAULT_GTK_THEME'
 
 [org/cinnamon/theme]
-name='Orchis'
+name='$HYGGSHI_DEFAULT_GTK_THEME'
 
 # Hyggshi OS wallpaper mặc định cho Cinnamon. Đây là system default,
 # áp dụng cho user mới kể cả khi user chưa chạy Hyggshi Welcome.

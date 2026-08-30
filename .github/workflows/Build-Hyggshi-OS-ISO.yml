@@ -313,6 +313,17 @@ jobs:
           sudo cp iso-config/branding/Hyggshi-OS-Installer.png "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo chmod 0644 "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo cp -f /tmp/hcl-resolved.json "${CHROOT_DIR}/tmp/hcl-resolved.json" 2>/dev/null || true
+          # Stage Hyggshi-Light/Hyggshi-Dark theme sources (iso-config/theme)
+          # vào chroot. TRƯỚC ĐÂY BỊ THIẾU: config.ini có filetheme(...)/
+          # filecopy(...) khai báo 2 theme này, hcl_parser.py resolve và
+          # validate "exists" (đúng, vì check trên HOST), nhưng chưa bao giờ
+          # có dòng cp nào đưa iso-config/theme/ vào chroot — nên desktop.sh
+          # (chạy TRONG chroot) không có gì để copy vào /usr/share/themes,
+          # dù build --strict pass sạch (đó là bug: parser chỉ validate
+          # NGUỒN tồn tại trên host, không đảm bảo nó THỰC SỰ được đưa vào
+          # ISO). Theme không hiện trong Cinnamon Settings vì lý do này.
+          sudo rm -rf "${CHROOT_DIR}/tmp/theme"
+          sudo cp -r iso-config/theme "${CHROOT_DIR}/tmp/theme"
           sudo chmod +x "${CHROOT_DIR}/tmp/desktop.sh"
           
       # === 3) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
