@@ -48,8 +48,15 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # PATCH: thêm filetheme/filecopy — dùng trong block "apply theme cinnamon
 # custom" của config.ini nhưng trước đây chưa có trong set này, khiến
 # validate_every_entry() ném HclError và làm build --strict fail.
+#
+# PATCH 2: thêm fileaddtext — dùng trong [package-debian-test.full/normal/
+# default/unstable] (add-repository1/2/3 = fileaddtext(target=... content=...))
+# để ghi dòng "deb ..." vào /etc/apt/sources.list. Cùng bug y hệt filetheme/
+# filecopy trước đó: function mới xuất hiện trong config.ini nhưng chưa được
+# đăng ký -> validate_every_entry() báo lỗi cho toàn bộ 4 profile repo.
 FUNCTION_NAMES = {
-    "fileinstall", "filecustom", "filetheme", "filecopy", "command", "make", "call",
+    "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
+    "command", "make", "call",
 }
 
 SIZE_RE = re.compile(
@@ -422,6 +429,57 @@ class Resolver:
         out["name"] = name
         return out
 
+    def resolve_apt_repository(self) -> dict | None:
+        """
+        PATCH: dispatch package-debian-test = <profile> (full/normal/default/
+        unstable) -> [package-debian-test.<profile>], giống cách kernel =
+        "Desktop" -> [kernel.Desktop] đã có sẵn ở resolve_my_version_os_base().
+
+        Bug trước đó: resolve_package_groups() chỉ quét entries nằm trực
+        tiếp trong section [package], nên key "package-debian-test = full"
+        chỉ được đọc ra CHUỖI "full" chứ không hề mở section
+        [package-debian-test.full] tương ứng — add-repository1/2/3
+        (fileaddtext) bị bỏ qua hoàn toàn dù build.sh cần nội dung đó để
+        ghi /etc/apt/sources.list.
+        """
+        kv = self._kv("package")
+        if "package-debian-test" not in kv:
+            return None
+
+        profile = self.resolve_value("package-debian-test", kv["package-debian-test"])
+        section_name = f"package-debian-test.{profile}"
+        if section_name not in self.sections:
+            self.diags.append(Diagnostic(
+                "error",
+                f"package-debian-test = {profile!r} nhưng không tìm thấy "
+                f"section [{section_name}]."))
+            return {"profile": profile, "target_file": None, "repositories": []}
+
+        entries = {
+            k: self.resolve_value(k, v) for k, v, _ in self._entries(section_name)
+        }
+        target_file = entries.pop("apt-target-file", None)
+
+        repos = []
+        for key in sorted(k for k in entries if k.startswith("add-repository")):
+            val = entries[key]
+            if isinstance(val, dict) and val.get("call") == "fileaddtext":
+                repos.append({
+                    "key": key,
+                    "target": val.get("target", target_file),
+                    "content": val.get("content"),
+                })
+            else:
+                self.diags.append(Diagnostic(
+                    "warning",
+                    f"[{section_name}] {key} không phải fileaddtext(...) — bỏ qua."))
+
+        return {
+            "profile": profile,
+            "target_file": target_file,
+            "repositories": repos,
+        }
+
     def resolve_package_groups(self) -> dict:
         groups: dict[str, dict] = {}
         for key, raw, group in self._entries("package"):
@@ -455,6 +513,7 @@ class Resolver:
         result = {}
         result["base_profile"] = self.resolve_my_version_os_base()
         result["package_groups"] = self.resolve_package_groups()
+        result["apt_repository"] = self.resolve_apt_repository()
         if "customization" in self.sections:
             result["customization"] = {
                 k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
@@ -533,6 +592,15 @@ def to_env_lines(resolved: dict) -> list:
     put("DESKTOP_PACKAGES", " ".join(desktop_packages))
     put("DESKTOP_PACKAGE_GROUP", desktop_group)
     put("ALL_PACKAGES", " ".join(all_packages))
+
+    apt = resolved.get("apt_repository")
+    if apt:
+        put("APT_PROFILE", apt.get("profile"))
+        put("APT_TARGET_FILE", apt.get("target_file"))
+        repos = apt.get("repositories") or []
+        put("APT_REPO_COUNT", len(repos))
+        for idx, r in enumerate(repos, start=1):
+            put(f"APT_REPO_{idx}", r.get("content"))
 
     ee = resolved.get("easter_egg", {})
     put("EASTER_EGG_ENABLED", str(bool(ee.get("make-Easter-Egg"))).lower())
