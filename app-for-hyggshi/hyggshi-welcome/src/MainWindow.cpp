@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -185,6 +187,7 @@ void MainWindow::loadPreferences() {
   m_selectedLanguage = settings.value("language", "vi").toString();
   m_selectedKeyboard = settings.value("keyboard", "vn-telex").toString();
   m_selectedTheme = settings.value("theme", "auto").toString();
+  m_selectedCustomTheme = settings.value("theme_custom_name", "").toString();
   m_reducedMotion = settings.value("accessibility/reduced_motion", false).toBool();
   m_highContrast = settings.value("accessibility/high_contrast", false).toBool();
   m_largeText = settings.value("accessibility/large_text", false).toBool();
@@ -221,7 +224,13 @@ void MainWindow::loadPreferences() {
 
   if (m_selectedLanguage.isEmpty()) m_selectedLanguage = "vi";
   if (m_selectedKeyboard.isEmpty()) m_selectedKeyboard = "vn-telex";
-  if (m_selectedTheme != "light" && m_selectedTheme != "dark" && m_selectedTheme != "auto") {
+  if (m_selectedTheme != "light" && m_selectedTheme != "dark" &&
+      m_selectedTheme != "auto" && m_selectedTheme != "custom") {
+    m_selectedTheme = "auto";
+  }
+  if (m_selectedTheme == "custom" && m_selectedCustomTheme.isEmpty()) {
+    // Không có theme tuỳ chỉnh nào được lưu (hoặc theme đã lưu không còn
+    // tồn tại trên máy) -> quay lại "auto" để tránh áp theme rỗng.
     m_selectedTheme = "auto";
   }
 }
@@ -232,6 +241,7 @@ void MainWindow::savePreferences() const {
   settings.setValue("language", m_selectedLanguage);
   settings.setValue("keyboard", m_selectedKeyboard);
   settings.setValue("theme", m_selectedTheme);
+  settings.setValue("theme_custom_name", m_selectedCustomTheme);
   settings.setValue("accessibility/reduced_motion", m_reducedMotion);
   settings.setValue("accessibility/high_contrast", m_highContrast);
   settings.setValue("accessibility/large_text", m_largeText);
@@ -382,6 +392,7 @@ QWidget *MainWindow::buildThemePage() {
       {"light", tr("Sáng"), "/usr/share/backgrounds/hyggshi/car-light.png"},
       {"dark", tr("Tối"), "/usr/share/backgrounds/hyggshi/car-Dark.png"},
       {"auto", tr("Tự động"), "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"custom", tr("Tuỳ chỉnh"), "/usr/share/backgrounds/hyggshi/car-light.png"},
   };
 
   for (int i = 0; i < opts.size(); ++i) {
@@ -392,7 +403,10 @@ QWidget *MainWindow::buildThemePage() {
     card->setCursor(Qt::PointingHandCursor);
     card->setText("\n\n" + opt.label);
 
-    const QString imageName = QString("theme-%1.png").arg(opt.id);
+    // "custom" dùng chung ảnh nền theme-auto.png vì đây là theme do người
+    // dùng tự chọn, không có ảnh minh hoạ cố định.
+    const QString imageName =
+        QString("theme-%1.png").arg(opt.id == "custom" ? "auto" : opt.id);
     card->setStyleSheet(QString(
         "QPushButton { border-radius:10px; border:2px solid #2c2f38;"
         " color:#ffffff; font-weight:600;"
@@ -407,6 +421,7 @@ QWidget *MainWindow::buildThemePage() {
     m_themeGroup->addButton(card, i);
     connect(card, &QPushButton::clicked, this, [this, opt]() {
       m_selectedTheme = opt.id;
+      updateCustomThemeVisibility();
       savePreferences();
     });
     cardsRow->addWidget(card);
@@ -416,6 +431,34 @@ QWidget *MainWindow::buildThemePage() {
     if (QAbstractButton *button = m_themeGroup->button(2)) button->setChecked(true);
     m_selectedTheme = "auto";
   }
+
+  m_customThemeLabel = new QLabel(tr("Theme GTK tuỳ chỉnh"));
+  m_customThemeLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:10px;");
+  m_customThemeBox = new QComboBox;
+  const QStringList installedThemes = listInstalledThemes();
+  if (installedThemes.isEmpty()) {
+    m_customThemeBox->addItem(tr("Không tìm thấy theme nào trong ~/.themes"), QString());
+    m_customThemeBox->setEnabled(false);
+  } else {
+    for (const QString &themeName : installedThemes) {
+      m_customThemeBox->addItem(themeName, themeName);
+    }
+    const int customIndex = m_customThemeBox->findData(m_selectedCustomTheme);
+    if (customIndex >= 0) {
+      m_customThemeBox->setCurrentIndex(customIndex);
+    } else if (!installedThemes.isEmpty()) {
+      m_selectedCustomTheme = installedThemes.first();
+    }
+  }
+  connect(m_customThemeBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int index) {
+            if (index < 0) return;
+            const QString value = m_customThemeBox->itemData(index).toString();
+            if (value.isEmpty()) return;
+            m_selectedCustomTheme = value;
+            savePreferences();
+          });
+  updateCustomThemeVisibility();
 
   auto *wallpaperLabel = new QLabel(tr("Hình nền"));
   wallpaperLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:10px;");
@@ -439,6 +482,8 @@ QWidget *MainWindow::buildThemePage() {
   layout->addWidget(title);
   layout->addSpacing(8);
   layout->addLayout(cardsRow);
+  layout->addWidget(m_customThemeLabel);
+  layout->addWidget(m_customThemeBox);
   layout->addWidget(wallpaperLabel);
   layout->addWidget(wallpaperBox);
   layout->addWidget(note);
@@ -1200,6 +1245,47 @@ QString MainWindow::resolveAutoWallpaper() const {
   return "/usr/share/backgrounds/hyggshi/wallpaper.png";
 }
 
+// Quét các thư mục GTK theme chuẩn (hệ thống + của người dùng) và trả về
+// tên các theme hợp lệ (có index.theme hoặc thư mục gtk-3.0/gtk-4.0), để
+// người dùng chọn làm theme "Tuỳ chỉnh" trong Welcome.
+QStringList MainWindow::listInstalledThemes() const {
+  QStringList dirs = {
+      "/usr/share/themes",
+      "/usr/local/share/themes",
+      QDir::homePath() + "/.themes",
+      QDir::homePath() + "/.local/share/themes",
+  };
+
+  QSet<QString> found;
+  for (const QString &dirPath : dirs) {
+    QDir dir(dirPath);
+    if (!dir.exists()) continue;
+    const QFileInfoList entries =
+        dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QFileInfo &entry : entries) {
+      const QString themeDir = entry.absoluteFilePath();
+      const bool looksLikeGtkTheme =
+          QFile::exists(themeDir + "/index.theme") ||
+          QDir(themeDir + "/gtk-3.0").exists() ||
+          QDir(themeDir + "/gtk-4.0").exists();
+      if (looksLikeGtkTheme) found.insert(entry.fileName());
+    }
+  }
+
+  QStringList result = found.values();
+  std::sort(result.begin(), result.end(), [](const QString &a, const QString &b) {
+    return a.compare(b, Qt::CaseInsensitive) < 0;
+  });
+  return result;
+}
+
+void MainWindow::updateCustomThemeVisibility() {
+  if (!m_customThemeBox || !m_customThemeLabel) return;
+  const bool isCustom = m_selectedTheme == "custom";
+  m_customThemeBox->setVisible(isCustom);
+  m_customThemeLabel->setVisible(isCustom);
+}
+
 void MainWindow::saveFirstRunState(bool completed) {
   QDir().mkpath(configDirectory());
   const QString marker = configDirectory() + "/welcome-shown";
@@ -1404,7 +1490,11 @@ void MainWindow::finishSetup() {
   if (!m_stack || m_stack->isAnimating()) return;
 
   const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
-  const QString themeName = m_selectedTheme == "dark" ? "Adwaita-dark" : "Adwaita";
+  const bool useCustomTheme =
+      m_selectedTheme == "custom" && !m_selectedCustomTheme.isEmpty();
+  const QString themeName = useCustomTheme ? m_selectedCustomTheme
+                            : m_selectedTheme == "dark" ? "Adwaita-dark"
+                                                         : "Adwaita";
 
   if (m_selectedTheme != "auto" && desktop.contains("xfce")) {
     if (hasExecutable("xfconf-query")) QProcess::execute("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
@@ -1413,9 +1503,15 @@ void MainWindow::finishSetup() {
     // Setting only gtk-theme made the Dark/Light buttons look selectable but
     // did not reliably change the actual application color scheme. Set both
     // the Cinnamon GTK theme and the shared color-scheme key.
+    // Với theme "custom" không rõ đây là theme sáng hay tối, nên đoán dựa
+    // vào tên theme (chứa "dark") thay vì luôn ép "default".
     const QString colorScheme = m_selectedTheme == "dark" ? "prefer-dark"
                                 : m_selectedTheme == "light" ? "prefer-light"
-                                : "default";
+                                : useCustomTheme
+                                    ? (themeName.contains("dark", Qt::CaseInsensitive)
+                                           ? "prefer-dark"
+                                           : "prefer-light")
+                                    : "default";
     if (desktop.contains("cinnamon")) {
       setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
       // BUG (root cause of "icon theme reverts to default after Welcome
@@ -1449,6 +1545,9 @@ void MainWindow::finishSetup() {
   if (userThemeConf.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
     userThemeConf.write("# Generated by hyggshi-welcome\n");
     userThemeConf.write("MODE=" + m_selectedTheme.toUtf8() + "\n");
+    if (useCustomTheme) {
+      userThemeConf.write("CUSTOM_NAME=" + m_selectedCustomTheme.toUtf8() + "\n");
+    }
     userThemeConf.close();
   }
 

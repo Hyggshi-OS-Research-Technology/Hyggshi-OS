@@ -38,6 +38,8 @@ class MainWindow : public QMainWindow {
   QPushButton *m_nextBtn = nullptr;
 
   QButtonGroup *m_themeGroup = nullptr;
+  QComboBox *m_customThemeBox = nullptr;
+  QLabel *m_customThemeLabel = nullptr;
   QComboBox *m_languageBox = nullptr;
   QComboBox *m_keyboardBox = nullptr;
   QCheckBox *m_dontAskAgainChk = nullptr;
@@ -62,6 +64,9 @@ class MainWindow : public QMainWindow {
   QString m_selectedLanguage = "vi";
   QString m_selectedKeyboard = "vn-telex";
   QString m_selectedTheme = "auto";
+  // Tên GTK theme tuỳ chỉnh khi m_selectedTheme == "custom" (ví dụ theme
+  // do người dùng tự cài vào ~/.themes hoặc /usr/share/themes).
+  QString m_selectedCustomTheme;
   QString m_selectedWallpaper;
   bool m_reducedMotion = false;
   bool m_highContrast = false;
@@ -111,6 +116,8 @@ class MainWindow : public QMainWindow {
   void finishSetup();
   void applyWallpaper(const QString &wallpaperPath);
   QString resolveAutoWallpaper() const;
+  QStringList listInstalledThemes() const;
+  void updateCustomThemeVisibility();
   void showFeatureSlide(int index);
   void advanceCarousel();
   void saveFirstRunState(bool completed);
