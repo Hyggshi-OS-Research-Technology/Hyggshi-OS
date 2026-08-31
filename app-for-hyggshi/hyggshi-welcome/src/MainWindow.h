@@ -46,6 +46,12 @@ class MainWindow : public QMainWindow {
   QCheckBox *m_largeTextChk = nullptr;
   QComboBox *m_installProfileBox = nullptr;
   QCheckBox *m_debianTestingCheck = nullptr;
+  // Chọn profile kho apt gốc của hệ thống (khớp [package-debian-test.*]
+  // trong iso-config/config/config.ini: full/normal/default/unstable).
+  // KHÁC với m_debianTestingCheck ở trên: cái đó chỉ pin riêng các gói
+  // phần mềm THÊM được chọn ở trang Software sang Testing; cái này ghi
+  // đè toàn bộ /etc/apt/sources.list của hệ thống.
+  QComboBox *m_debianTestProfileBox = nullptr;
   QVector<QCheckBox *> m_softwareChecks;
   QLabel *m_softwareStatus = nullptr;
   QLabel *m_networkStatus = nullptr;
@@ -62,6 +68,9 @@ class MainWindow : public QMainWindow {
   bool m_largeText = false;
   QString m_installProfile = "normal";
   bool m_debianTesting = false;
+  // "off" = giữ nguyên sources.list mặc định của ảnh cài sẵn (hành vi cũ,
+  // không đổi gì). Giá trị khác: "full" | "normal" | "default" | "unstable".
+  QString m_debianTestProfile = "off";
   QStringList m_selectedSoftware;
 
   QTimer *m_carouselTimer = nullptr;
@@ -89,6 +98,7 @@ class MainWindow : public QMainWindow {
   void applyLanguageAndKeyboard();
   void applyAccessibility();
   bool installSelectedSoftware();
+  void applyDebianTestProfile(const QString &profile);
   void refreshNetworkStatus();
   void refreshSystemStatus();
   void checkForUpdates();

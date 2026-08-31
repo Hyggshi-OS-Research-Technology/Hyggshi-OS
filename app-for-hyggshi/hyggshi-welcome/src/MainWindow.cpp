@@ -72,6 +72,48 @@ bool isDebianSystem() {
       QRegularExpression::MultilineOption).match(data).hasMatch();
 }
 
+QString shellQuoteArg(const QString &value) {
+  QString out = value;
+  out.replace("'", "'\\''");
+  return "'" + out + "'";
+}
+
+// Nội dung 3 dòng deb cho mỗi profile — PHẢI khớp đúng với
+// [package-debian-test.<profile>] trong iso-config/config/config.ini
+// (mỗi add-repositoryN = fileaddtext(target=..., content=...)). Đây là
+// bản sao ở phía C++ vì Welcome chạy SAU KHI cài đặt, trên máy người
+// dùng — không có sẵn config.ini/hcl_parser.py của repo build để đọc lại.
+// Nếu sửa repo trong config.ini, nhớ sửa lại đúng ở đây.
+QStringList debianTestRepoLines(const QString &profile) {
+  if (profile == "full") {
+    return {
+        "deb http://deb.debian.org/debian testing main contrib non-free non-free-firmware",
+        "deb http://deb.debian.org/debian testing-updates main contrib non-free non-free-firmware",
+        "deb http://security.debian.org/debian-security testing-security main contrib non-free non-free-firmware",
+    };
+  }
+  if (profile == "normal") {
+    return {
+        "deb http://deb.debian.org/debian testing main contrib non-free non-free-firmware",
+        "deb http://deb.debian.org/debian testing-updates main contrib non-free non-free-firmware",
+        "deb http://security.debian.org/debian-security stable-security main contrib non-free non-free-firmware",
+    };
+  }
+  if (profile == "unstable") {
+    return {
+        "deb http://deb.debian.org/debian testing main contrib non-free non-free-firmware",
+        "deb http://deb.debian.org/debian unstable-updates main contrib non-free non-free-firmware",
+        "deb http://security.debian.org/debian-security testing-security main contrib non-free non-free-firmware",
+    };
+  }
+  // "default" (và mọi giá trị lạ khác) -> Stable, an toàn nhất.
+  return {
+      "deb http://deb.debian.org/debian stable main contrib non-free non-free-firmware",
+      "deb http://deb.debian.org/debian stable-updates main contrib non-free non-free-firmware",
+      "deb http://security.debian.org/debian-security stable-security main contrib non-free non-free-firmware",
+  };
+}
+
 void setGsettings(const QString &schema, const QString &key, const QString &value) {
   if (!hasExecutable("gsettings")) return;
   QProcess::execute("gsettings", {"set", schema, key, value});
@@ -152,6 +194,12 @@ void MainWindow::loadPreferences() {
       m_installProfile != "minimal" && m_installProfile != "custom") {
     m_installProfile = "normal";
   }
+  m_debianTestProfile = settings.value("software/debian_test_profile", "off").toString();
+  if (m_debianTestProfile != "off" && m_debianTestProfile != "full" &&
+      m_debianTestProfile != "normal" && m_debianTestProfile != "default" &&
+      m_debianTestProfile != "unstable") {
+    m_debianTestProfile = "off";
+  }
   m_selectedSoftware = settings.value("software/packages").toStringList();
   m_selectedWallpaper = settings.value(
       "wallpaper", "/usr/share/backgrounds/hyggshi/Verdant-Valley.png").toString();
@@ -189,6 +237,7 @@ void MainWindow::savePreferences() const {
   settings.setValue("accessibility/large_text", m_largeText);
   settings.setValue("software/profile", m_installProfile);
   settings.setValue("software/debian_testing", m_debianTesting);
+  settings.setValue("software/debian_test_profile", m_debianTestProfile);
   settings.setValue("software/packages", m_selectedSoftware);
   settings.setValue("wallpaper", m_selectedWallpaper);
   settings.sync();
@@ -446,6 +495,57 @@ QWidget *MainWindow::buildSoftwarePage() {
     m_debianTesting = true;
     savePreferences();
   });
+
+  auto *testProfileLabel = new QLabel(tr("Kho apt gốc của hệ thống (Debian)"));
+  testProfileLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
+  testProfileLabel->setVisible(isDebian);
+  m_debianTestProfileBox = new QComboBox;
+  m_debianTestProfileBox->setVisible(isDebian);
+  m_debianTestProfileBox->setToolTip(tr(
+      "Chỉ áp dụng cho Debian. Ghi đè /etc/apt/sources.list theo profile "
+      "đã chọn — khác với ô 'Dùng package Debian Testing' phía trên (ô đó "
+      "chỉ ảnh hưởng các gói bạn tự chọn thêm ở dưới)."));
+  m_debianTestProfileBox->addItem(tr("Giữ nguyên (không đổi)"), "off");
+  m_debianTestProfileBox->addItem(tr("full — Testing, nhiều gói mới nhất"), "full");
+  m_debianTestProfileBox->addItem(tr("normal — Testing, khuyến nghị"), "normal");
+  m_debianTestProfileBox->addItem(tr("default — Stable, ổn định nhất"), "default");
+  m_debianTestProfileBox->addItem(tr("unstable — Sid, chỉ dành cho thử nghiệm"), "unstable");
+  {
+    const int idx = m_debianTestProfileBox->findData(m_debianTestProfile);
+    m_debianTestProfileBox->setCurrentIndex(idx >= 0 ? idx : 0);
+  }
+  connect(m_debianTestProfileBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int index) {
+            if (index < 0 || !m_debianTestProfileBox) return;
+            const QString chosen = m_debianTestProfileBox->itemData(index).toString();
+            const QString previous = m_debianTestProfile;
+
+            if (chosen != "off" && chosen != "default") {
+              QMessageBox::StandardButton answer = QMessageBox::warning(
+                  this, tr("Cảnh báo: đổi kho apt gốc"),
+                  tr("Bạn sắp ghi đè /etc/apt/sources.list của toàn hệ thống sang "
+                     "profile '%1'. Profile Testing/Unstable có thể chứa package "
+                     "chưa ổn định, ảnh hưởng MỌI package trên máy (không chỉ phần "
+                     "mềm bạn tự cài thêm). Hyggshi OS không khuyến nghị dùng trên "
+                     "máy chính.\n\nBạn có chắc muốn tiếp tục không?")
+                      .arg(chosen),
+                  QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel);
+              if (answer != QMessageBox::Ok) {
+                const QSignalBlocker blocker(m_debianTestProfileBox);
+                Q_UNUSED(blocker);
+                const int prevIdx = m_debianTestProfileBox->findData(previous);
+                m_debianTestProfileBox->setCurrentIndex(prevIdx >= 0 ? prevIdx : 0);
+                return;
+              }
+            }
+
+            m_debianTestProfile = chosen;
+            savePreferences();
+            if (chosen != "off") {
+              applyDebianTestProfile(chosen);
+            }
+          });
+
   connect(m_installProfileBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this](int index) {
             if (index < 0) return;
@@ -602,6 +702,9 @@ QWidget *MainWindow::buildSoftwarePage() {
   outer->addWidget(profileLabel);
   outer->addWidget(m_installProfileBox);
   outer->addWidget(testingBox);
+  outer->addSpacing(4);
+  outer->addWidget(testProfileLabel);
+  outer->addWidget(m_debianTestProfileBox);
   outer->addWidget(softwareLabel);
   outer->addWidget(scroll, 1);
   outer->addWidget(m_softwareStatus);
@@ -1108,6 +1211,47 @@ void MainWindow::saveFirstRunState(bool completed) {
     }
   } else {
     QFile::remove(marker);
+  }
+}
+
+void MainWindow::applyDebianTestProfile(const QString &profile) {
+  if (!isDebianSystem()) return;
+  if (!hasExecutable("pkexec")) {
+    if (m_softwareStatus) {
+      m_softwareStatus->setText(
+          tr("Không tìm thấy pkexec; không thể đổi kho apt gốc sang profile '%1'.").arg(profile));
+    }
+    return;
+  }
+
+  const QStringList lines = debianTestRepoLines(profile);
+  QStringList printfArgs;
+  printfArgs << "printf" << "'%s\\n'";
+  for (const QString &line : lines) printfArgs << shellQuoteArg(line);
+
+  // Ghi đè /etc/apt/sources.list (khớp target="/etc/apt/sources.list" trong
+  // [package-debian-test.<profile>] của config.ini) rồi apt-get update ngay
+  // để người dùng thấy lỗi (nếu có: mirror sai, mất mạng...) trong lúc còn
+  // đang ở Welcome, thay vì lần cập nhật hệ thống tiếp theo mới phát hiện.
+  const QString command = printfArgs.join(' ') + " > /etc/apt/sources.list && apt-get update";
+
+  if (m_softwareStatus) {
+    m_softwareStatus->setText(
+        tr("Đang đổi kho apt gốc sang profile '%1'. Có thể cần nhập mật khẩu quản trị...").arg(profile));
+    qApp->processEvents();
+  }
+
+  const int rc = QProcess::execute("pkexec", {"sh", "-c", command});
+  if (m_softwareStatus) {
+    if (rc == 0) {
+      m_softwareStatus->setText(
+          tr("OK: đã đổi /etc/apt/sources.list sang profile '%1' và cập nhật danh sách gói.").arg(profile));
+    } else {
+      m_softwareStatus->setText(
+          tr("⚠ Đổi kho apt gốc sang '%1' thất bại (rc=%2). sources.list có thể chưa đổi hoặc apt-get update lỗi — kiểm tra mạng/mirror.")
+              .arg(profile)
+              .arg(rc));
+    }
   }
 }
 
