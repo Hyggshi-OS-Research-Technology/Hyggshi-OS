@@ -460,7 +460,7 @@ if [ -f "iso-config/branding/Hyggshi-OS-Installer.png" ]; then
 Type=Application
 Name=Install Hyggshi OS
 Comment=Cài đặt Hyggshi OS
-Exec=pkexec calamares
+Exec=/usr/local/bin/hyggshi-launch-installer.sh
 Icon=hyggshi-installer
 Terminal=false
 Categories=System;Settings;
@@ -468,7 +468,16 @@ DESKTOP
   sudo chmod 0644 "$CHROOT/etc/skel/Desktop/install-hyggshi-os.desktop"
 
   # Also refresh the live user's shortcut if one exists.
-  for user_desktop in "$CHROOT/home/*/Desktop" "$CHROOT/root/Desktop"; do
+  # BUG ĐÃ SỬA: "$CHROOT/home/*/Desktop" nằm trong DẤU NHÁY KÉP nên "*"
+  # KHÔNG được shell glob — vòng lặp trước đây chỉ thử đúng 2 chuỗi literal
+  # (không tồn tại) + "$CHROOT/root/Desktop", nên [ -d ... ] luôn false với
+  # nhánh /home/* và desktop entry của user live không bao giờ được refresh
+  # qua đường này (mọi user live thực ra vẫn có icon đúng, nhưng là NHỜ
+  # useradd -m copy từ /etc/skel LÚC TẠO USER trong desktop.sh — bug này
+  # chỉ ảnh hưởng nếu re-run branding.sh trên user đã tồn tại từ trước).
+  # Bỏ quote quanh phần chứa "*" để glob hoạt động; giữ quote quanh phần
+  # còn lại của path. Không dùng set -f nên glob mặc định được bật.
+  for user_desktop in $CHROOT/home/*/Desktop "$CHROOT/root/Desktop"; do
     [ -d "$user_desktop" ] || continue
     sudo cp "$CHROOT/etc/skel/Desktop/install-hyggshi-os.desktop" "$user_desktop/install-hyggshi-os.desktop" 2>/dev/null || true
   done

@@ -163,6 +163,44 @@ fi
 INSTALLER_ICON_SRC="/tmp/Hyggshi-OS-Installer.png"
 INSTALLER_ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
 INSTALLER_ICON_NAME="hyggshi-installer"
+
+# ===== Single-instance guard cho launcher "Install Hyggshi OS" =====
+# NGUYÊN NHÂN ĐƠ DESKTOP ĐÃ GẶP: Exec=pkexec calamares chạy TRỰC TIẾP,
+# không có gì ngăn user bấm đúp (hoặc bấm thêm lần 2 vì Calamares khởi
+# động chậm, tưởng click hụt) mở NHIỀU tiến trình Calamares CÙNG LÚC. Mỗi
+# tiến trình tự dò partition/disk qua polkit/D-Bus độc lập — trên máy ảo
+# QEMU giới hạn RAM/CPU (đúng môi trường test ISO), vài tiến trình Qt nặng
+# cùng dò đĩa đủ làm treo hẳn desktop, hiện nhiều cửa sổ "Hyggshi OS
+# Installer" chồng lên nhau và panel/taskbar không phản hồi (đúng triệu
+# chứng đã gặp: nhiều cửa sổ Installer xếp chồng + bấm taskbar không ăn).
+#
+# Fix: bọc lệnh khởi chạy thật trong 1 wrapper dùng flock (non-blocking)
+# trên 1 lock file cố định. Click lần 2 trong lúc còn đang chạy chỉ cố
+# đưa cửa sổ đang có lên trước (wmctrl, best-effort) rồi thoát — không
+# bao giờ spawn thêm process Calamares thứ 2.
+INSTALLER_LAUNCHER="/usr/local/bin/hyggshi-launch-installer.sh"
+mkdir -p "$(dirname "$INSTALLER_LAUNCHER")"
+cat > "$INSTALLER_LAUNCHER" <<'LAUNCHEREOF'
+#!/bin/sh
+# hyggshi-launch-installer.sh — single-instance guard, xem chú thích trong
+# scripts/desktop.sh (khối "Single-instance guard cho launcher").
+LOCK="/tmp/.hyggshi-calamares-launch.lock"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  # Đã có 1 tiến trình Calamares đang chạy/khởi động — không mở thêm,
+  # chỉ cố đưa cửa sổ hiện có lên trước (best-effort, không fatal nếu
+  # thiếu wmctrl).
+  command -v wmctrl >/dev/null 2>&1 && wmctrl -a "Hyggshi OS Installer" 2>/dev/null
+  exit 0
+fi
+exec pkexec calamares
+LAUNCHEREOF
+chmod 0755 "$INSTALLER_LAUNCHER"
+echo "OK: đã ghi $INSTALLER_LAUNCHER (single-instance guard cho Calamares launcher)."
+# wmctrl chỉ dùng để raise cửa sổ khi bấm lần 2 (best-effort) — thiếu gói
+# này không làm launcher fail, chỉ mất phần "đưa cửa sổ lên trước".
+apt-get install -y wmctrl 2>/dev/null || true
+
 if [ -f "$INSTALLER_ICON_SRC" ]; then
   echo "===== Branding Calamares launcher: Install Hyggshi OS ====="
   mkdir -p "$INSTALLER_ICON_DIR" /usr/share/pixmaps
@@ -178,18 +216,23 @@ if [ -f "$INSTALLER_ICON_SRC" ]; then
       # Các bản desktop có thể dùng tên tiếng Việt/locale khác; thay theo key.
       sed -i -E 's/^Name\[[^]]+\][[:space:]]*=.*/Name=Install Hyggshi OS/' "$desktop_file"
       sed -i -E 's/^Icon=.*/Icon=hyggshi-installer/' "$desktop_file"
+      # Route Exec qua wrapper single-instance thay vì gọi thẳng pkexec
+      # calamares — xem lý do ở khối "Single-instance guard" phía trên.
+      sed -i -E "s#^Exec=.*#Exec=${INSTALLER_LAUNCHER}#" "$desktop_file"
       chmod 644 "$desktop_file"
-      echo "OK: đã rebrand launcher $desktop_file"
+      echo "OK: đã rebrand launcher $desktop_file (Exec -> $INSTALLER_LAUNCHER)"
     fi
   done < <(find /usr/share/applications /usr/local/share/applications /etc/xdg/applications -type f -name '*.desktop' -print0 2>/dev/null)
 
   # Nếu package đặt shortcut trực tiếp trên Desktop của user live/skel,
-  # sửa luôn shortcut đó để icon + tên trên màn hình cũng đồng nhất.
+  # sửa luôn shortcut đó để icon + tên + Exec (single-instance guard)
+  # trên màn hình cũng đồng nhất.
   while IFS= read -r -d '' desktop_file; do
     if grep -Eiq '^(Name|Name\[[^]]+\])=.*Install Debian|^(Name|Name\[[^]]+\])=.*Debian Installer|^Exec=.*(pkexec[[:space:]]+)?calamares' "$desktop_file"; then
       sed -i -E 's/^Name\[[^]]+\][[:space:]]*=.*/Name=Install Hyggshi OS/; s/^Name[[:space:]]*=.*/Name=Install Hyggshi OS/; s/^Icon=.*/Icon=hyggshi-installer/' "$desktop_file"
+      sed -i -E "s#^Exec=.*#Exec=${INSTALLER_LAUNCHER}#" "$desktop_file"
       chmod 755 "$desktop_file" 2>/dev/null || chmod 644 "$desktop_file"
-      echo "OK: đã rebrand shortcut $desktop_file"
+      echo "OK: đã rebrand shortcut $desktop_file (Exec -> $INSTALLER_LAUNCHER)"
     fi
   done < <(find /etc/skel/Desktop /home /root/Desktop -type f -name '*.desktop' -print0 2>/dev/null)
 
