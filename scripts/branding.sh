@@ -1219,58 +1219,10 @@ wait_for_de_process() {
   echo "CẢNH BÁO: không thấy tiến trình $proc sau 20s — vẫn thử áp wallpaper."
 }
 
-apply_wallpaper_xfce() {
-  wait_for_de_process xfdesktop
-
-  _do_set() {
-    PROPS=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$')
-    if [ -z "$PROPS" ]; then
-      echo "Chưa có property nào — dò tên monitor thật qua xrandr, cộng thêm fallback monitor0"
-      REAL_MONITORS=$(xrandr --query 2>/dev/null | awk '/ connected/{print $1}')
-      PROPS="/backdrop/screen0/monitor0/workspace0/last-image"
-      for m in $REAL_MONITORS; do
-        PROPS="$PROPS
-/backdrop/screen0/monitor${m}/workspace0/last-image"
-      done
-    fi
-    echo "PROPS tìm được:"
-    echo "$PROPS"
-
-    while read -r PROP; do
-      [ -z "$PROP" ] && continue
-      STYLE="${PROP%last-image}image-style"
-      xfconf-query -c xfce4-desktop -p "$PROP" -n -t string -s "$WALL" 2>>"$LOG" \
-        || xfconf-query -c xfce4-desktop -p "$PROP" -s "$WALL" 2>>"$LOG"
-      xfconf-query -c xfce4-desktop -p "$STYLE" -n -t int -s 5 2>>"$LOG" \
-        || xfconf-query -c xfce4-desktop -p "$STYLE" -s 5 2>>"$LOG"
-      echo "Set $PROP -> $WALL"
-    done <<< "$PROPS"
-  }
-
-  _do_set
-  xfdesktop --reload 2>>"$LOG"
-  sleep 1
-  # LUÔN restart hẳn xfdesktop (không chỉ --reload): lần đầu TẠO property
-  # mới (-n), xfdesktop đang chạy thường không tự "nhìn thấy" giá trị vừa
-  # tạo chỉ bằng --reload.
-  killall xfdesktop 2>>"$LOG" || true
-  sleep 1
-  nohup xfdesktop >>"$LOG" 2>&1 &
-  sleep 1
-
-  CHECK=$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'last-image$' | head -n1)
-  if [ -n "$CHECK" ]; then
-    VAL=$(xfconf-query -c xfce4-desktop -p "$CHECK" 2>/dev/null)
-    echo "verify: $CHECK = $VAL"
-    if [ "$VAL" != "$WALL" ]; then
-      echo "Verify không khớp, retry lần 2"
-      _do_set
-      killall xfdesktop 2>>"$LOG" || true
-      sleep 1
-      nohup xfdesktop >>"$LOG" 2>&1 &
-    fi
-  fi
-}
+# Đã gỡ apply_wallpaper_xfce() (auto-apply wallpaper lúc login cho XFCE qua
+# xfconf-query + restart xfdesktop). XFCE giờ rơi vào apply_wallpaper_fallback
+# ở dispatch case bên dưới — không tự set wallpaper lúc login nữa, chỉ giữ
+# wallpaper mặc định đã patch sẵn vào xfce4-desktop.xml lúc build (skel).
 
 apply_wallpaper_cinnamon() {
   # Cinnamon dùng dconf/GSettings, không có "process reload" như xfdesktop —
@@ -1361,7 +1313,7 @@ apply_wallpaper_fallback() {
 DE_DETECTED=$(detect_de)
 echo "DE dò được: $DE_DETECTED"
 case "$DE_DETECTED" in
-  xfce)     apply_wallpaper_xfce ;;
+  xfce)     echo "XFCE: bỏ qua auto-apply wallpaper lúc login (tính năng đã bị gỡ), giữ wallpaper mặc định lúc build." ;;
   cinnamon) apply_wallpaper_cinnamon ;;
   gnome)    apply_wallpaper_gnome ;;
   mate)     apply_wallpaper_mate ;;
@@ -1426,7 +1378,7 @@ X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=8
 X-KDE-autostart-after=panel
 X-KDE-autostart-phase=2
-OnlyShowIn=Cinnamon;GNOME;XFCE;MATE;KDE;LXQt;
+OnlyShowIn=Cinnamon;GNOME;MATE;KDE;LXQt;
 NoDisplay=true
 Terminal=false
 DESKTOP
