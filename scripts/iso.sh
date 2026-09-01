@@ -42,8 +42,22 @@ mkdir -p live-build/image/live
 #                              như đơn luồng ở phần nén chính).
 # LƯU Ý: KHÔNG dùng -Xbcj x86 nữa — filter BCJ đó chỉ dành riêng cho xz,
 # zstd không hỗ trợ (mksquashfs sẽ báo lỗi option không hợp lệ nếu giữ lại).
-sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
-  -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)"
+#
+# squashfs-max-compression (config.ini [config-setup-postpartum-care], export
+# qua tools/hcl_parser.py -> $HCL_SQUASHFS_MAX_COMPRESSION): true chuyển hẳn
+# sang xz mức nén cao nhất (-Xdict-size 100%, -Xbcj x86, block nhỏ hơn 128K
+# giúp tỷ lệ nén tốt hơn) để ISO nhỏ nhất có thể — ĐÁNH ĐỔI: build lâu hơn
+# hẳn (xz gần như đơn luồng ở bước nén chính, -processors gần như không giúp
+# được nhiều). false (mặc định) giữ nguyên zstd nhanh như cũ.
+if [ "${HCL_SQUASHFS_MAX_COMPRESSION:-false}" = "true" ]; then
+  echo "squashfs-max-compression=true -> dùng xz nén tối đa (ISO nhỏ nhất, build chậm hơn)"
+  sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
+    -comp xz -b 128K -Xbcj x86 -Xdict-size 100% -processors "$(nproc)"
+else
+  echo "squashfs-max-compression=false -> dùng zstd nhanh (mặc định)"
+  sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
+    -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)"
+fi
 
 echo "===== Prepare boot files (kernel + initrd) ====="
 # Dùng ls -t + head -n1 thay vì cp trực tiếp theo glob: nếu vì lý do gì đó
