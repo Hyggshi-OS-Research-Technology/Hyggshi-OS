@@ -580,6 +580,15 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     put("FIRMWARE_ENABLED", str(bool(bp.get("firmware_enabled"))).lower())
     put("FIRMWARE_PACKAGES", " ".join(sorted(fw_pkgs.keys())))
 
+    # [config-setup-postpartum-care] (out["config"], resolved qua tham chiếu
+    # ${config-setup-postpartum-care} trong [my-version-os-base]) — trước đây
+    # dict này được resolve nhưng CHƯA BAO GIỜ export ra env, nên squashfs-
+    # max-compression (và Time-zone/lang/stylexfce) chỉ nằm chết trong
+    # /tmp/hcl-resolved.json, iso.sh/desktop.sh không đọc được. Export đúng
+    # squashfs-max-compression ở đây để scripts/iso.sh dùng.
+    cfg = bp.get("config") or {}
+    put("SQUASHFS_MAX_COMPRESSION", str(bool(cfg.get("squashfs-max-compression"))).lower())
+
     pkg_groups = resolved.get("package_groups", {})
     de = de_effective.lower()
     # BUG ĐÃ SỬA: trước đây match bằng substring ("cinnamon" in g_lower),
