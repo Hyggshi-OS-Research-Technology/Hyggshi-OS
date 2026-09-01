@@ -530,7 +530,7 @@ class Resolver:
 # 5. GITHUB ACTIONS ENV EXPORT
 # ---------------------------------------------------------------------------
 
-def to_env_lines(resolved: dict) -> list:
+def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     bp = resolved["base_profile"]
     lines = []
 
@@ -544,7 +544,33 @@ def to_env_lines(resolved: dict) -> list:
     put("BASE_DISTRO", str(bp.get("base") or "").lower())
     put("DESKTOP_PROFILE", bp.get("kernel_profile_name"))
     kp = bp.get("kernel_profile") or {}
-    put("DESKTOP_ENV", kp.get("desktop"))
+
+    # BUG: [kernel.<Edition>].desktop trong config.ini là giá trị TĨNH (vd
+    # "Cinnamon" theo default hiện tại của kernel.Desktop), hoàn toàn tách
+    # rời khỏi lựa chọn DE THỰC SỰ mà người dùng chọn ở workflow_dispatch
+    # input "desktop" (env.DE, vd "xfce"). desktop.sh cài đúng DE theo $DE
+    # (switch-case), nhưng khối dưới đây trước đó vẫn lọc package_groups
+    # theo kp.get("desktop") tĩnh — nên khi build XFCE (DE=xfce) mà
+    # config.ini còn khai desktop=Cinnamon, TOÀN BỘ gói cinnamon/cinnamon-*
+    # trong nhóm ";Cinnamon" vẫn bị coi là "active DE group", lọt vào
+    # HCL_PACKAGES -> EXTRA_PACKAGES -> apt-get install trong desktop.sh,
+    # cài chồng Cinnamon lên cạnh XFCE dù người dùng không hề chọn Cinnamon.
+    #
+    # Fix: nhận de_override (giá trị $DE thật từ workflow input, xem
+    # main()/CLI --de-override) và dùng nó làm nguồn sự thật DUY NHẤT để
+    # lọc package_groups khi có mặt — kể cả khi nó khác với
+    # [kernel.<Edition>].desktop trong config.ini. Không override thì giữ
+    # nguyên hành vi cũ (dùng kp.get("desktop")) để không phá các lần gọi
+    # hcl_parser.py không truyền --de-override (vd chạy tay để debug).
+    de_effective = (de_override or kp.get("desktop") or "")
+    put("DESKTOP_ENV", de_effective)
+    if de_override and de_override.strip().lower() != str(kp.get("desktop") or "").strip().lower():
+        print(
+            f"[HCL] --de-override='{de_override}' khác với "
+            f"[kernel.{bp.get('kernel_profile_name')}].desktop='{kp.get('desktop')}' "
+            f"trong config.ini — dùng '{de_override}' làm DE thật để lọc gói "
+            f"(mọi package liên quan tới DE khác, kể cả Cinnamon, sẽ bị loại khỏi HCL_PACKAGES)."
+        )
 
     swap = bp.get("swap") or {}
     put("SWAP_MODE", swap.get("mode"))
@@ -555,8 +581,24 @@ def to_env_lines(resolved: dict) -> list:
     put("FIRMWARE_PACKAGES", " ".join(sorted(fw_pkgs.keys())))
 
     pkg_groups = resolved.get("package_groups", {})
-    de = (kp.get("desktop") or "").lower()
-    de_group_names = {"xfce", "cinnamon", "kde", "kde plasma", "lxqt", "gnome", "mate", "cli"}
+    de = de_effective.lower()
+    # BUG ĐÃ SỬA: trước đây match bằng substring ("cinnamon" in g_lower),
+    # nên nhóm KHÔNG PHẢI package-per-DE nhưng có chữ "cinnamon" trong tên
+    # comment header — vd "; apply theme cinnamon custom" phía trên khối
+    # XFCE/Cinnamon/... — cũng bị coi là group DE Cinnamon, kéo theo
+    # theme-light-enabled/theme-dark-enabled (là BOOLEAN cấu hình, không
+    # phải tên gói apt) lọt vào apt-get install cùng các gói cinnamon-*
+    # thật. Đổi sang so khớp CHÍNH XÁC (exact match, sau khi chuẩn hoá)
+    # với đúng 7 tên group DE thật trong config.ini — không còn match mờ.
+    DE_GROUP_EXACT = {
+        "xfce": "xfce",
+        "cinnamon": "cinnamon",
+        "kde plasma": "kde",
+        "lxqt": "lxqt",
+        "gnome": "gnome",
+        "mate": "mate",
+        "cli": "cli",
+    }
 
     app_installs = []
     app_urls = []
@@ -566,8 +608,9 @@ def to_env_lines(resolved: dict) -> list:
 
     for g_name, g_pkgs in pkg_groups.items():
         g_lower = g_name.lower().strip()
-        is_de_group = any(de_name in g_lower for de_name in de_group_names)
-        is_active_de = (de in g_lower) or (g_lower in de) if is_de_group else False
+        de_id = DE_GROUP_EXACT.get(g_lower)
+        is_de_group = de_id is not None
+        is_active_de = is_de_group and (de == de_id or de.replace(" ", "") == de_id.replace(" ", ""))
 
         if is_active_de:
             desktop_group = g_name
@@ -612,8 +655,18 @@ def to_env_lines(resolved: dict) -> list:
     put("WELCOME_ACTION", welcome.get("action", ""))
 
     base_val     = str(bp.get("base") or "").lower()
-    kp_val       = bp.get("kernel_profile") or {}
-    de_val       = str(kp_val.get("desktop") or "").lower()
+    # BUG ĐÃ SỬA: dòng này trước đây tự đọc lại kp_val.get("desktop") (giá
+    # trị TĨNH từ config.ini), bỏ qua de_override/de_effective đã tính ở
+    # trên — nên dù --de-override đã lọc HCL_DESKTOP_PACKAGES đúng theo DE
+    # người dùng chọn (vd xfce), dòng "DE=..." KHÔNG PREFIX xuất ra ở đây
+    # vẫn ghi "DE=cinnamon" (theo config.ini) vào $GITHUB_ENV — vì GitHub
+    # Actions dùng giá trị SET SAU CÙNG cho 1 biến env cùng tên trong cùng
+    # job, dòng này sẽ ÂM THẦM GHI ĐÈ lại DE=xfce mà chính workflow input
+    # "desktop" đã set trước đó, khiến desktop.sh (đọc $DE để cài DE) và
+    # step "[cinnamon-fix]" (if: env.DE == 'cinnamon') nhận nhầm DE thật.
+    # Dùng đúng de_effective (đã ưu tiên de_override) để 3 nguồn — package
+    # filtering, HCL_DESKTOP_ENV, và DE ghi ra đây — luôn khớp nhau.
+    de_val       = de_effective.lower()
     name_val     = bp.get("name")
     version_val  = bp.get("version")
     codename_val = bp.get("codename")
@@ -648,6 +701,17 @@ def main():
     ap.add_argument("--root", default=".", help="root repo để resolve đường dẫn file")
     ap.add_argument("--emit-json", help="ghi kết quả resolve ra file JSON")
     ap.add_argument("--emit-env", help="ghi biến môi trường (KEY=VALUE) ra file")
+    ap.add_argument(
+        "--de-override",
+        default=None,
+        help=(
+            "Desktop environment THẬT được người dùng chọn (vd $DE từ workflow "
+            "input 'desktop': xfce/cinnamon/kde/lxqt/gnome/mate/cli). Khi được "
+            "truyền, giá trị này thay thế [kernel.<Edition>].desktop tĩnh trong "
+            "config.ini làm nguồn lọc package_groups active — tránh gói của DE "
+            "không được chọn (vd Cinnamon) lọt vào HCL_PACKAGES khi build DE khác (vd XFCE)."
+        ),
+    )
     ap.add_argument("--strict", action="store_true", help="exit(1) nếu có bất kỳ error nào sau validate")
     args = ap.parse_args()
 
@@ -680,7 +744,7 @@ def main():
         print(f"[HCL] đã ghi {args.emit_json}")
 
     if args.emit_env:
-        lines = to_env_lines(resolved)
+        lines = to_env_lines(resolved, de_override=args.de_override)
         with open(args.emit_env, "a", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
         print(f"[HCL] đã append {len(lines)} biến env vào {args.emit_env}")

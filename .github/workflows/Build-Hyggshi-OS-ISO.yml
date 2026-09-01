@@ -215,10 +215,21 @@ jobs:
       # ở dưới (lấy từ workflow_dispatch input) để không âm thầm đè giá trị
       # người dùng chọn trên UI Actions. Chỉ dùng tools/hcl_parser.py Python
       # stdlib, không cần pip install.
+      # --de-override="$DE": $DE ở đây LÀ desktop THẬT người dùng chọn ở
+      # workflow input "desktop" (xem env.DE ở đầu file — đã có SẴN tại
+      # bước này, không cần đợi step "Resolve version theo distro"). Không
+      # truyền cờ này, hcl_parser.py sẽ lọc package_groups theo
+      # [kernel.<Edition>].desktop TĨNH trong config.ini (hiện là
+      # "Cinnamon" ở kernel.Desktop) — khác desktop input người dùng chọn
+      # thì gói của DE tĩnh đó (kể cả toàn bộ cinnamon/cinnamon-* trong
+      # nhóm ";Cinnamon") vẫn lọt vào HCL_PACKAGES -> EXTRA_PACKAGES ->
+      # apt-get install trong desktop.sh, cài chồng lên DE người dùng thật
+      # sự chọn (vd XFCE). Xem chú thích chi tiết trong to_env_lines().
       - name: Validate & resolve config.ini (HCL)
         run: |
           python3 tools/hcl_parser.py iso-config/config/config.ini \
             --root "$GITHUB_WORKSPACE" \
+            --de-override "$DE" \
             --emit-json /tmp/hcl-resolved.json \
             --emit-env "$GITHUB_ENV" \
             --strict
