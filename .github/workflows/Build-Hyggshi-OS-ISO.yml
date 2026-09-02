@@ -21,12 +21,6 @@ on:
         type: choice
         options: [debian, ubuntu, linuxmint, alpine, arch, fedora]
         default: "debian"
-      architecture:
-        description: "Kiến trúc CPU (CHỈ áp dụng khi distro = debian — xem [Architecture] trong config.ini + scripts/arch.sh. Ubuntu/Mint/Alpine/Arch/Fedora job CHƯA hỗ trợ, luôn build amd64 dù chọn arm64 ở đây. arm64 build được nhờ QEMU binfmt emulation trên runner amd64 nên CHẬM HƠN ĐÁNG KỂ amd64 — và ISO arm64 chưa có UEFI Secure Boot signing, xem comment trong iso.sh)"
-        required: false
-        type: choice
-        options: [amd64, arm64]
-        default: "amd64"
       debian_version:
         description: "Phiên bản Debian (chỉ áp dụng khi distro = debian). 'testing' luôn trỏ đúng bản Testing hiện tại của Debian (rolling), không hardcode theo 1 codename cụ thể."
         required: false
@@ -120,7 +114,7 @@ on:
       # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như cũ — không script nào khác
       # (desktop.sh, welcome.sh...) phải đổi theo.
       feature_flags:
-        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
+        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme, arm64. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. arm64: build kiến trúc arm64 thay vì amd64 mặc định — CHỈ áp dụng khi distro = debian (xem [Architecture] trong config.ini + scripts/arch.sh); Ubuntu/Mint/Alpine/Arch/Fedora job chưa hỗ trợ, luôn build amd64 dù có cờ này. Chậm hơn amd64 đáng kể (QEMU binfmt emulation) và ISO chưa có UEFI Secure Boot signing. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
         required: false
         default: "browser,autologin,autoscale,welcome,auto-theme"
       extra_packages:
@@ -154,9 +148,6 @@ env:
   # là $BASE_CODENAME (bookworm/noble/...), được set riêng ở build-<distro>.sh.
   HYGGSHI_CODENAME: ${{ github.event.inputs.hyggshi_codename || '' }}
   BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
-  # Chỉ build-debian.sh/desktop.sh/iso.sh đọc biến này (xem scripts/arch.sh) —
-  # Ubuntu/Mint/Alpine/Arch/Fedora job chưa dùng, luôn hardcode amd64.
-  ARCH: ${{ github.event.inputs.architecture || 'amd64' }}
   EDITION: ${{ github.event.inputs.edition || 'normal' }}
   # LƯU Ý: debian_version/ubuntu_version/mint_version/alpine_version KHÔNG đặt
   # ở đây. Nếu đặt cứng ở env cấp workflow, GitHub Actions in TOÀN BỘ 4 biến
@@ -282,7 +273,7 @@ jobs:
       # phía dưới (desktop.sh, welcome.sh...) không cần biết gì về việc gộp
       # này, vẫn đọc INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
       # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như bình thường.
-      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON/AUTO_THEME"
+      - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON/AUTO_THEME/ARCH"
         run: |
           # Bọc thêm dấu phẩy ở 2 đầu để match "$1" bằng pattern "*,$1,*"
           # không bị dính nhầm token con (vd "autologin" không match nhầm
@@ -303,6 +294,18 @@ jobs:
             echo "THEME_DAEMON=$(has_flag theme-daemon)"
             echo "AUTO_THEME=$(has_flag auto-theme)"
           } >> "$GITHUB_ENV"
+          # arm64: gộp vào feature_flags thay vì input "architecture" riêng —
+          # workflow_dispatch chỉ cho phép TỐI ĐA 25 inputs, thêm 1 input
+          # riêng cho arch làm dư lên 26 -> "Invalid workflow file" (xem
+          # ghi chú ở khối `inputs:` phía trên về lý do 6 toggle khác cũng
+          # bị gộp CSV). Chỉ build-debian.sh/desktop.sh/iso.sh đọc $ARCH
+          # (qua scripts/arch.sh) — Ubuntu/Mint/Alpine/Arch/Fedora job chưa
+          # dùng, luôn hardcode amd64 dù có cờ này.
+          if [ "$(has_flag arm64)" = "true" ]; then
+            echo "ARCH=arm64" >> "$GITHUB_ENV"
+          else
+            echo "ARCH=amd64" >> "$GITHUB_ENV"
+          fi
 
       # QEMU user-mode binfmt: CẦN cho debootstrap --arch=arm64 + chroot chạy
       # binary arm64 trên runner ubuntu-latest (amd64) — không có bước này,
