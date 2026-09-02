@@ -110,7 +110,8 @@ case "$DE" in
     DISPLAY_MANAGER="sddm"
     ;;
   lxqt)
-    apk_target lxqt sddm pcmanfm-qt xterm
+    apk_target lxqt sddm pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt qps screengrab openbox || \
+    apk_target lxqt sddm pcmanfm-qt qterminal featherpad lximage-qt openbox
     DISPLAY_MANAGER="sddm"
     ;;
   gnome)

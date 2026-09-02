@@ -1,0 +1,21 @@
+# LXQt — desktop environment & native Qt/LXQt applications
+task-lxqt-desktop
+lxqt
+sddm
+lxqt-panel
+pcmanfm-qt
+qterminal
+featherpad
+lximage-qt
+lxqt-archiver
+pavucontrol-qt
+qps
+screengrab
+lxqt-policykit
+lxqt-powermanagement
+lxqt-notificationd
+lxqt-runner
+lxqt-config
+lxqt-session
+obconf-qt
+openbox

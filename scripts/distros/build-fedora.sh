@@ -123,7 +123,8 @@ case "$DE" in
     DISPLAY_MANAGER="sddm"
     ;;
   lxqt)
-    DNF_TARGET install @lxqt-desktop-environment sddm pcmanfm-qt xterm
+    DNF_TARGET install @lxqt-desktop-environment sddm pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt qps screengrab openbox obconf-qt || \
+    DNF_TARGET install @lxqt-desktop-environment sddm pcmanfm-qt qterminal featherpad lximage-qt openbox
     DISPLAY_MANAGER="sddm"
     ;;
   gnome)
