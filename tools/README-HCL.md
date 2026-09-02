@@ -68,6 +68,7 @@ python3 tools/hcl_parser.py iso-config/config/config.ini \
   --strict
 ```
 
+
 Biến xuất ra `$GITHUB_ENV` bao gồm:
 - `HCL_BASE_DISTRO`, `HCL_DESKTOP_ENV`, `HCL_SWAP_MB`
 - `HCL_FIRMWARE_PACKAGES`, `HCL_DESKTOP_PACKAGES`
