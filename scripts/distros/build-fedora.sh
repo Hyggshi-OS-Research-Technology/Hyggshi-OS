@@ -164,15 +164,20 @@ if [ -n "$EDITION_PKGS" ]; then
   echo "Gói thêm cho edition '$EDITION': $EDITION_PKGS"
   DNF_TARGET install $EDITION_PKGS || true
 fi
-# zram-generator (Fedora) dùng format ini khác hẳn /etc/default/zramswap của
-# Debian (zram-tools) nên viết trực tiếp ở đây thay vì tái dùng
-# hyggshi_zram_conf — cùng lý do lz4 cho máy yếu như bản Debian đã giải thích.
-if [ "$EDITION" = "lite" ]; then
-  mkdir -p "$ROOTFS/etc/systemd"
+SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
+SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
+if [ "$SWAP_MODE_VAL" != "off" ] || [ "$EDITION" = "lite" ]; then
+  mkdir -p "$ROOTFS/etc/systemd" "$ROOTFS/etc/modules-load.d"
+  echo "zram" > "$ROOTFS/etc/modules-load.d/zram.conf"
+  ZRAM_SIZE_SPEC="${SWAP_MB_VAL:-1024}"
+  [ "$ZRAM_SIZE_SPEC" = "0" ] && ZRAM_SIZE_SPEC="min(ram / 2, 4096)"
+  ZRAM_ALGO="zstd"
+  [ "$EDITION" = "lite" ] && ZRAM_ALGO="lz4"
   cat <<EOF > "$ROOTFS/etc/systemd/zram-generator.conf"
 [zram0]
-zram-size = min(ram / 2, 4096)
-compression-algorithm = lz4
+zram-size = $ZRAM_SIZE_SPEC
+compression-algorithm = $ZRAM_ALGO
+swap-priority = 100
 EOF
 fi
 
