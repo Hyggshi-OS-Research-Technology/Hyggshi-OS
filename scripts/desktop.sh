@@ -12,6 +12,11 @@ export DEBIAN_FRONTEND=noninteractive
 # shellcheck source=/dev/null
 source /tmp/kernel-tuning.sh
 : "${EDITION:=normal}"
+# arch.sh (kernel/GRUB package theo kiến trúc) — copy vào /tmp cùng cách
+# với kernel-tuning.sh (xem step copy trong Build-Hyggshi-OS-ISO.yml).
+# shellcheck source=/dev/null
+source /tmp/arch.sh
+: "${ARCH:=amd64}"
 : "${AUTOLOGIN:=true}"
 : "${AUTOSCALE_DISPLAY:=true}"
 
@@ -51,11 +56,15 @@ path-exclude=/usr/share/lintian/*
 path-exclude=/usr/share/linda/*
 DPKGCFGEOF
 
-echo "===== Cài kernel + base system (fallback giữa generic/amd64) ====="
+echo "===== Cài kernel + base system (arch=$ARCH, fallback generic -> $(hyggshi_kernel_package "$ARCH")) ====="
+# "linux-image-generic" là tên gói kiểu Ubuntu (không tồn tại trên Debian
+# thuần) — thử trước cho distro nào có, fail thì fallback đúng meta-package
+# kernel Debian theo ARCH (linux-image-amd64/linux-image-arm64 — KHÔNG
+# hardcode amd64, arm64 không có "linux-image-amd64").
 apt-get install -y linux-image-generic live-boot systemd-sysv \
   initramfs-tools plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release || \
-apt-get install -y linux-image-amd64 live-boot systemd-sysv \
+apt-get install -y "$(hyggshi_kernel_package "$ARCH")" live-boot systemd-sysv \
   initramfs-tools plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release
 
@@ -111,7 +120,12 @@ echo "grub-pc grub-pc/install_devices_disks_changed multiselect" | debconf-set-s
 # efibootmgr cần cho nhánh UEFI ghi boot entry vào NVRAM; parted/dosfstools
 # cần cho module partition (tạo/format phân vùng ESP/root).
 GRUB_INSTALL_FAILED=0
-for pkg in grub-pc grub-pc-bin grub-efi-amd64-bin grub-common efibootmgr parted dosfstools; do
+# arm64 không có BIOS/legacy boot -> không có gói grub-pc/grub-pc-bin cho
+# arch này (apt-get install sẽ báo "no installation candidate" -> fail cứng
+# bên dưới nếu cứ liệt kê cố định như trước). Danh sách gói lấy từ arch.sh
+# thay vì hardcode amd64.
+mapfile -t GRUB_PACKAGES < <(hyggshi_grub_packages "$ARCH")
+for pkg in "${GRUB_PACKAGES[@]}"; do
   if ! apt-get install -y "$pkg"; then
     echo "LỖI: cài gói '$pkg' thất bại (xem log apt ở trên để biết lý do — hết mạng, gói bị transition tạm thời, debconf chưa preseed đúng, v.v.)." >&2
     GRUB_INSTALL_FAILED=1

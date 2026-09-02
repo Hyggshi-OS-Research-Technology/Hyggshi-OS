@@ -7,7 +7,8 @@ File .ini của Hyggshi OS (iso-config/config/config.ini) không phải INI
 thuần: nó có reference resolution (${Base}), key-driven dispatch
 (kernel = "Desktop" -> [kernel.Desktop]), typed literals (SIZE: 1GB /
 custom > 7.2GB), và function calls (fileinstall(), filecustom(),
-command(...), make()). Script này parse toàn bộ thành AST, resolve hết
+filetheme(), filecopy(), fileaddtext(), command(...), make(),
+installkernel(...)). Script này parse toàn bộ thành AST, resolve hết
 reference/function, validate, rồi xuất:
 
   1. JSON đã resolve hoàn chỉnh (để debug / cho tool khác đọc)
@@ -54,9 +55,18 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # để ghi dòng "deb ..." vào /etc/apt/sources.list. Cùng bug y hệt filetheme/
 # filecopy trước đó: function mới xuất hiện trong config.ini nhưng chưa được
 # đăng ký -> validate_every_entry() báo lỗi cho toàn bộ 4 profile repo.
+#
+# PATCH 3: thêm installkernel — dùng trong [package] ở khối "kernel install
+# and compilers (coming soon...)" (kernel-install = installkernel(target=...
+# kernel-version=... compilers=...)). Hiện khối này đang comment (";") trong
+# config.ini nên chưa active, nhưng cú pháp installkernel(...) đã xuất hiện
+# sẵn trong file -> đăng ký trước ở đây để lúc bỏ comment kích hoạt,
+# validate_every_entry() không báo "Function 'installkernel(...)' không nằm
+# trong FUNCTION set hợp lệ" (cùng loại bug đã gặp với filetheme/filecopy/
+# fileaddtext).
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
-    "command", "make", "call",
+    "command", "make", "call", "installkernel",
 }
 
 SIZE_RE = re.compile(
@@ -352,6 +362,21 @@ class Resolver:
             if not os.path.exists(full):
                 self.diags.append(Diagnostic(
                     "error", f"command(file={kwargs['file']}) — script không tồn tại: {full}"))
+        if name == "installkernel":
+            # installkernel(target=..., kernel-version=..., compilers=...)
+            # "target" ở đây không phải path trong repo (khác fileinstall/
+            # filecustom/filetheme) mà là đường dẫn HỆ THỐNG sẽ ghi/patch lúc
+            # build (vd apt source list) hoặc đơn thuần placeholder chưa dùng
+            # tới — nên KHÔNG check tồn tại trên đĩa ở đây, giống lý do
+            # filecopy() không check (xem PATCH ở resolve_function phía trên
+            # cho "arg" case). Việc thật sự cần validate là có khai
+            # kernel-version hay chưa, vì đó là input bắt buộc để build.sh
+            # biết compile/cài kernel nào.
+            if not kwargs.get("kernel-version"):
+                self.diags.append(Diagnostic(
+                    "error",
+                    "installkernel(...) thiếu 'kernel-version' — bắt buộc để "
+                    "biết build/cài kernel version nào."))
         return result
 
     def resolve_my_version_os_base(self) -> dict:
@@ -614,6 +639,7 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     all_packages = []
     desktop_packages = []
     desktop_group = ""
+    kernel_install = None  # PATCH 3: installkernel(...) — xem FUNCTION_NAMES
 
     for g_name, g_pkgs in pkg_groups.items():
         g_lower = g_name.lower().strip()
@@ -631,6 +657,14 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
                     app_installs.append(p)
                     if v.get("is_url"):
                         app_urls.append(p)
+            elif isinstance(v, dict) and v.get("call") == "installkernel":
+                # Chỉ nên có 1 khai báo installkernel(...) trong config.ini;
+                # nếu có nhiều, lấy cái gặp đầu tiên và cảnh báo (giống cách
+                # [Base]/[Desktop-Environment] enforce ENUM — nhưng ở đây
+                # không phải lỗi cứng vì không có gì trong grammar cấm khai
+                # 2 lần, chỉ là không rõ cái nào build.sh nên dùng).
+                if kernel_install is None:
+                    kernel_install = v
             elif v is True:
                 if is_de_group:
                     if is_active_de:
@@ -644,6 +678,12 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     put("DESKTOP_PACKAGES", " ".join(desktop_packages))
     put("DESKTOP_PACKAGE_GROUP", desktop_group)
     put("ALL_PACKAGES", " ".join(all_packages))
+
+    put("KERNEL_INSTALL_ENABLED", str(kernel_install is not None).lower())
+    if kernel_install is not None:
+        put("KERNEL_INSTALL_VERSION", kernel_install.get("kernel-version", ""))
+        put("KERNEL_INSTALL_TARGET", kernel_install.get("target", ""))
+        put("KERNEL_INSTALL_COMPILERS", str(bool(kernel_install.get("compilers"))).lower())
 
     apt = resolved.get("apt_repository")
     if apt:

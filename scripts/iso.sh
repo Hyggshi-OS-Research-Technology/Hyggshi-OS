@@ -3,6 +3,7 @@
 # Chạy trên HOST.
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
+: "${ARCH:=amd64}"
 
 echo "===== Unmount chroot filesystems ====="
 sudo chroot live-build/chroot umount /proc || true
@@ -121,6 +122,17 @@ else
   echo "CẢNH BÁO: không tìm thấy binary memtest86+ trong chroot — bỏ qua mục 'Kiểm tra RAM' trong GRUB." >&2
 fi
 
+if [ "$ARCH" != "amd64" ]; then
+  # EXPERIMENTAL (giống Alpine/Fedora job khác trong workflow): shim/grub
+  # đã ký cho arm64 dùng tên gói + đường dẫn KHÁC amd64 (shimaa64.efi.signed,
+  # grub-efi-arm64-signed, .../arm64-efi-signed/...) mà chuỗi lệnh dưới đây
+  # chưa test được trên phần cứng/VM arm64 thật — cố đoán tên gói mà sai sẽ
+  # ra ISO tưởng có secure boot nhưng thật ra hỏng, còn tệ hơn không ký.
+  # An toàn hơn: bỏ qua bước ký, ISO arm64 vẫn build/boot bình thường ở máy
+  # TẮT Secure Boot (giống hệt nhánh SECURE_BOOT_OK=false bên dưới).
+  echo "===== UEFI Secure Boot: bỏ qua (ARCH=$ARCH — chỉ hỗ trợ amd64, EXPERIMENTAL cho arm64) ====="
+  SECURE_BOOT_OK=false
+else
 echo "===== UEFI Secure Boot: cài shim + GRUB đã ký (chain of trust Microsoft/Canonical) ====="
 # VẤN ĐỀ CŨ: grub-mkrescue tự build core.efi CHO CHÍNH NÓ, và core.efi đó
 # KHÔNG hề được ký — firmware bật Secure Boot chặn ngay ở bước nạp
@@ -157,6 +169,7 @@ else
   echo "OK: grub(signed)=$GRUB_SIGNED_BIN"
   echo "OK: mokmanager=${MM_BIN:-<không có, bỏ qua — không bắt buộc để boot>}"
 fi
+fi # end ARCH != amd64 guard
 
 mkdir -p live-build/image/boot/grub
 

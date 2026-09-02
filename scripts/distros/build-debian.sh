@@ -5,6 +5,19 @@
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../arch.sh"
+: "${ARCH:=amd64}"
+hyggshi_validate_arch "$ARCH" || exit 1
+
+if [ "$(hyggshi_needs_qemu_binfmt "$ARCH")" = "true" ] && \
+   ! [ -e "/proc/sys/fs/binfmt_misc/qemu-aarch64" ]; then
+  echo "CẢNH BÁO: build ARCH=$ARCH trên host $(uname -m) nhưng chưa thấy" >&2
+  echo "binfmt_misc qemu-aarch64 đăng ký — debootstrap/chroot arm64 sẽ lỗi" >&2
+  echo "'exec format error'. Workflow cần bước 'Set up QEMU' (docker/setup-qemu-action)" >&2
+  echo "chạy TRƯỚC step này khi architecture=arm64." >&2
+fi
+
 BASE_CODENAME="$DEBIAN_VERSION"
 MIRROR="http://deb.debian.org/debian/"
 case "$BASE_CODENAME" in
@@ -19,10 +32,11 @@ echo "Sẽ build trên: $DISTRO_LABEL"
   echo "BASE_CODENAME=$BASE_CODENAME"
   echo "MIRROR=$MIRROR"
   echo "DISTRO_LABEL=$DISTRO_LABEL"
+  echo "ARCH=$ARCH"
 } >> "$GITHUB_ENV"
 
-echo "===== Debootstrap Debian ${BASE_CODENAME} ====="
-sudo debootstrap --arch=amd64 --variant=minbase \
+echo "===== Debootstrap Debian ${BASE_CODENAME} (arch=$ARCH) ====="
+sudo debootstrap --arch="$(hyggshi_debootstrap_arch "$ARCH")" --variant=minbase \
   "$BASE_CODENAME" live-build/chroot "$MIRROR"
 
 echo "===== Mount virtual filesystems for chroot ====="
