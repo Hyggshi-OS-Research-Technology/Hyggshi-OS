@@ -600,11 +600,53 @@ case "$DE" in
     ;;
 
   lxqt)
-    # sddm dùng chung cơ chế autologin session=lxqt bên dưới, đồng bộ với KDE.
-    # lxqt-config cần cho phần icon/theme setting qua GUI (không bắt buộc lúc
-    # build nhưng nên có để user chỉnh lại sau khi cài).
+    # SDDM dùng chung cơ chế autologin session=lxqt bên dưới.
+    # Cài đặt trọn bộ môi trường desktop LXQt và ứng dụng NATIVE của LXQt:
+    # - Terminal: qterminal (thay vì xterm hay konsole của KDE)
+    # - File Manager: pcmanfm-qt (thay vì dolphin của KDE)
+    # - Text Editor: featherpad (thay vì kate/kwrite của KDE)
+    # - Image Viewer: lximage-qt (thay vì gwenview của KDE)
+    # - Archive Manager: lxqt-archiver (thay vì ark của KDE)
+    # - Volume Control: pavucontrol-qt (thay vì kmix/plasma-pa của KDE)
+    # - Task/Process Manager: qps (thay vì ksysguard/plasma-systemmonitor)
+    # - Screenshot: screengrab (thay vì spectacle của KDE)
+    # - Window Manager & Config: openbox obconf-qt
+    # - Core & System: lxqt-powermanagement lxqt-notificationd lxqt-runner lxqt-policykit lxqt-sudo lxqt-admin lxqt-about lxqt-globalkeys lxqt-qtplugin
+    apt-get install -y lxqt lxqt-core sddm lxqt-config lxqt-panel lxqt-session \
+      pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt \
+      qps screengrab openbox obconf-qt lxqt-powermanagement lxqt-notificationd \
+      lxqt-runner lxqt-policykit lxqt-sudo lxqt-admin lxqt-about lxqt-globalkeys \
+      lxqt-qtplugin || \
     apt-get install -y lxqt sddm lxqt-config lxqt-panel lxqt-session \
-      pcmanfm-qt xterm
+      pcmanfm-qt qterminal featherpad lximage-qt openbox obconf-qt
+
+    # Loại bỏ triệt để các ứng dụng KDE nếu bị kéo theo qua Recommends của repo/mirror
+    echo "Gỡ bỏ các ứng dụng KDE không mong muốn trong phiên bản LXQt (nếu có)..."
+    apt-get purge -y konsole dolphin kate kwrite ark gwenview okular kcalc spectacle \
+      kde-plasma-desktop plasma-workspace plasma-desktop plasma-nm kde-config-sddm 2>/dev/null || true
+
+    # Thiết lập default application MIME associations chuẩn cho các app LXQt
+    mkdir -p /etc/xdg
+    cat <<'LXQTMIMEOF' > /etc/xdg/mimeapps.list
+[Default Applications]
+inode/directory=pcmanfm-qt.desktop
+text/plain=featherpad.desktop
+image/png=lximage-qt.desktop
+image/jpeg=lximage-qt.desktop
+image/gif=lximage-qt.desktop
+image/bmp=lximage-qt.desktop
+image/svg+xml=lximage-qt.desktop
+application/zip=lxqt-archiver.desktop
+application/x-tar=lxqt-archiver.desktop
+application/x-compressed-tar=lxqt-archiver.desktop
+application/x-bzip-compressed-tar=lxqt-archiver.desktop
+application/x-xz-compressed-tar=lxqt-archiver.desktop
+application/x-7z-compressed=lxqt-archiver.desktop
+application/x-rar=lxqt-archiver.desktop
+x-scheme-handler/terminal=qterminal.desktop
+LXQTMIMEOF
+    mkdir -p /etc/skel/.config
+    cp -f /etc/xdg/mimeapps.list /etc/skel/.config/mimeapps.list
 
     # icon theme theo lựa chọn — LXQt vẫn dùng icon theme GTK/Qt chung như XFCE
     case "$ICON_THEME" in

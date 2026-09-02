@@ -78,7 +78,7 @@ echo "===== packages.x86_64: thêm gói theo DE/edition/branding ====="
       DISPLAY_MANAGER="sddm"
       ;;
     lxqt)
-      printf '%s\n' lxqt sddm pcmanfm-qt xterm
+      printf '%s\n' lxqt sddm pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt qps screengrab openbox obconf-qt
       DISPLAY_MANAGER="sddm"
       ;;
     gnome)
