@@ -182,9 +182,27 @@ if [ -n "${HCL_APP_INSTALLS:-}" ]; then
   done
 fi
 
+# ----- 3.5. Lọc bỏ .deb SAI kiến trúc so với chroot đang cài (vd .deb
+# amd64-only như nexfetch/nexcode hiện tại — xem app-for-hyggshi/*.deb —
+# đưa vào chroot arm64) TRƯỚC khi cài, thay vì để apt-get/dpkg -i fail giữa
+# chừng rồi kéo `apt-get install -f -y` (không có "|| true") fail theo do
+# `set -e`, sập cả script chỉ vì 1 .deb không tương thích. "all" (gói
+# arch-independent, vd .deb chỉ chứa script/asset) luôn được giữ.
+CHROOT_ARCH="$(dpkg --print-architecture 2>/dev/null || echo unknown)"
+COMPATIBLE_DEB_FILES=()
+for DEB in "${DEB_FILES[@]}"; do
+  DEB_ARCH="$(dpkg-deb -f "$DEB" Architecture 2>/dev/null || echo unknown)"
+  if [ "$DEB_ARCH" = "all" ] || [ "$DEB_ARCH" = "$CHROOT_ARCH" ] || [ "$CHROOT_ARCH" = "unknown" ]; then
+    COMPATIBLE_DEB_FILES+=("$DEB")
+  else
+    echo "⚠️  Bỏ qua $(basename "$DEB") — gói build cho '$DEB_ARCH', chroot này là '$CHROOT_ARCH' (không tương thích)." >&2
+  fi
+done
+DEB_FILES=("${COMPATIBLE_DEB_FILES[@]}")
+
 # ----- 4. Cài mọi file .deb tìm được -----
 if [ "${#DEB_FILES[@]}" -eq 0 ]; then
-  echo "⚠️  Không tìm thấy file .deb nào — bỏ qua bước cài gói deb."
+  echo "⚠️  Không tìm thấy file .deb nào tương thích — bỏ qua bước cài gói deb."
 else
   echo "===== Cài đặt ${#DEB_FILES[@]} gói .deb ====="
   $SUDO apt-get update -qq || true

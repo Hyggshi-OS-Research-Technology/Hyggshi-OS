@@ -3,13 +3,19 @@
 # chạy trong chroot) và Arch (build-arch-iso.sh, ghi thẳng vào airootfs).
 # Được `source`, KHÔNG tự chạy độc lập.
 #
-# EDITION hợp lệ: normal | developer | server | lite
+# EDITION hợp lệ: normal | developer | server | lite | high-class
 #   - normal      : Desktop mặc định, không chỉnh gì đặc biệt.
 #   - developer   : swappiness thấp, inotify watch cao (build/watch nhiều file),
 #                   thêm build-essential/git/docker.
 #   - server      : swappiness thấp, tối ưu network backlog, tắt hiệu ứng boot,
 #                   thêm openssh-server.
 #   - lite        : tối ưu cho máy yếu, package tối giản, boot bớt log.
+#   - high-class  : giống [kernel.High-class] trong config.ini — cùng mức
+#                   tuning network/RAM như server (swappiness thấp,
+#                   somaxconn/backlog cao) nhưng dành cho desktop mạnh
+#                   (khuyến nghị đi cùng desktop = gnome), KHÔNG tắt hiệu
+#                   ứng boot / mask service như lite, không thêm package
+#                   dev-tool như developer.
 #
 # LƯU Ý: đây là kernel *runtime* parameter qua sysctl + boot cmdline, không
 # phải compile-time kernel config (CONFIG_PREEMPT, CONFIG_HZ...) — muốn đổi
@@ -32,6 +38,22 @@ EOF
     server)
       cat <<EOF
 # Hyggshi OS — Edition: Server
+vm.swappiness = 10
+vm.vfs_cache_pressure = 50
+fs.file-max = 2097152
+net.core.somaxconn = 4096
+net.ipv4.tcp_max_syn_backlog = 4096
+kernel.nmi_watchdog = 0
+EOF
+      ;;
+    high-class)
+      cat <<EOF
+# Hyggshi OS — Edition: High-class
+# Cùng giá trị với [kernel.High-class] trong iso-config/config/config.ini —
+# tuning network/RAM như server (swappiness thấp = ưu tiên giữ trang trong
+# RAM thay vì swap ra đĩa, somaxconn/backlog cao cho throughput mạng tốt),
+# nhưng KHÔNG tắt hiệu ứng/log boot như server/lite vì đây vẫn là desktop
+# đầy đủ (mặc định đi cùng desktop = gnome, xem config.ini).
 vm.swappiness = 10
 vm.vfs_cache_pressure = 50
 fs.file-max = 2097152
