@@ -1688,6 +1688,41 @@ fi
 # ============================================================
 
 # ============================================================
+# Swap RAM (zram) — Áp dụng khi có cấu hình swap (config.ini / env) hoặc edition=lite
+# Hoạt động trên cả Debian, Ubuntu và Linux Mint.
+# ============================================================
+SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
+SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
+SWAP_ENABLED=false
+
+if [ "$SWAP_MODE_VAL" != "off" ] && [ -n "$SWAP_MB_VAL" ] && [ "$SWAP_MB_VAL" -gt 0 ] 2>/dev/null; then
+  SWAP_ENABLED=true
+elif [ "$SWAP_MODE_VAL" != "off" ] && [ "$SWAP_MODE_VAL" != "false" ] && [ -n "$SWAP_MODE_VAL" ]; then
+  SWAP_ENABLED=true
+elif [ "$EDITION" = "lite" ]; then
+  SWAP_ENABLED=true
+fi
+
+if [ "$SWAP_ENABLED" = "true" ]; then
+  echo "===== Thiết lập Swap RAM (zram-tools) (mode=$SWAP_MODE_VAL, size=${SWAP_MB_VAL}MB, edition=$EDITION) ====="
+  apt-get install -y zram-tools || echo "CẢNH BÁO: không cài được zram-tools." >&2
+
+  mkdir -p /etc/default /etc/modules-load.d
+  echo "zram" > /etc/modules-load.d/zram.conf
+
+  ZRAM_CONF=$(hyggshi_zram_conf "$EDITION" "$SWAP_MB_VAL")
+  echo "$ZRAM_CONF" > /etc/default/zramswap
+  echo "Đã ghi /etc/default/zramswap:"
+  cat /etc/default/zramswap
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable zramswap.service 2>/dev/null || true
+  fi
+else
+  echo "Swap RAM (zram): tắt hoặc không cấu hình (mode=$SWAP_MODE_VAL)."
+fi
+
+# ============================================================
 # Edition (kernel tuning) — CHỈ áp dụng cho Debian, theo đúng yêu cầu
 # ("arch và debian thêm tuỳ chọn chỉnh thông số kernel"). Ubuntu/Mint chạy
 # chung script này nhưng không áp dụng, để không đổi hành vi đã ổn định.
@@ -1697,18 +1732,10 @@ if [ "$BASE_DISTRO" = "debian" ]; then
   mkdir -p /etc/sysctl.d
   hyggshi_sysctl_conf "$EDITION" > /etc/sysctl.d/99-hyggshi-tuning.conf
 
-  EDITION_PKGS=$(hyggshi_edition_packages_apt "$EDITION")
+  EDITION_PKGS=$(hyggshi_edition_packages_apt "$EDITION" "$SWAP_ENABLED")
   if [ -n "$EDITION_PKGS" ]; then
     echo "Gói thêm cho edition '$EDITION': $EDITION_PKGS"
     apt-get install -y $EDITION_PKGS || true
-  fi
-
-  # zram (lite): ghi /etc/default/zramswap SAU KHI zram-tools đã cài ở trên,
-  # nếu không package sẽ tự tạo file mặc định rồi đè lên config của mình.
-  ZRAM_CONF=$(hyggshi_zram_conf "$EDITION")
-  if [ -n "$ZRAM_CONF" ]; then
-    echo "Áp dụng zram config cho edition '$EDITION'"
-    echo "$ZRAM_CONF" > /etc/default/zramswap
   fi
 
   # Mask service nền không cần cho lite — dùng `systemctl mask` (không phải

@@ -88,29 +88,46 @@ EOF
 # Gói apt thêm theo edition (Debian/Ubuntu/Mint) — cách nhau bằng dấu cách.
 hyggshi_edition_packages_apt() {
   local edition="${1:-normal}"
+  local swap_enabled="${2:-false}"
+  local pkgs=""
   case "$edition" in
-    developer) echo "build-essential git curl docker.io htop" ;;
-    server)    echo "openssh-server htop" ;;
-    lite)      echo "zram-tools" ;;
-    *)         echo "" ;;
+    developer) pkgs="build-essential git curl docker.io htop" ;;
+    server)    pkgs="openssh-server htop" ;;
+    lite)      pkgs="zram-tools" ;;
+    *)         pkgs="" ;;
   esac
+  if [ "$swap_enabled" = "true" ] && [[ "$pkgs" != *"zram-tools"* ]]; then
+    pkgs="${pkgs:+$pkgs }zram-tools"
+  fi
+  echo "$pkgs"
 }
 
-# /etc/default/zramswap cho edition lite — chỉ có ý nghĩa khi zram-tools đã
-# được cài ở trên. ALGO=lz4 vì máy yếu thường CPU cũng yếu — lz4 nén/giải
-# nén nhanh hơn zstd, đổi lấy tỉ lệ nén thấp hơn một chút (đúng hướng đánh
-# đổi cho "lite"; normal/server mạnh hơn có thể chọn zstd để nén tốt hơn).
+# /etc/default/zramswap — cấu hình Swap RAM (zram) nén.
+# ALGO=lz4 cho lite (nhanh cho CPU yếu), zstd cho các profile khác (tỉ lệ nén cao hơn).
+# SIZE tính bằng MB (ví dụ 1024 cho 1GB, 2048 cho 2GB). Nếu không có SIZE cụ thể thì dùng PERCENT=50.
+# LƯU Ý QUAN TRỌNG: trong zram-tools, PERCENT có độ ưu tiên cao hơn SIZE — nên nếu set SIZE
+# thì KHÔNG được khai báo dòng PERCENT để SIZE có hiệu lực thật sự.
 hyggshi_zram_conf() {
   local edition="${1:-normal}"
-  case "$edition" in
-    lite)
-      cat <<EOF
-ALGO=lz4
+  local swap_mb="${2:-0}"
+  local algo="zstd"
+  [ "$edition" = "lite" ] && algo="lz4"
+
+  if [ -n "$swap_mb" ] && [ "$swap_mb" -gt 0 ] 2>/dev/null; then
+    cat <<EOF
+# Hyggshi OS — Swap RAM (zram) configuration
+ALGO=$algo
+SIZE=$swap_mb
+PRIORITY=100
+EOF
+  else
+    cat <<EOF
+# Hyggshi OS — Swap RAM (zram) configuration
+ALGO=$algo
 PERCENT=50
 PRIORITY=100
 EOF
-      ;;
-  esac
+  fi
 }
 
 # Service systemd nên mask cho edition — giảm RAM nền + thời gian boot trên

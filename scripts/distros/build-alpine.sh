@@ -153,6 +153,14 @@ if [ -n "$EDITION_PKGS" ]; then
   apk_target $EDITION_PKGS || true
 fi
 
+SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
+SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
+if [ "$SWAP_MODE_VAL" != "off" ] || [ "$EDITION" = "lite" ]; then
+  apk_target zram-init || true
+  mkdir -p "$ROOTFS/etc/modules-load.d"
+  echo "zram" > "$ROOTFS/etc/modules-load.d/zram.conf"
+fi
+
 echo "===== hostname / timezone ====="
 echo "$OS_HOSTNAME" > "$ROOTFS/etc/hostname"
 echo "127.0.1.1 $OS_HOSTNAME" >> "$ROOTFS/etc/hosts"

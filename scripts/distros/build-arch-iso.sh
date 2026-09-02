@@ -109,8 +109,29 @@ echo "===== packages.x86_64: thêm gói theo DE/edition/branding ====="
   [ "$INCLUDE_BROWSER" = "true" ] && echo "firefox"
   [ "$INCLUDE_OFFICE" = "true" ] && echo "libreoffice-fresh"
 
+  SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
+  SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
+  if [ "$SWAP_MODE_VAL" != "off" ] || [ "$EDITION" = "lite" ]; then
+    echo "zram-generator"
+  fi
+
   hyggshi_edition_packages_pacman "$EDITION"
 } >> "$PROFILE_DIR/packages.x86_64"
+
+SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
+SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
+if [ "$SWAP_MODE_VAL" != "off" ] || [ "$EDITION" = "lite" ]; then
+  mkdir -p "$PROFILE_DIR/airootfs/etc/systemd" "$PROFILE_DIR/airootfs/etc/modules-load.d"
+  echo "zram" > "$PROFILE_DIR/airootfs/etc/modules-load.d/zram.conf"
+  ZRAM_SIZE_SPEC="${SWAP_MB_VAL:-1024}"
+  [ "$ZRAM_SIZE_SPEC" = "0" ] && ZRAM_SIZE_SPEC="min(ram / 2, 4096)"
+  cat <<EOF > "$PROFILE_DIR/airootfs/etc/systemd/zram-generator.conf"
+[zram0]
+zram-size = $ZRAM_SIZE_SPEC
+compression-algorithm = zstd
+swap-priority = 100
+EOF
+fi
 
 # Lưu DISPLAY_MANAGER ra file tạm để customize_airootfs.sh (chạy trong
 # chroot riêng, không thấy biến shell của script này) đọc lại được.

@@ -597,9 +597,12 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
             f"(mọi package liên quan tới DE khác, kể cả Cinnamon, sẽ bị loại khỏi HCL_PACKAGES)."
         )
 
-    swap = bp.get("swap") or {}
-    put("SWAP_MODE", swap.get("mode"))
-    put("SWAP_MB", int(swap.get("mb", 0)))
+    kp_swap = kp.get("swap") if isinstance(kp, dict) else None
+    swap = (kp_swap if isinstance(kp_swap, dict) and kp_swap.get("mode") != "off" else None) or bp.get("swap") or {}
+    swap_mode = swap.get("mode") or "off"
+    swap_mb = int(swap.get("mb", 0))
+    put("SWAP_MODE", swap_mode)
+    put("SWAP_MB", swap_mb)
 
     fw_pkgs = bp.get("firmware_packages") or {}
     put("FIRMWARE_ENABLED", str(bool(bp.get("firmware_enabled"))).lower())
@@ -736,6 +739,9 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         lines.append(f"HCL_APP_URLS={' '.join(app_urls)}")
     if all_packages:
         lines.append(f"HCL_PACKAGES={' '.join(all_packages)}")
+    if swap_mode:
+        lines.append(f"SWAP_MODE={swap_mode}")
+        lines.append(f"SWAP_MB={swap_mb}")
 
     return lines
 

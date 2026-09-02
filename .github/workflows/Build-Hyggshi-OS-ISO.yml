@@ -383,6 +383,10 @@ jobs:
             INCLUDE_BROWSER="$INCLUDE_BROWSER" \
             INCLUDE_OFFICE="$INCLUDE_OFFICE" \
             EXTRA_PACKAGES="${EXTRA_PACKAGES} ${HCL_PACKAGES:-}" \
+            HCL_SWAP_MODE="${HCL_SWAP_MODE:-}" \
+            HCL_SWAP_MB="${HCL_SWAP_MB:-0}" \
+            SWAP_MODE="${SWAP_MODE:-}" \
+            SWAP_MB="${SWAP_MB:-0}" \
             AUTOLOGIN="$AUTOLOGIN" \
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
