@@ -716,7 +716,10 @@ jobs:
 
       # === 6) ISO: unmount, squashfs, grub, đóng gói ISO ===
       - name: "[iso.sh] Build squashfs + ISO bootable"
-        run: bash scripts/iso.sh
+        run: |
+          HCL_SQUASHFS_MAX_COMPRESSION="${HCL_SQUASHFS_MAX_COMPRESSION:-}" \
+          SQUASHFS_MAX_COMPRESSION="${SQUASHFS_MAX_COMPRESSION:-}" \
+          bash scripts/iso.sh
 
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4

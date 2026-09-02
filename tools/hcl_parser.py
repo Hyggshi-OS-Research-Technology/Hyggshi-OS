@@ -614,8 +614,9 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     # max-compression (và Time-zone/lang/stylexfce) chỉ nằm chết trong
     # /tmp/hcl-resolved.json, iso.sh/desktop.sh không đọc được. Export đúng
     # squashfs-max-compression ở đây để scripts/iso.sh dùng.
-    cfg = bp.get("config") or {}
-    put("SQUASHFS_MAX_COMPRESSION", str(bool(cfg.get("squashfs-max-compression"))).lower())
+    cfg = bp.get("config") if isinstance(bp.get("config"), dict) else {}
+    sq_max = str(bool(cfg.get("squashfs-max-compression", bp.get("squashfs-max-compression")))).lower()
+    put("SQUASHFS_MAX_COMPRESSION", sq_max)
 
     pkg_groups = resolved.get("package_groups", {})
     de = de_effective.lower()
@@ -742,6 +743,7 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     if swap_mode:
         lines.append(f"SWAP_MODE={swap_mode}")
         lines.append(f"SWAP_MB={swap_mb}")
+    lines.append(f"SQUASHFS_MAX_COMPRESSION={sq_max}")
 
     return lines
 

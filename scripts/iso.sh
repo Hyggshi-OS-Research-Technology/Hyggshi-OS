@@ -6,16 +6,32 @@ set -e
 : "${ARCH:=amd64}"
 
 echo "===== Unmount chroot filesystems ====="
-sudo chroot live-build/chroot umount /proc || true
-sudo chroot live-build/chroot umount /sys || true
-sudo umount live-build/chroot/run || true
-sudo umount live-build/chroot/dev || true
+sudo umount -lf live-build/chroot/dev/pts 2>/dev/null || true
+sudo umount -lf live-build/chroot/dev 2>/dev/null || true
+sudo chroot live-build/chroot umount /proc 2>/dev/null || sudo umount -lf live-build/chroot/proc 2>/dev/null || true
+sudo chroot live-build/chroot umount /sys 2>/dev/null || sudo umount -lf live-build/chroot/sys 2>/dev/null || true
+sudo umount -lf live-build/chroot/run 2>/dev/null || true
 # Bind-mount cache .deb (xem step "Mount apt cache vào chroot" trong
 # workflow) PHẢI được unmount trước khi mksquashfs — nếu không toàn bộ
 # .deb đã tải sẽ bị đóng gói lẫn vào filesystem.squashfs, làm ISO phình to
 # vô ích (những .deb này chỉ cần tồn tại trên HOST để actions/cache lưu
 # lại dùng cho lần build sau, không cần có trong ISO cuối cùng).
-sudo umount live-build/chroot/var/cache/apt/archives || true
+sudo umount -lf live-build/chroot/var/cache/apt/archives 2>/dev/null || true
+
+echo "===== Dọn sạch rác, cache, build artifacts và temporary files trong chroot trước khi mksquashfs ====="
+# Xoá toàn bộ file tạm và build artifacts trong /tmp và /var/tmp của chroot (bao gồm .deb 100MB của nexcode, zip, .o...)
+sudo rm -rf live-build/chroot/tmp/* live-build/chroot/tmp/.* 2>/dev/null || true
+sudo rm -rf live-build/chroot/var/tmp/* live-build/chroot/var/tmp/.* 2>/dev/null || true
+
+# Xoá cache apt và apt list index (Debian testing index tốn hàng trăm MB)
+sudo rm -rf live-build/chroot/var/cache/apt/archives/*.deb live-build/chroot/var/cache/apt/archives/partial/* 2>/dev/null || true
+sudo rm -rf live-build/chroot/var/lib/apt/lists/* 2>/dev/null || true
+
+# Xoá cache user/root
+sudo rm -rf live-build/chroot/root/.cache/* live-build/chroot/home/*/.cache/* 2>/dev/null || true
+
+# Truncate logs
+sudo find live-build/chroot/var/log -type f -exec truncate -s 0 {} \; 2>/dev/null || true
 
 echo "===== Build squashfs from chroot ====="
 mkdir -p live-build/image/live
@@ -26,38 +42,35 @@ mkdir -p live-build/image/live
 # rỗng (không có vmlinuz/initrd/System.map/config, cũng không có sẵn để
 # grub-install/update-grub chạy trong target). Kết quả: lỗi "grub-pc has
 # no installation candidate" + "update-grub: No such file or directory".
-#
-# Nén bằng zstd thay vì xz: đây là bước tốn thời gian nhất trong cả pipeline
-# (~18 phút với xz trên runner CI). zstd multi-threaded (-processors) nén
-# nhanh hơn xz đáng kể (thường giảm 40-60% thời gian build squashfs) với
-# dung lượng ISO chỉ nhỉnh hơn xz một chút không đáng kể — đánh đổi rất
-# đáng vì đây là bottleneck chính của cả build.
-#   -b 1M                     giữ nguyên block size 1MiB như bản xz cũ, cho
-#                              tỷ lệ nén tốt trên nhiều file lặp lại (icon
-#                              theme, locale, lib...).
-#   -Xcompression-level 19    mức nén zstd (1-22). 19 cân bằng tốt giữa tốc
-#                              độ và dung lượng; hạ xuống ~12-15 nếu vẫn cần
-#                              nhanh hơn nữa và chấp nhận ISO to hơn 1 chút.
-#   -processors $(nproc)      dùng hết số core runner có (mksquashfs hỗ trợ
-#                              nén đa luồng với zstd, không như xz vốn gần
-#                              như đơn luồng ở phần nén chính).
-# LƯU Ý: KHÔNG dùng -Xbcj x86 nữa — filter BCJ đó chỉ dành riêng cho xz,
-# zstd không hỗ trợ (mksquashfs sẽ báo lỗi option không hợp lệ nếu giữ lại).
-#
-# squashfs-max-compression (config.ini [config-setup-postpartum-care], export
-# qua tools/hcl_parser.py -> $HCL_SQUASHFS_MAX_COMPRESSION): true chuyển hẳn
-# sang xz mức nén cao nhất (-Xdict-size 100%, -Xbcj x86, block nhỏ hơn 128K
-# giúp tỷ lệ nén tốt hơn) để ISO nhỏ nhất có thể — ĐÁNH ĐỔI: build lâu hơn
-# hẳn (xz gần như đơn luồng ở bước nén chính, -processors gần như không giúp
-# được nhiều). false (mặc định) giữ nguyên zstd nhanh như cũ.
-if [ "${HCL_SQUASHFS_MAX_COMPRESSION:-false}" = "true" ]; then
-  echo "squashfs-max-compression=true -> dùng xz nén tối đa (ISO nhỏ nhất, build chậm hơn)"
-  sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
-    -comp xz -b 128K -Xbcj x86 -Xdict-size 100% -processors "$(nproc)"
+
+# Xác định chế độ nén squashfs (đọc từ env, /tmp/hcl-resolved.json, hoặc config.ini)
+MAX_COMP="${HCL_SQUASHFS_MAX_COMPRESSION:-${SQUASHFS_MAX_COMPRESSION:-}}"
+if [ -z "$MAX_COMP" ] || [ "$MAX_COMP" = "false" ]; then
+  if [ -f /tmp/hcl-resolved.json ]; then
+    MAX_COMP=$(python3 -c "import json; print(str(bool(json.load(open('/tmp/hcl-resolved.json'))['base_profile'].get('config', {}).get('squashfs-max-compression'))).lower())" 2>/dev/null || echo "")
+  fi
+fi
+if [ -z "$MAX_COMP" ] || [ "$MAX_COMP" = "false" ]; then
+  if [ -f iso-config/config/config.ini ]; then
+    MAX_COMP=$(grep -E '^[[:space:]]*squashfs-max-compression[[:space:]]*=' iso-config/config/config.ini 2>/dev/null | tail -n1 | tr -d ' "' | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]' || echo "false")
+  fi
+fi
+
+EXCLUDE_OPTS=(-wildcards -e "tmp/*" -e "tmp/.*" -e "var/tmp/*" -e "var/tmp/.*" -e "var/cache/apt/archives/*" -e "var/lib/apt/lists/*" -e "root/.cache/*" -e "home/*/.cache/*")
+
+if [ "$MAX_COMP" = "true" ]; then
+  echo "squashfs-max-compression=true -> dùng xz nén tối đa (block 1M, dict-size 100%, ISO nhỏ nhất)"
+  if [ "$ARCH" = "amd64" ] || [ "$ARCH" = "x86_64" ]; then
+    sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
+      -comp xz -b 1M -Xbcj x86 -Xdict-size 100% -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  else
+    sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
+      -comp xz -b 1M -Xdict-size 100% -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  fi
 else
   echo "squashfs-max-compression=false -> dùng zstd nhanh (mặc định)"
   sudo mksquashfs live-build/chroot live-build/image/live/filesystem.squashfs \
-    -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)"
+    -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
 fi
 
 echo "===== Prepare boot files (kernel + initrd) ====="
