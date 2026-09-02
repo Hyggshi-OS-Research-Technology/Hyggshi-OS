@@ -268,9 +268,28 @@ EOF
 printf "%s \\n \\l\n\n" "$DISTRO_NAME" > "$ROOTFS/etc/issue"
 echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" > "$ROOTFS/etc/motd"
 
+echo "===== Dọn sạch rác, cache và build artifacts trong rootfs trước khi đóng gói squashfs ====="
+sudo rm -rf "$ROOTFS/tmp/"* "$ROOTFS/tmp/".[!.]* 2>/dev/null || true
+sudo rm -rf "$ROOTFS/var/tmp/"* 2>/dev/null || true
+sudo rm -rf "$ROOTFS/var/cache/apk/"* 2>/dev/null || true
+sudo find "$ROOTFS/var/log" -type f -exec truncate -s 0 {} \; 2>/dev/null || true
+sudo rm -rf "$ROOTFS/root/.cache/"* "$ROOTFS/home/"*/.cache/* 2>/dev/null || true
+
 echo "===== Đóng gói rootfs thành squashfs ====="
 mkdir -p live-build/image/live
-mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -e boot
+MAX_COMP="${HCL_SQUASHFS_MAX_COMPRESSION:-${SQUASHFS_MAX_COMPRESSION:-}}"
+if [ -z "$MAX_COMP" ] || [ "$MAX_COMP" = "false" ]; then
+  if [ -f iso-config/config/config.ini ]; then
+    MAX_COMP=$(grep -E '^[[:space:]]*squashfs-max-compression[[:space:]]*=' iso-config/config/config.ini 2>/dev/null | tail -n1 | tr -d ' "' | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]' || echo "false")
+  fi
+fi
+EXCLUDE_OPTS=(-wildcards -e "tmp/*" -e "tmp/.*" -e "var/tmp/*" -e "var/cache/apk/*" -e "root/.cache/*" -e "home/*/.cache/*")
+if [ "${MAX_COMP:-false}" = "true" ]; then
+  echo "squashfs-max-compression=true -> xz tối đa"
+  mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj x86 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+else
+  mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% "${EXCLUDE_OPTS[@]}"
+fi
 
 cp "$ROOTFS/boot/vmlinuz-lts" live-build/image/live/vmlinuz
 

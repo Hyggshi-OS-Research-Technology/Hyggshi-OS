@@ -281,6 +281,13 @@ echo "===== Unmount /proc /sys /dev /run trước khi đóng gói squashfs =====
 cleanup_mounts
 trap - EXIT
 
+echo "===== Dọn sạch rác, cache và build artifacts trong rootfs trước khi đóng gói squashfs ====="
+sudo rm -rf "$ROOTFS/tmp/"* "$ROOTFS/tmp/".[!.]* 2>/dev/null || true
+sudo rm -rf "$ROOTFS/var/tmp/"* 2>/dev/null || true
+sudo rm -rf "$ROOTFS/var/cache/dnf/"* "$ROOTFS/var/cache/yum/"* 2>/dev/null || true
+sudo find "$ROOTFS/var/log" -type f -exec truncate -s 0 {} \; 2>/dev/null || true
+sudo rm -rf "$ROOTFS/root/.cache/"* "$ROOTFS/home/"*/.cache/* 2>/dev/null || true
+
 echo "===== Đóng gói rootfs thành squashfs ====="
 mkdir -p live-build/image/live
 # BUG (giống hệt bug đã fix ở iso.sh cho nhánh Debian): KHÔNG được loại trừ
@@ -292,7 +299,19 @@ mkdir -p live-build/image/live
 # installation candidate" / thiếu file khi chạy grub2-mkconfig trong target.
 # Giữ nguyên /boot trong squashfs để hệ thống sau khi cài có đủ file cho
 # grub2-install/grub2-mkconfig.
-mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz
+MAX_COMP="${HCL_SQUASHFS_MAX_COMPRESSION:-${SQUASHFS_MAX_COMPRESSION:-}}"
+if [ -z "$MAX_COMP" ] || [ "$MAX_COMP" = "false" ]; then
+  if [ -f iso-config/config/config.ini ]; then
+    MAX_COMP=$(grep -E '^[[:space:]]*squashfs-max-compression[[:space:]]*=' iso-config/config/config.ini 2>/dev/null | tail -n1 | tr -d ' "' | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]' || echo "false")
+  fi
+fi
+EXCLUDE_OPTS=(-wildcards -e "tmp/*" -e "tmp/.*" -e "var/tmp/*" -e "var/cache/dnf/*" -e "var/cache/yum/*" -e "root/.cache/*" -e "home/*/.cache/*")
+if [ "${MAX_COMP:-false}" = "true" ]; then
+  echo "squashfs-max-compression=true -> xz tối đa"
+  mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj x86 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+else
+  mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% "${EXCLUDE_OPTS[@]}"
+fi
 
 VMLINUX_FILE=$(find "$ROOTFS/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%T@ %p\n' \
   | sort -nr | head -n1 | cut -d' ' -f2-)
