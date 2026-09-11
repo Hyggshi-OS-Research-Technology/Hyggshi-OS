@@ -4,10 +4,12 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFrame>
@@ -15,6 +17,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QPainter>
 #include <QProcess>
 #include <QMessageBox>
 #include <QPixmap>
@@ -30,9 +33,29 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <pwd.h>
+#include <unistd.h>
+
 namespace {
 
-constexpr int kPageCount = 10;
+// Thứ tự trang của wizard. MỌI logic định vị trang (các hook trong
+// goNext(), số chấm điều hướng...) phải dùng các hằng này thay vì số
+// cứng — chèn/bỏ trang sẽ làm lệch toàn bộ chỉ số.
+enum WizardPage {
+  kPageWelcome = 0,
+  kPageProfile,
+  kPageLanguage,
+  kPageNetwork,
+  kPageTheme,
+  kPageSoftware,
+  kPageAccessibility,
+  kPageSystemCheck,
+  kPageUpdates,
+  kPageFeatures,
+  kPageFinish,
+  kPageCount
+};
+
 constexpr int kPreferredWidth = 860;
 constexpr int kPreferredHeight = 560;
 
@@ -153,6 +176,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
   m_stack = new SlideStackedWidget;
   m_stack->addWidget(buildWelcomePage());
+  m_stack->addWidget(buildProfilePage());
   m_stack->addWidget(buildLanguagePage());
   m_stack->addWidget(buildNetworkPage());
   m_stack->addWidget(buildThemePage());
@@ -193,6 +217,15 @@ void MainWindow::loadPreferences() {
   m_largeText = settings.value("accessibility/large_text", false).toBool();
   m_installProfile = settings.value("software/profile", "normal").toString();
   m_debianTesting = settings.value("software/debian_testing", false).toBool();
+  // Profile: nếu user chưa từng lưu tên (key chưa tồn tại trong file) thì
+  // pre-fill từ GECOS hiện tại của /etc/passwd để Welcome không bắt người
+  // dùng gõ lại tên đã đặt lúc cài hệ thống.
+  const QVariant storedFullName = settings.value("profile/full_name");
+  m_profileFullName = storedFullName.isNull() ? loginGecos() : storedFullName.toString();
+  m_profileAvatarPath = settings.value("profile/avatar").toString();
+  if (!m_profileAvatarPath.isEmpty() && !QFile::exists(m_profileAvatarPath)) {
+    m_profileAvatarPath.clear();
+  }
   if (m_installProfile != "full" && m_installProfile != "normal" &&
       m_installProfile != "minimal" && m_installProfile != "custom") {
     m_installProfile = "normal";
@@ -250,6 +283,8 @@ void MainWindow::savePreferences() const {
   settings.setValue("software/debian_test_profile", m_debianTestProfile);
   settings.setValue("software/packages", m_selectedSoftware);
   settings.setValue("wallpaper", m_selectedWallpaper);
+  settings.setValue("profile/full_name", m_profileFullName);
+  settings.setValue("profile/avatar", m_profileAvatarPath);
   settings.sync();
 }
 
@@ -279,6 +314,204 @@ QWidget *MainWindow::buildWelcomePage() {
   layout->addWidget(title);
   layout->addWidget(subtitle);
   layout->addStretch(2);
+  return page;
+}
+
+QString MainWindow::loginUserName() {
+  if (const passwd *pw = getpwuid(getuid())) return QString::fromLocal8Bit(pw->pw_name);
+  return qEnvironmentVariable("USER", "user");
+}
+
+QString MainWindow::loginGecos() {
+  QString gecos;
+  if (const passwd *pw = getpwuid(getuid())) gecos = QString::fromLocal8Bit(pw->pw_gecos);
+  // Trường GECOS có dạng "Full Name,,," — chỉ lấy phần tên.
+  gecos = gecos.section(',', 0, 0).trimmed();
+  // Installer thường để GECOS trùng tên đăng nhập; coi như chưa có tên
+  // hiển thị riêng để Welcome để ô trống, thay vì hiển thị lại username.
+  if (gecos.isEmpty() || gecos == loginUserName()) return {};
+  return gecos;
+}
+
+QPixmap MainWindow::renderProfileAvatarPixmap(int size) const {
+  QPixmap out(size, size);
+  out.fill(Qt::transparent);
+
+  QPainter p(&out);
+  p.setRenderHint(QPainter::Antialiasing, true);
+  p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+  if (!m_profileAvatarPath.isEmpty()) {
+    const QPixmap src(m_profileAvatarPath);
+    if (!src.isNull()) {
+      // Center-crop vuông rồi bo tròn — đa số DE cũng mask avatar thành
+      // vòng tròn, bo sẵn ở đây giúp preview sát với thực tế.
+      const int side = qMax(1, qMin(src.width(), src.height()));
+      const QRect crop((src.width() - side) / 2, (src.height() - side) / 2, side, side);
+      p.drawPixmap(0, 0, src.copy(crop).scaled(size, size, Qt::IgnoreAspectRatio,
+                                                Qt::SmoothTransformation));
+      p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+      QPixmap mask(size, size);
+      mask.fill(Qt::transparent);
+      QPainter mp(&mask);
+      mp.setRenderHint(QPainter::Antialiasing, true);
+      mp.setPen(Qt::NoPen);
+      mp.setBrush(Qt::white);
+      mp.drawRoundedRect(mask.rect(), qreal(size) / 2.0, qreal(size) / 2.0);
+      mp.end();
+      p.drawPixmap(0, 0, mask);
+      p.end();
+      return out;
+    }
+    // Ảnh đã chọn nhưng đọc không được -> rơi về avatar chữ cái, không để
+    // preview trống.
+  }
+
+  const QString name = m_profileFullName.trimmed();
+  const QString key = name.isEmpty() ? loginUserName() : name;
+  QChar letter('~');
+  for (const QChar ch : key) {
+    if (ch.isLetter()) {
+      letter = ch.toUpper();
+      break;
+    }
+  }
+
+  // Bảng màu pastel tối giản — màu chọn theo qHash(tên) để avatar của mỗi
+  // người ổn định giữa các lần mở Welcome.
+  static const char *kAvatarColors[] = {
+      "#5aa9ff", "#f28b82", "#81c995", "#fbbc5a",
+      "#c58af9", "#78d9ec", "#ff8bcb", "#9aa0ab",
+  };
+  const uint colorIndex = qHash(key) % (sizeof(kAvatarColors) / sizeof(kAvatarColors[0]));
+  p.setPen(QColor(0, 0, 0, 40));
+  p.setBrush(QColor(QLatin1String(kAvatarColors[colorIndex])));
+  p.drawEllipse(1, 1, size - 2, size - 2);
+
+  QFont avatarFont = p.font();
+  avatarFont.setPixelSize(qMax(10, int(size * 0.42)));
+  avatarFont.setBold(true);
+  p.setFont(avatarFont);
+  p.setPen(Qt::white);
+  p.drawText(out.rect(), Qt::AlignCenter, QString(letter));
+  p.end();
+  return out;
+}
+
+void MainWindow::updateProfileAvatarPreview() {
+  if (m_profileAvatarPreview) m_profileAvatarPreview->setPixmap(renderProfileAvatarPixmap(96));
+}
+
+void MainWindow::pickProfileAvatar() {
+  const QString picturesDir = QDir::homePath() + "/Pictures";
+  const QString startDir = QDir(picturesDir).exists() ? picturesDir : QDir::homePath();
+  const QString file = QFileDialog::getOpenFileName(
+      this, tr("Chọn ảnh đại diện"), startDir,
+      tr("Ảnh (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
+  if (file.isEmpty()) return;
+  if (QPixmap(file).isNull()) {
+    QMessageBox::warning(this, tr("Ảnh không hợp lệ"),
+                         tr("Không đọc được file này dưới dạng ảnh. Hãy chọn file PNG/JPG khác."));
+    return;
+  }
+  m_profileAvatarPath = file;
+  updateProfileAvatarPreview();
+  savePreferences();
+}
+
+QWidget *MainWindow::buildProfilePage() {
+  auto *page = new QWidget;
+  auto *layout = new QVBoxLayout(page);
+  layout->setContentsMargins(70, 45, 70, 35);
+  layout->setSpacing(14);
+
+  auto *title = new QLabel(tr("Hồ sơ của bạn"));
+  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
+  auto *desc = new QLabel(tr("Đặt tên hiển thị và ảnh đại diện cho tài khoản. Chúng xuất hiện ở "
+                             "màn hình đăng nhập, menu người dùng và Ứng dụng cài đặt."));
+  desc->setWordWrap(true);
+  desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
+
+  auto *row = new QHBoxLayout;
+  row->setSpacing(22);
+
+  m_profileAvatarPreview = new QLabel;
+  m_profileAvatarPreview->setFixedSize(96, 96);
+  m_profileAvatarPreview->setAlignment(Qt::AlignCenter);
+  m_profileAvatarPreview->setToolTip(tr("Ảnh đại diện — chọn ảnh của bạn hoặc để avatar chữ cái"));
+  updateProfileAvatarPreview();
+
+  auto *fieldCol = new QVBoxLayout;
+  fieldCol->setSpacing(8);
+
+  auto *nameLabel = new QLabel(tr("Tên hiển thị"));
+  nameLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
+  m_profileNameEdit = new QLineEdit(m_profileFullName);
+  m_profileNameEdit->setPlaceholderText(loginUserName());
+  m_profileNameEdit->setMaxLength(64);
+  m_profileNameEdit->setClearButtonEnabled(true);
+  m_profileNameEdit->setStyleSheet(
+      "QLineEdit { background:#1e2027; color:#e6e7ea; border:1px solid #2c2f38;"
+      " border-radius:6px; padding:7px 10px; }"
+      "QLineEdit:focus { border:1px solid #5aa9ff; }");
+
+  m_profileLoginLabel = new QLabel(
+      tr("Tên đăng nhập: <b>%1</b> — không thể đổi sau khi hệ thống đã cài.")
+          .arg(loginUserName().toHtmlEscaped()));
+  m_profileLoginLabel->setTextFormat(Qt::RichText);
+  m_profileLoginLabel->setStyleSheet("color:#6f7480; font-size:11px;");
+
+  m_profileAvatarBtn = new QPushButton(tr("Chọn ảnh..."));
+  m_profileAvatarResetBtn = new QPushButton(tr("Dùng avatar chữ cái"));
+  for (QPushButton *btn : {m_profileAvatarBtn, m_profileAvatarResetBtn}) {
+    btn->setCursor(Qt::PointingHandCursor);
+    btn->setStyleSheet("QPushButton { padding:6px 12px; font-size:12px; }");
+  }
+  auto *avatarBtnRow = new QHBoxLayout;
+  avatarBtnRow->setSpacing(10);
+  avatarBtnRow->addWidget(m_profileAvatarBtn);
+  avatarBtnRow->addWidget(m_profileAvatarResetBtn);
+  avatarBtnRow->addStretch(1);
+
+  fieldCol->addWidget(nameLabel);
+  fieldCol->addWidget(m_profileNameEdit);
+  fieldCol->addSpacing(4);
+  fieldCol->addLayout(avatarBtnRow);
+  fieldCol->addWidget(m_profileLoginLabel);
+  fieldCol->addStretch(1);
+
+  row->addWidget(m_profileAvatarPreview, 0, Qt::AlignTop);
+  row->addLayout(fieldCol, 1);
+
+  auto *note = new QLabel(tr(
+      "Tên hiển thị và avatar được lưu vào hồ sơ tài khoản (GECOS + "
+      "~/.face + AccountsService). Khi đồng bộ với hệ thống, có thể bạn sẽ "
+      "được nhắc nhập mật khẩu quản trị — bỏ qua cũng không sao, lựa chọn "
+      "vẫn được lưu trong welcome.conf."));
+  note->setWordWrap(true);
+  note->setStyleSheet("color:#6f7480; font-size:11px;");
+
+  layout->addWidget(title);
+  layout->addSpacing(6);
+  layout->addWidget(desc);
+  layout->addLayout(row, 1);
+  layout->addWidget(note);
+
+  connect(m_profileNameEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
+    m_profileFullName = text.trimmed();
+    // Avatar chữ cái cập nhật ngay khi gõ; ảnh tuỳ chọn giữ nguyên.
+    if (m_profileAvatarPath.isEmpty()) updateProfileAvatarPreview();
+  });
+  connect(m_profileNameEdit, &QLineEdit::editingFinished, this, [this]() {
+    m_profileFullName = m_profileNameEdit->text().trimmed();
+    savePreferences();
+  });
+  connect(m_profileAvatarBtn, &QPushButton::clicked, this, &MainWindow::pickProfileAvatar);
+  connect(m_profileAvatarResetBtn, &QPushButton::clicked, this, [this]() {
+    m_profileAvatarPath.clear();
+    updateProfileAvatarPreview();
+    savePreferences();
+  });
   return page;
 }
 
@@ -1085,9 +1318,15 @@ void MainWindow::goNext() {
     finishSetup();
     return;
   }
-  if (index == 2) refreshNetworkStatus();
-  if (index == 6) refreshSystemStatus();
-  if (index == 7) setUpdateStatus(tr("Bạn có thể kiểm tra cập nhật ngay hoặc tiếp tục."));
+  if (index == kPageProfile) {
+    // editingFinished không nhất thiết bắn khi user bấm "Tiếp tục" ngay
+    // sau khi gõ — chốt lại tên + lưu một lần trước khi rời trang.
+    if (m_profileNameEdit) m_profileFullName = m_profileNameEdit->text().trimmed();
+    savePreferences();
+  }
+  if (index == kPageNetwork) refreshNetworkStatus();
+  if (index == kPageSystemCheck) refreshSystemStatus();
+  if (index == kPageUpdates) setUpdateStatus(tr("Bạn có thể kiểm tra cập nhật ngay hoặc tiếp tục."));
   m_stack->slideToIndex(index + 1);
   updateNavState();
 }
@@ -1132,6 +1371,83 @@ void MainWindow::applyAccessibility() {
   QFont font = qApp->font();
   font.setPointSize(m_largeText ? 12 : 10);
   qApp->setFont(font);
+}
+
+// Đồng bộ hồ sơ đã chọn ở trang Profile vào hệ thống khi bấm "Bắt đầu sử
+// dụng". Ba phần, mỗi phần độc lập và best-effort:
+//   1) ~/.face (+ ~/.face.icon) — ảnh vuông 192px center-crop. GDM,
+//      LightDM, Cinnamon, KDE... đều đọc vị trí chuẩn này, nên avatar hoạt
+//      động kể cả khi không có quyền root.
+//   2) chfn -f <tên> — cập nhật GECOS để màn hình đăng nhập hiện tên hiển
+//      thị. Cần root nên chạy qua pkexec; thiếu pkexec thì bỏ qua (giá trị
+//      đã nằm trong welcome.conf, tool hệ thống khác vẫn đổi được sau này).
+//   3) /var/lib/AccountsService/users/<user> — mục [User] lưu Icon= và
+//      SystemAccount=false. KHÔNG ghi đè cả file (các key khác như
+//      XSession/Language vẫn còn giá trị): xoá dòng Icon/SystemAccount cũ
+//      rồi append key mới — file này luôn có duy nhất section [User] nên
+//      append vẫn thuộc đúng section.
+void MainWindow::applyProfileChanges() {
+  const QString userName = loginUserName();
+  const QString home = QDir::homePath();
+
+  bool faceWritten = false;
+  if (!m_profileAvatarPath.isEmpty() && QFile::exists(m_profileAvatarPath)) {
+    const QPixmap src(m_profileAvatarPath);
+    if (!src.isNull()) {
+      const int kAvatarSize = 192;
+      const int side = qMax(1, qMin(src.width(), src.height()));
+      const QPixmap square = src.copy((src.width() - side) / 2, (src.height() - side) / 2,
+                                      side, side)
+                                 .scaled(kAvatarSize, kAvatarSize, Qt::IgnoreAspectRatio,
+                                         Qt::SmoothTransformation);
+      faceWritten = square.save(home + "/.face", "PNG");
+      if (faceWritten) {
+        // Một số DE (KDE Plasma) quy ước ~/.face.icon thay vì ~/.face.
+        QFile::remove(home + "/.face.icon");
+        QFile::copy(home + "/.face", home + "/.face.icon");
+      }
+    }
+  }
+
+  QString desiredName = m_profileFullName.trimmed();
+  if (desiredName.size() > 64) desiredName = desiredName.left(64);
+  const bool nameChanged = !desiredName.isEmpty() && desiredName != loginGecos();
+  if (!nameChanged && !faceWritten) return;
+
+  // Root (phiên live ISO) chạy thẳng sh; user thường thì qua pkexec. Không
+  // có pkexec -> bỏ qua phần hệ thống, ~/.face ở trên vẫn còn hiệu lực.
+  const bool asRoot = (geteuid() == 0);
+  if (!asRoot && !hasExecutable("pkexec")) return;
+
+  QStringList script;
+  if (nameChanged) {
+    script << QString("if command -v chfn >/dev/null 2>&1; then chfn -f %1 %2 || true; fi")
+                  .arg(shellQuoteArg(desiredName), shellQuoteArg(userName));
+  }
+  if (faceWritten) {
+    const QString faceFile = home + "/.face";
+    const QString usersFile = "/var/lib/AccountsService/users/" + userName;
+    // Ghép bằng ';' từng lệnh một (tránh pitfall ưu tiên &&/|| của sh) và
+    // truyền đường dẫn qua biến + printf '%s' (path chứa '%' sẽ không bị
+    // printf hiểu thành format specifier).
+    const QStringList asScript = {
+        QString("F=%1").arg(shellQuoteArg(usersFile)),
+        QString("FACE=%1").arg(shellQuoteArg(faceFile)),
+        "mkdir -p /var/lib/AccountsService/users",
+        "if [ ! -f \"$F\" ]; then printf '[User]\\n' > \"$F\"; fi",
+        "grep -vE '^(Icon|SystemAccount)=' \"$F\" > \"$F.hyggshi-new\" 2>/dev/null || : > \"$F.hyggshi-new\"",
+        "cat \"$F.hyggshi-new\" > \"$F\"",
+        "rm -f \"$F.hyggshi-new\"",
+        "grep -q '^\\[User\\]' \"$F\" || sed -i '1i [User]' \"$F\"",
+        "printf '%s\\n' \"Icon=$FACE\" 'SystemAccount=false' >> \"$F\"",
+    };
+    script << asScript.join("; ");
+  }
+  if (script.isEmpty()) return;
+
+  const QString joined = script.join("; ");
+  if (asRoot) QProcess::execute("sh", {"-c", joined});
+  else QProcess::execute("pkexec", {"sh", "-c", joined});
 }
 
 void MainWindow::refreshNetworkStatus() {
@@ -1492,51 +1808,84 @@ void MainWindow::finishSetup() {
   const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
   const bool useCustomTheme =
       m_selectedTheme == "custom" && !m_selectedCustomTheme.isEmpty();
-  const QString themeName = useCustomTheme ? m_selectedCustomTheme
-                            : m_selectedTheme == "dark" ? "Adwaita-dark"
-                                                         : "Adwaita";
 
-  if (m_selectedTheme != "auto" && desktop.contains("xfce")) {
-    if (hasExecutable("xfconf-query")) QProcess::execute("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
-  } else if (hasExecutable("gsettings")) {
-    // Cinnamon 6.4's Appearance page follows the GNOME color-scheme key.
-    // Setting only gtk-theme made the Dark/Light buttons look selectable but
-    // did not reliably change the actual application color scheme. Set both
-    // the Cinnamon GTK theme and the shared color-scheme key.
-    // Với theme "custom" không rõ đây là theme sáng hay tối, nên đoán dựa
-    // vào tên theme (chứa "dark") thay vì luôn ép "default".
-    const QString colorScheme = m_selectedTheme == "dark" ? "prefer-dark"
-                                : m_selectedTheme == "light" ? "prefer-light"
-                                : useCustomTheme
-                                    ? (themeName.contains("dark", Qt::CaseInsensitive)
-                                           ? "prefer-dark"
-                                           : "prefer-light")
-                                    : "default";
-    if (desktop.contains("cinnamon")) {
-      setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
-      // BUG (root cause of "icon theme reverts to default after Welcome
-      // finishes"): this used to hardcode icon-theme to "Adwaita" here,
-      // unconditionally overwriting whatever icon theme the ISO was built
-      // with (Tela, Papirus, ...) every single time the user finished
-      // Welcome. Icon theme is independent from the light/dark GTK theme
-      // choice and must not be touched by this dialog — leave the OS
-      // build-time default (desktop.sh / dconf) in place. This also fixes
-      // the same regression on every other icon-theme choice, not just
-      // Tela, across all build variants.
-      setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
-      setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
-    } else if (desktop.contains("mate")) {
-      setGsettings("org.mate.interface", "gtk-theme", themeName);
-      setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
-    } else if (desktop.contains("gnome")) {
-      setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
-      setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+  // BUGFIX ("hoàn tất Welcome bị reverting Applications về Adwaita thay vì
+  // Hyggshi-Light"): trước đây light/auto hardcode "Adwaita", dark là
+  // "Adwaita-dark". Trong khi đó ISO Hyggshi OS (Cinnamon) cài theme GTK riêng
+  // Hyggshi-Light/Hyggshi-Dark vào /usr/share/themes và dconf mặc định của bản
+  // build (scripts/desktop.sh, theme-light-enabled/theme-dark-enabled trong
+  // config.ini) ĐÃ đặt đúng theme đó làm mặc định — nên mỗi lần Finish Welcome
+  // với lựa chọn mặc định là ghi đè theme Hyggshi của user về theme mặc định của
+  // DE. Giải pháp: ưu tiên theme Hyggshi nếu có trên hệ thống > Adwaita chung
+  // (fallback cho các bản build DE không ship theme Hyggshi, ví dụ XFCE).
+  auto resolveBuiltinTheme = [this](bool dark) {
+    const QString preferred = dark ? QStringLiteral("Hyggshi-Dark")
+                                   : QStringLiteral("Hyggshi-Light");
+    for (const QString &t : listInstalledThemes()) {
+      if (t.compare(preferred, Qt::CaseInsensitive) == 0) return preferred;
+    }
+    return dark ? QStringLiteral("Adwaita-dark") : QStringLiteral("Adwaita");
+  };
+  const QString themeName =
+      useCustomTheme ? m_selectedCustomTheme
+                     : resolveBuiltinTheme(m_selectedTheme == "dark");
+
+  // "auto" = bám theo theme HIỆN TẠI của desktop, đúng như note ở trang Giao
+  // diện đã hứa — KHÔNG ghi bất kỳ key theme/color-scheme nào. Trước đây guard
+  // m_selectedTheme != "auto" chỉ chặn nhánh XFCE, còn trên Cinnamon/GNOME/MATE
+  // chế độ auto (lựa chọn mặc định!) vẫn ghi Adwaita như thường.
+  // Việc sáng/tối theo giờ ở chế độ auto do theme.conf (MODE=auto) + daemon
+  // theme của Hyggshi lo.
+  if (m_selectedTheme != "auto") {
+    if (desktop.contains("xfce")) {
+      if (hasExecutable("xfconf-query")) QProcess::execute("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
+    } else if (hasExecutable("gsettings")) {
+      // Cinnamon 6.4's Appearance page follows the GNOME color-scheme key.
+      // Setting only gtk-theme made the Dark/Light buttons look selectable but
+      // did not reliably change the actual application color scheme. Set both
+      // the Cinnamon GTK theme and the shared color-scheme key.
+      // Với theme "custom" không rõ đây là theme sáng hay tối, nên đoán dựa
+      // vào tên theme (chứa "dark") thay vì luôn ép "default".
+      const QString colorScheme = m_selectedTheme == "dark" ? "prefer-dark"
+                                  : m_selectedTheme == "light" ? "prefer-light"
+                                  : (themeName.contains("dark", Qt::CaseInsensitive)
+                                         ? "prefer-dark"
+                                         : "prefer-light");
+      if (desktop.contains("cinnamon")) {
+        setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
+        // dconf của bản build (01-hyggshi-theme trong scripts/desktop.sh) đặt BỘ
+        // BA key: interface/gtk-theme + wm/preferences/theme + cinnamon/theme
+        // name. Welcome phải đổi cả ba cùng nhau — nếu chỉ đổi gtk-theme thì
+        // titlebar (wm) và Desktop row (cinnamon theme) giữ giá trị cũ, hệ thống
+        // trông như đổi nửa vời (apps Hyggshi-Dark nhưng Desktop vẫn
+        // Hyggshi-Light).
+        setGsettings("org.cinnamon.desktop.wm.preferences", "theme", themeName);
+        setGsettings("org.cinnamon.theme", "name", themeName);
+        // BUG (root cause of "icon theme reverts to default after Welcome
+        // finishes"): this used to hardcode icon-theme to "Adwaita" here,
+        // unconditionally overwriting whatever icon theme the ISO was built
+        // with (Tela, Papirus, ...) every single time the user finished
+        // Welcome. Icon theme is independent from the light/dark GTK theme
+        // choice and must not be touched by this dialog — leave the OS
+        // build-time default (desktop.sh / dconf) in place. This also fixes
+        // the same regression on every other icon-theme choice, not just
+        // Tela, across all build variants.
+        setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+        setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
+      } else if (desktop.contains("mate")) {
+        setGsettings("org.mate.interface", "gtk-theme", themeName);
+        setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+      } else if (desktop.contains("gnome")) {
+        setGsettings("org.gnome.desktop.interface", "gtk-theme", themeName);
+        setGsettings("org.gnome.desktop.interface", "color-scheme", colorScheme);
+      }
     }
   }
 
   applyLanguageAndKeyboard();
   applyAccessibility();
   savePreferences();
+  applyProfileChanges();
   installSelectedSoftware();
   savePreferences();
 

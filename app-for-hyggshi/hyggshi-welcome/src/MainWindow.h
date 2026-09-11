@@ -4,7 +4,9 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMainWindow>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSet>
 #include <QTimer>
@@ -47,6 +49,18 @@ class MainWindow : public QMainWindow {
   QCheckBox *m_highContrastChk = nullptr;
   QCheckBox *m_largeTextChk = nullptr;
   QComboBox *m_installProfileBox = nullptr;
+
+  // Trang Profile (hồ sơ người dùng): tên hiển thị + ảnh đại diện.
+  // Tên đăng nhập chỉ để hiển thị — đổi username hệ thống nằm ngoài phạm
+  // vi của Welcome. Avatar custom là 1 file ảnh người dùng chọn; khi chưa
+  // chọn ảnh, hiển thị "chữ cái đầu" trên nền màu (giống initial avatar
+  // của GNOME).
+  QLineEdit *m_profileNameEdit = nullptr;
+  QLabel *m_profileAvatarPreview = nullptr;
+  QLabel *m_profileLoginLabel = nullptr;
+  QPushButton *m_profileAvatarBtn = nullptr;
+  QPushButton *m_profileAvatarResetBtn = nullptr;
+
   QCheckBox *m_debianTestingCheck = nullptr;
   // Chọn profile kho apt gốc của hệ thống (khớp [package-debian-test.*]
   // trong iso-config/config/config.ini: full/normal/default/unstable).
@@ -73,6 +87,10 @@ class MainWindow : public QMainWindow {
   bool m_largeText = false;
   QString m_installProfile = "normal";
   bool m_debianTesting = false;
+  // Hồ sơ người dùng: tên hiển thị (GECOS/AccountsService) + đường dẫn ảnh
+  // avatar do người dùng chọn (rỗng = avatar chữ cái đầu).
+  QString m_profileFullName;
+  QString m_profileAvatarPath;
   // "off" = giữ nguyên sources.list mặc định của ảnh cài sẵn (hành vi cũ,
   // không đổi gì). Giá trị khác: "full" | "normal" | "default" | "unstable".
   QString m_debianTestProfile = "off";
@@ -87,6 +105,7 @@ class MainWindow : public QMainWindow {
   QVector<QLabel *> m_featureDots;
 
   QWidget *buildWelcomePage();
+  QWidget *buildProfilePage();
   QWidget *buildLanguagePage();
   QWidget *buildNetworkPage();
   QWidget *buildThemePage();
@@ -102,6 +121,12 @@ class MainWindow : public QMainWindow {
   void savePreferences() const;
   void applyLanguageAndKeyboard();
   void applyAccessibility();
+  void applyProfileChanges();
+  void pickProfileAvatar();
+  void updateProfileAvatarPreview();
+  QPixmap renderProfileAvatarPixmap(int size) const;
+  static QString loginUserName();
+  static QString loginGecos();
   bool installSelectedSoftware();
   void applyDebianTestProfile(const QString &profile);
   void refreshNetworkStatus();
