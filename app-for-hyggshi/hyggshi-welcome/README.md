@@ -5,14 +5,29 @@ Hyggshi Welcome is the first-run onboarding wizard for Hyggshi OS. It is a nativ
 ## Setup flow
 
 1. Welcome
-2. Language and keyboard
-3. Network status
-4. Appearance
-5. Accessibility
-6. System check
-7. Update check
-8. Hyggshi OS features
-9. Ready
+2. Profile (display name + custom avatar)
+3. Language and keyboard
+4. Network status
+5. Appearance
+6. Accessibility
+7. System check
+8. Update check
+9. Hyggshi OS features
+10. Ready
+
+## Profile page
+
+The Profile step sets the account's display name and avatar for the current
+user (the login name is shown read-only and is not renamed by Welcome):
+
+- The display name is pre-filled from the GECOS field and applied with
+  `chfn` on finish (through `pkexec`; skipped silently without it).
+- A custom avatar is any PNG/JPG/... image chosen from disk; without one, a
+  deterministic colored "letter avatar" (initial of the display name) is
+  used. The square-cropped image is written to `~/.face` / `~/.face.icon`
+  and registered in `/var/lib/AccountsService/users/<name>` (`Icon=`,
+  `SystemAccount=false`, merged without dropping other keys), which is what
+  the login screen and user menus read.
 
 ## Persistence
 
@@ -22,6 +37,9 @@ User preferences are stored in:
 ~/.config/hyggshi/welcome.conf
 ~/.config/hyggshi/theme.conf
 ```
+
+The profile selection lives in `welcome.conf` under `profile/full_name` and
+`profile/avatar`.
 
 The first-run marker is:
 
