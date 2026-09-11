@@ -871,9 +871,22 @@ echo "===== Fastfetch: gắn logo custom (logo.txt ưu tiên, Logo.png dự phò
 #      "type": "kitty" (image protocol) — CHỈ hiển thị đúng trên terminal hỗ
 #      trợ kitty graphics protocol (Kitty, WezTerm, Konsole mới...). Terminal
 #      không hỗ trợ sẽ không hiện logo (chỉ hiện info bên phải), không lỗi.
-#   3) Không có gì cả — bỏ qua, fastfetch tự dùng logo nhận diện distro mặc định.
+#   3) /usr/share/nexfetch/logos/hyggshi_OS.txt BÊN TRONG CHROOT — nguồn dự
+#      phòng cho các bản build không có logo.txt/Logo.png trong repo. Gói
+#      nexfetch (cài ở bước install-ecosystem-for-hyggshi.sh, CHẠY TRƯỚC
+#      branding.sh trong cả workflow lẫn local-build.sh) mang sẵn logo ASCII
+#      Hyggshi tại đường dẫn này (nội dung y hệt iso-config/branding/logo.txt).
+#   4) KHÔNG còn fallback "fastfetch tự nhận diện distro" như bản cũ — với
+#      /etc/os-release có ID=hyggshios + ID_LIKE=debian, fastfetch auto-detect
+#      KHÔNG biết "hyggshios" nên rơi về ID_LIKE và in logo DEBIAN mỗi lần mở
+#      terminal. Để tránh logo Debian lọt vào terminal, luôn phải trỏ config
+#      vào 1 file logo Hyggshi THẬT SỰ tồn tại; chỉ bỏ qua khi tuyệt đối không
+#      có nguồn logo nào (kèm cảnh báo rõ thay vì im lặng đổ về Debian).
 FASTFETCH_LOGO_TXT=$(find iso-config/branding -maxdepth 1 -iname "logo.txt" 2>/dev/null | head -n1)
 FASTFETCH_LOGO_PNG=$(find iso-config/branding -maxdepth 1 -iname "logo.png" 2>/dev/null | head -n1)
+# Logo Hyggshi đi kèm gói nexfetch .deb đã cài vào chroot ở bước ecosystem
+# (chạy trước branding.sh) — dùng làm nguồn dự phòng nếu repo không có logo.
+NEXFETCH_LOGO_SRC="$CHROOT/usr/share/nexfetch/logos/hyggshi_OS.txt"
 
 LOGO_DEST_DIR="$CHROOT/usr/share/hyggshi/branding"
 LOGO_JSON=""
@@ -902,8 +915,21 @@ elif [ -n "$FASTFETCH_LOGO_PNG" ]; then
   },'
   echo "⚠️  Không thấy logo.txt — dùng Logo.png (kitty image protocol, cần terminal hỗ trợ) làm logo fastfetch."
 
+elif [ -f "$NEXFETCH_LOGO_SRC" ]; then
+  # Nguồn dự phòng: logo Hyggshi trong gói nexfetch .deb. KHÔNG để fastfetch
+  # rơi về auto-detect — auto-detect sẽ in logo Debian (ID_LIKE=debian).
+  sudo mkdir -p "$LOGO_DEST_DIR"
+  sudo cp "$NEXFETCH_LOGO_SRC" "$LOGO_DEST_DIR/logo.txt"
+  LOGO_JSON='  "logo": {
+    "type": "file",
+    "source": "/usr/share/hyggshi/branding/logo.txt"
+  },'
+  echo "Không có logo.txt/Logo.png trong repo — dùng logo Hyggshi từ gói nexfetch ($NEXFETCH_LOGO_SRC) làm logo fastfetch."
+
 else
-  echo "Không thấy logo.txt hoặc Logo.png trong iso-config/branding/ — fastfetch dùng logo tự nhận diện distro mặc định."
+  echo "⚠️  Không tìm thấy bất kỳ logo Hyggshi nào (repo lẫn gói nexfetch) — KHÔNG ghi config fastfetch." >&2
+  echo "    Nếu ghi config mà thiếu file logo, fastfetch auto-detect sẽ in logo DEBIAN (ID_LIKE=debian)." >&2
+  echo "    Thêm iso-config/branding/logo.txt để terminal hiện đúng logo Hyggshi." >&2
 fi
 
 if [ -n "$LOGO_JSON" ]; then
