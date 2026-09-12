@@ -1605,8 +1605,9 @@ fi
 if command -v calamares >/dev/null 2>&1; then
   echo "===== Ghi /etc/calamares/modules/license.conf ====="
   # Copy sẵn file LICENSE của Hyggshi OS vào chroot để Calamares hiển thị
-  # NGAY trong app (field "file:") thay vì chỉ mở link ngoài — user cài
-  # offline (live USB không mạng) vẫn đọc được nội dung đầy đủ.
+  # NGAY trong app (entry "url: file://..." — Calamares đọc file local khi
+  # url có scheme file://) thay vì chỉ mở link ngoài — user cài offline
+  # (live USB không mạng) vẫn đọc được nội dung đầy đủ.
   # Dùng TẠM thẳng file LICENSE sẵn có ở root repo (Hyggshi-OS-Research-Technology/
   # Hyggshi-OS, file "LICENSE" cạnh README.md) thay vì tạo riêng 1 file
   # HYGGSHI_LICENSE.txt — workflow .yml cần copy file này vào /tmp/LICENSE
@@ -1629,17 +1630,26 @@ LICTXT
   mkdir -p /etc/calamares/modules
   cat <<'EOF' > /etc/calamares/modules/license.conf
 ---
-# entries: danh sách license hiển thị trên 1 trang duy nhất. isMandatory:
-# bắt buộc tick "I accept" mới Next được. isOptedIn: mặc định đã tick sẵn
-# hay chưa (false = ép user tự đọc & tick, đúng tinh thần "phải đồng ý").
+# Key HỢP LỆ của module license theo license.schema.yaml của Calamares
+# (như nhau trên 3.2.x/3.3.x, additionalProperties:false):
+#   id, name, vendor, type, url, required, expand
+# required:true là cách DUY NHẤT bắt tick "I accept..." mới Next được —
+# LicensePage.cpp: m_isNextEnabled = checked || m_allLicensesOptional, nên
+# mọi entry optional (hoặc key lạ như "isMandatory"/"isOptedIn"/"file" bị
+# schema bỏ qua LẶNG LẼ — bug cũ khiến checkbox bị làm ngơ) thì Next luôn
+# sáng. url file:// hiển thị nội dung inline (offline được), http(s) hiện
+# nút mở browser. bản sao trong repo: iso-config/calamares/modules/license.conf
 entries:
-  - id:          "hyggshi-os"
+  - id:          "hyggshi-os-license"
     name:        "Hyggshi OS"
     vendor:      "Hyggshi OS Research Technology (HORT)"
+    url:         "file:///usr/share/hyggshi-os/LICENSE.txt"
+    required:    true
+  - id:          "hyggshi-os-license-web"
+    name:        "Hyggshi OS — license (online)"
+    vendor:      "Hyggshi OS Research Technology (HORT)"
     url:         "https://hyggshi-os-website.pages.dev/license"
-    file:        "/usr/share/hyggshi-os/LICENSE.txt"
-    isMandatory: true
-    isOptedIn:   false
+    required:    true
 EOF
   echo "OK: đã ghi /etc/calamares/modules/license.conf"
 
