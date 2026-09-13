@@ -1046,100 +1046,51 @@ QWidget *MainWindow::buildUpdatePage() {
 }
 
 QWidget *MainWindow::buildFeaturesPage() {
-  m_features = {
-      {"🚀", tr("Fast startup"), tr("Hyggshi OS optimizes background resources and experience for everyday use.")},
-      {"🎨", tr("Customizable interface"), tr("Change theme, icons and panel easily right from System Settings.")},
-      {"🧩", tr("Its own ecosystem"), tr("nexfetch, HOSC and other Hyggshi components are integrated in a cohesive way.")},
-      {"🔒", tr("Secure by default"), tr("Sensible baseline settings are prepared ahead of time to get you started.")},
-  };
-
   auto *page = new QWidget;
   auto *layout = new QVBoxLayout(page);
-  layout->setContentsMargins(70, 45, 70, 30);
+  layout->setContentsMargins(70, 40, 70, 30);
   layout->setSpacing(10);
   layout->setAlignment(Qt::AlignCenter);
 
-  auto *title = new QLabel(tr("Highlighted features"));
+  auto *title = new QLabel(tr("Get started with more applications"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
   title->setAlignment(Qt::AlignHCenter);
+  title->setWordWrap(true);
 
-  m_featureIcon = new QLabel;
-  m_featureIcon->setAlignment(Qt::AlignCenter);
-  m_featureIcon->setStyleSheet("font-size:46px;");
+  auto *desc = new QLabel(tr("Hyggshi App Center has a range of apps you can get started with."));
+  desc->setAlignment(Qt::AlignHCenter);
+  desc->setWordWrap(true);
+  desc->setStyleSheet("font-size:12px; color:#9aa0ab;");
+  desc->setFixedWidth(420);
 
-  m_featureTitle = new QLabel;
-  m_featureTitle->setAlignment(Qt::AlignCenter);
-  m_featureTitle->setStyleSheet("font-size:16px; font-weight:600; color:#f2f3f5;");
-
-  m_featureDesc = new QLabel;
-  m_featureDesc->setAlignment(Qt::AlignCenter);
-  m_featureDesc->setWordWrap(true);
-  m_featureDesc->setStyleSheet("font-size:12px; color:#9aa0ab;");
-  m_featureDesc->setMaximumWidth(520);
-
-  auto *navRow = new QHBoxLayout;
-  navRow->setAlignment(Qt::AlignCenter);
-  navRow->setSpacing(6);
-  auto *prevArrow = new QToolButton;
-  prevArrow->setText("◀");
-  auto *dotsRow = new QHBoxLayout;
-  dotsRow->setSpacing(6);
-  for (int i = 0; i < m_features.size(); ++i) {
-    auto *dot = makeDot(i == 0);
-    m_featureDots.push_back(dot);
-    dotsRow->addWidget(dot);
+  auto *appsIllustration = new QLabel;
+  appsIllustration->setAlignment(Qt::AlignCenter);
+  const QPixmap appsPixmap(":/icons/Review-app.png");
+  if (!appsPixmap.isNull()) {
+    appsIllustration->setPixmap(appsPixmap.scaledToWidth(220, Qt::SmoothTransformation));
   }
-  auto *nextArrow = new QToolButton;
-  nextArrow->setText("▶");
 
-  navRow->addWidget(prevArrow);
-  navRow->addLayout(dotsRow);
-  navRow->addWidget(nextArrow);
-  connect(prevArrow, &QToolButton::clicked, this, [this]() {
-    if (m_features.isEmpty()) return;
-    m_carouselTimer->stop();
-    showFeatureSlide((m_featureIndex - 1 + m_features.size()) % m_features.size());
-    m_carouselTimer->start();
-  });
-  connect(nextArrow, &QToolButton::clicked, this, [this]() {
-    if (m_features.isEmpty()) return;
-    m_carouselTimer->stop();
-    showFeatureSlide((m_featureIndex + 1) % m_features.size());
-    m_carouselTimer->start();
+  auto *openAppCenter = new QPushButton(tr("Open App Center"));
+  openAppCenter->setCursor(Qt::PointingHandCursor);
+  openAppCenter->setStyleSheet(
+      "QPushButton { background:#5aa9ff; color:#0d1117; font-weight:600; "
+      "padding:8px 22px; border-radius:6px; }"
+      "QPushButton:hover { background:#7dbcff; }");
+  connect(openAppCenter, &QPushButton::clicked, this, []() {
+    if (hasExecutable("hyggshi-app-center")) QProcess::startDetached("hyggshi-app-center");
+    else if (hasExecutable("gnome-software")) QProcess::startDetached("gnome-software");
+    else if (hasExecutable("discover")) QProcess::startDetached("discover");
+    else if (hasExecutable("pamac-manager")) QProcess::startDetached("pamac-manager");
+    else if (hasExecutable("software-manager")) QProcess::startDetached("software-manager");
   });
 
   layout->addWidget(title);
+  layout->addWidget(desc, 0, Qt::AlignHCenter | Qt::AlignTop);
   layout->addSpacing(6);
-  layout->addWidget(m_featureIcon);
-  layout->addWidget(m_featureTitle);
-  layout->addWidget(m_featureDesc, 0, Qt::AlignHCenter);
-  layout->addSpacing(10);
-  layout->addLayout(navRow);
-  showFeatureSlide(0);
-
-  m_carouselTimer = new QTimer(this);
-  m_carouselTimer->setInterval(3800);
-  connect(m_carouselTimer, &QTimer::timeout, this, &MainWindow::advanceCarousel);
-  m_carouselTimer->start();
+  layout->addWidget(appsIllustration);
+  layout->addSpacing(6);
+  layout->addWidget(openAppCenter, 0, Qt::AlignHCenter);
   return page;
-}
-
-void MainWindow::showFeatureSlide(int index) {
-  if (m_features.isEmpty() || index < 0 || index >= m_features.size() || !m_featureDesc ||
-      !m_featureIcon || !m_featureTitle) return;
-  m_featureIndex = index;
-  const FeatureSlide &feature = m_features.at(index);
-  m_featureIcon->setText(feature.icon);
-  m_featureTitle->setText(feature.title);
-  m_featureDesc->setText(feature.desc);
-  for (int i = 0; i < m_featureDots.size(); ++i) {
-    m_featureDots[i]->setStyleSheet(QString("border-radius:4px; background:%1;")
-                                        .arg(i == index ? "#5aa9ff" : "#3a3f4b"));
-  }
-}
-
-void MainWindow::advanceCarousel() {
-  if (!m_features.isEmpty()) showFeatureSlide((m_featureIndex + 1) % m_features.size());
 }
 
 namespace {
