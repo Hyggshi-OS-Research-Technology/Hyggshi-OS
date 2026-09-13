@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(hyggshi-welcome VERSION 1.4.0 LANGUAGES CXX)
+project(hyggshi-welcome VERSION 1.4.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,8 +36,10 @@ target_include_directories(hyggshi-welcome PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 # LinguistTools (Debian/Ubuntu: qt6-l10n-tools for Qt6, qttools5-dev-tools
 # for Qt5). Deliberately OPTIONAL: an old base image without those packages
 # must still build the app (Vietnamese-only), never fail the ISO job.
-# QTranslator picks it up at runtime from share/hyggshi/welcome/i18n when
-# the system locale is not Vietnamese (see src/main.cpp).
+# QTranslator picks it up at runtime from share/hyggshi/welcome/i18n only
+# when explicitly requested (HYGGSHI_WELCOME_LANG=en); the GUI-text chain
+# is "Vietnamese > English", so Vietnamese never needs a catalog (see
+# src/main.cpp).
 set(WELCOME_TS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/translations/hyggshi-welcome_en.ts")
 set(WELCOME_QM_FILES "")
 if(Qt6_FOUND)

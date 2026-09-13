@@ -75,15 +75,18 @@ The update page only checks package availability and never installs packages or 
 
 ## Language
 
-The UI follows the **system** locale, mirroring how language is otherwise
-managed (Calamares `locale` module at install, desktop Settings afterwards):
-Vietnamese is the source language, so a `vi` system needs no translation;
-for any other locale the app loads an English catalog (`hyggshi-welcome_en.qm`,
-compiled by `lrelease` from `translations/hyggshi-welcome_en.ts` when the
-Qt LinguistTools packages are present — `qt6-l10n-tools` /
-`qttools5-dev-tools`, installed best-effort by `app-for-hyggshi/welcome.sh`).
-If the `.qm` was not built the app simply keeps Vietnamese. Force a language
-for testing with `HYGGSHI_WELCOME_LANG=vi|en`.
+The app GUI text follows a fixed priority chain: **Vietnamese > English**.
+Vietnamese (the `tr()` source language) is always available, so the wizard
+renders Vietnamese on every system locale — English systems included: the
+Welcome UI deliberately does not follow `LANG`. English — the second entry
+of the chain — is used only when explicitly requested with
+`HYGGSHI_WELCOME_LANG=en`, served by `hyggshi-welcome_en.qm` (compiled by
+`lrelease` from `translations/hyggshi-welcome_en.ts` when Qt LinguistTools
+packages are present — `qt6-l10n-tools` / `qttools5-dev-tools`, installed
+best-effort by `app-for-hyggshi/welcome.sh`). If the `.qm` was not built,
+the app stays Vietnamese. The SYSTEM language continues to be owned
+elsewhere in one consistent flow: the Calamares `locale` module at install
+and the desktop's Region & Language settings afterwards.
 
 
 ## Tự động mở cho user mới
