@@ -21,6 +21,13 @@ apt-get update
 if ! apt-get install -y cmake build-essential qt6-base-dev; then
   echo "qt6-base-dev không có sẵn (base distro/codename cũ) — fallback sang Qt5."
   apt-get install -y cmake build-essential qtbase5-dev qt5-qmake
+  # lrelease cho catalog tiếng Anh (translations/*.ts -> .qm). TÙY CHỌN:
+  # CMakeLists tự bỏ qua bước .qm nếu thiếu, app chỉ còn tiếng Việt —
+  # tuyệt đối không để thiếu tool làm fail cả bước build welcome.
+  apt-get install -y qttools5-dev-tools > /dev/null 2>&1 || true
+else
+  # qt6-l10n-tools chứa lrelease của Qt 6 (bookworm/trixie/ubuntu đều có).
+  apt-get install -y qt6-l10n-tools > /dev/null 2>&1 || true
 fi
 
 echo "===== cmake configure + build (Release) ====="
@@ -77,7 +84,7 @@ else
 fi
 
 echo "===== Dọn công cụ build (giảm dung lượng ISO) ====="
-apt-get purge -y --autoremove cmake build-essential qt6-base-dev qtbase5-dev qt5-qmake 2>/dev/null || true
+apt-get purge -y --autoremove cmake build-essential qt6-base-dev qtbase5-dev qt5-qmake qt6-l10n-tools qttools5-dev-tools 2>/dev/null || true
 rm -rf "$SRC_DIR/build"
 
 echo "===== Xong: hyggshi-welcome đã cài + autostart tại /etc/xdg/autostart ====="

@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QIcon>
 #include <QStandardPaths>
+#include <QTranslator>
 
 #include "MainWindow.h"
 
@@ -12,12 +13,50 @@ static QString markerPath() {
   return dir + "/welcome-shown";
 }
 
+// GUI-text language priority for the app itself: Vietnamese > English
+// (product decision — Hyggshi OS is a Vietnamese distribution). All tr()
+// sources ARE Vietnamese, so the first-priority language is always
+// available and the app renders Vietnamese on EVERY system locale,
+// including English ones — the wizard must not look foreign to its
+// primary audience just because LANG=*.
+// The second language in the chain (English, translations/hyggshi-
+// welcome_en.ts compiled to .qm at build time, installed under
+// share/hyggshi/welcome/i18n) is used only when explicitly requested:
+//   HYGGSHI_WELCOME_LANG=en
+// System settings (Calamares locale module, desktop Region & Language)
+// remain the single source of truth for the SYSTEM language; the wizard
+// simply no longer overrides its own GUI language from that.
+static void installPreferredTranslator(QApplication &app) {
+  const QString lang = qEnvironmentVariable("HYGGSHI_WELCOME_LANG");
+  // vi (default) needs no translator; only an explicit "en" opts into the
+  // second language of the Vi > en chain.
+  if (lang.compare("en", Qt::CaseInsensitive) != 0) return;
+
+  auto *translator = new QTranslator(&app);
+  const QString base = QStringLiteral("hyggshi-welcome_en");
+  const QStringList dirs = {
+      QCoreApplication::applicationDirPath() + "/../share/hyggshi/welcome/i18n",
+      QStringLiteral("/usr/share/hyggshi/welcome/i18n"),
+      QStringLiteral("/usr/local/share/hyggshi/welcome/i18n"),
+  };
+  for (const QString &dir : dirs) {
+    if (translator->load(base, dir)) {
+      app.installTranslator(translator);
+      return;
+    }
+  }
+  // .qm absent (LinguistTools was missing at build time) -> Vietnamese,
+  // which is the head of the priority chain anyway.
+  delete translator;
+}
+
 int main(int argc, char *argv[]) {
   QApplication app(argc, argv);
   QApplication::setApplicationName("Hyggshi Welcome");
-  QApplication::setApplicationVersion("1.2.0");
+  QApplication::setApplicationVersion("1.4.1");
   QApplication::setOrganizationName("Hyggshi OS Foundation");
   QApplication::setDesktopSettingsAware(true);
+  installPreferredTranslator(app);
   // Keep the Hyggshi icon on the running window/taskbar even when the
   // installed icon theme or desktop database is refreshed after Calamares.
   app.setWindowIcon(QIcon(":/icons/logo.png"));
