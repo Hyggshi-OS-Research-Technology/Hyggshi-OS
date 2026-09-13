@@ -1413,7 +1413,7 @@ void MainWindow::refreshNetworkStatus() {
     connected = !route.isEmpty();
     text = connected ? tr("✓ Có route mạng đang hoạt động.") : tr("⚠ Không xác định được trạng thái mạng.");
   }
-  if (!hasExecutable("nmcli")) text += tr("\nNetworkManager/nmcli chưa có; hãy kiểm tra bằng công cụ desktop.");
+  if (!hasExecutable("nmcli")) text += "\n" + tr("NetworkManager/nmcli chưa có; hãy kiểm tra bằng công cụ desktop.");
   m_networkStatus->setText(text);
 }
 

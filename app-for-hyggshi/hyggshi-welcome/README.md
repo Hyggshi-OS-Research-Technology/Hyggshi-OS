@@ -73,6 +73,18 @@ sudo cmake --install build
 
 The update page only checks package availability and never installs packages or asks for administrator privileges. Network setup is delegated to the desktop's existing network tools.
 
+## Language
+
+The UI follows the **system** locale, mirroring how language is otherwise
+managed (Calamares `locale` module at install, desktop Settings afterwards):
+Vietnamese is the source language, so a `vi` system needs no translation;
+for any other locale the app loads an English catalog (`hyggshi-welcome_en.qm`,
+compiled by `lrelease` from `translations/hyggshi-welcome_en.ts` when the
+Qt LinguistTools packages are present — `qt6-l10n-tools` /
+`qttools5-dev-tools`, installed best-effort by `app-for-hyggshi/welcome.sh`).
+If the `.qm` was not built the app simply keeps Vietnamese. Force a language
+for testing with `HYGGSHI_WELCOME_LANG=vi|en`.
+
 
 ## Tự động mở cho user mới
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(hyggshi-welcome VERSION 1.3.2 LANGUAGES CXX)
+project(hyggshi-welcome VERSION 1.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,35 @@ add_executable(hyggshi-welcome
 
 target_link_libraries(hyggshi-welcome PRIVATE ${QT_LIBS})
 target_include_directories(hyggshi-welcome PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+# English UI catalog compiled with lrelease IF the toolchain provides
+# LinguistTools (Debian/Ubuntu: qt6-l10n-tools for Qt6, qttools5-dev-tools
+# for Qt5). Deliberately OPTIONAL: an old base image without those packages
+# must still build the app (Vietnamese-only), never fail the ISO job.
+# QTranslator picks it up at runtime from share/hyggshi/welcome/i18n when
+# the system locale is not Vietnamese (see src/main.cpp).
+set(WELCOME_TS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/translations/hyggshi-welcome_en.ts")
+set(WELCOME_QM_FILES "")
+if(Qt6_FOUND)
+  find_package(Qt6 QUIET COMPONENTS LinguistTools)
+  if(Qt6LinguistTools_FOUND)
+    qt6_add_translation(WELCOME_QM_FILES ${WELCOME_TS_FILES})
+  endif()
+else()
+  find_package(Qt5 QUIET COMPONENTS LinguistTools)
+  if(Qt5LinguistTools_FOUND)
+    qt5_add_translation(WELCOME_QM_FILES ${WELCOME_TS_FILES})
+  endif()
+endif()
+if(WELCOME_QM_FILES)
+  # .qm sources on the target: no code, only a build dependency so the
+  # catalog is generated before install.
+  target_sources(hyggshi-welcome PRIVATE ${WELCOME_QM_FILES})
+  install(FILES ${WELCOME_QM_FILES}
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/hyggshi/welcome/i18n")
+else()
+  message(STATUS "Qt LinguistTools not found - building hyggshi-welcome WITHOUT the English .qm catalog (Vietnamese source strings only).")
+endif()
 
 target_compile_options(hyggshi-welcome PRIVATE
   $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall>
