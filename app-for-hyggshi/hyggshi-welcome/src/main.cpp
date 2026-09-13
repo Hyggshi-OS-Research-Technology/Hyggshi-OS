@@ -13,27 +13,24 @@ static QString markerPath() {
   return dir + "/welcome-shown";
 }
 
-// GUI-text language priority for the app itself: Vietnamese > English
-// (product decision — Hyggshi OS is a Vietnamese distribution). All tr()
-// sources ARE Vietnamese, so the first-priority language is always
-// available and the app renders Vietnamese on EVERY system locale,
-// including English ones — the wizard must not look foreign to its
-// primary audience just because LANG=*.
-// The second language in the chain (English, translations/hyggshi-
-// welcome_en.ts compiled to .qm at build time, installed under
-// share/hyggshi/welcome/i18n) is used only when explicitly requested:
-//   HYGGSHI_WELCOME_LANG=en
+// GUI-text language for the app: the tr() sources in MainWindow.cpp are
+// now English, so Welcome shows English on every system locale by
+// default — no translator needs to be installed for that.
+// A Vietnamese translation (translations/hyggshi-welcome_vi.ts compiled to
+// .qm at build time, installed under share/hyggshi/welcome/i18n) can be
+// opted into explicitly with:
+//   HYGGSHI_WELCOME_LANG=vi
 // System settings (Calamares locale module, desktop Region & Language)
 // remain the single source of truth for the SYSTEM language; the wizard
-// simply no longer overrides its own GUI language from that.
+// no longer overrides its own GUI language from that.
 static void installPreferredTranslator(QApplication &app) {
   const QString lang = qEnvironmentVariable("HYGGSHI_WELCOME_LANG");
-  // vi (default) needs no translator; only an explicit "en" opts into the
-  // second language of the Vi > en chain.
-  if (lang.compare("en", Qt::CaseInsensitive) != 0) return;
+  // English (default) needs no translator; only an explicit "vi" opts into
+  // the Vietnamese translation catalog.
+  if (lang.compare("vi", Qt::CaseInsensitive) != 0) return;
 
   auto *translator = new QTranslator(&app);
-  const QString base = QStringLiteral("hyggshi-welcome_en");
+  const QString base = QStringLiteral("hyggshi-welcome_vi");
   const QStringList dirs = {
       QCoreApplication::applicationDirPath() + "/../share/hyggshi/welcome/i18n",
       QStringLiteral("/usr/share/hyggshi/welcome/i18n"),
@@ -45,8 +42,8 @@ static void installPreferredTranslator(QApplication &app) {
       return;
     }
   }
-  // .qm absent (LinguistTools was missing at build time) -> Vietnamese,
-  // which is the head of the priority chain anyway.
+  // .qm absent (no Vietnamese translation catalog was built) -> English,
+  // which is the source language anyway.
   delete translator;
 }
 

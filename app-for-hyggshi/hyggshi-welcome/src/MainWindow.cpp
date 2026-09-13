@@ -38,19 +38,21 @@
 
 namespace {
 
-// Thứ tự trang của wizard. MỌI logic định vị trang (các hook trong
-// goNext(), số chấm điều hướng...) phải dùng các hằng này thay vì số
-// cứng — chèn/bỏ trang sẽ làm lệch toàn bộ chỉ số.
+// Page order of the wizard. ALL page-position logic (the hooks in
+// goNext(), the navigation dots...) must use these constants instead of
+// hardcoded numbers — inserting/removing a page would otherwise shift every
+// index.
 //
-// Trang "Ngôn ngữ & Bàn phím" đã gỡ có chủ đích: language/keyboard là
-// thiết lập HỆ THỐNG, đi theo luồng nhất quán (systematic) thay vì một
-// trang wizard riêng:
-//   - locale + keyboard layout do Calamares đặt ngay lúc cài (modules
-//     "locale"/"keyboard" trong sequence của settings.conf),
-//   - sau đó user đổi trong Region & Language / Input Sources của desktop.
-// Welcome vì vậy KHÔNG có selector ngôn ngữ và cũng không được ghi đè
-// input-sources của hệ thống (bản cũ luôn ép đúng 1 layout xkb từ 4 lựa
-// chọn của trang đó, đè lên cấu hình hệ thống).
+// The "Language & Keyboard" page was removed intentionally: language/keyboard
+// are SYSTEM settings, following the systematic flow rather than a
+// dedicated wizard page:
+//   - locale + keyboard layout are set by Calamares at install time (the
+//     "locale"/"keyboard" modules in settings.conf's sequence),
+//   - afterwards the user changes them in the desktop's Region & Language /
+//     Input Sources.
+// Welcome therefore has NO language selector and must not overwrite the
+// system's input sources (the old version always forced a single xkb
+// layout from that page's 4 choices, overriding the system configuration).
 enum WizardPage {
   kPageWelcome = 0,
   kPageProfile,
@@ -112,12 +114,13 @@ QString shellQuoteArg(const QString &value) {
   return "'" + out + "'";
 }
 
-// Nội dung 3 dòng deb cho mỗi profile — PHẢI khớp đúng với
-// [package-debian-test.<profile>] trong iso-config/config/config.ini
-// (mỗi add-repositoryN = fileaddtext(target=..., content=...)). Đây là
-// bản sao ở phía C++ vì Welcome chạy SAU KHI cài đặt, trên máy người
-// dùng — không có sẵn config.ini/hcl_parser.py của repo build để đọc lại.
-// Nếu sửa repo trong config.ini, nhớ sửa lại đúng ở đây.
+// The 3 deb lines for each profile — MUST match exactly with
+// [package-debian-test.<profile>] in iso-config/config/config.ini
+// (each add-repositoryN = fileaddtext(target=..., content=...)). This is
+// a C++-side copy because Welcome runs AFTER installation, on the user's
+// machine — the build repo's config.ini/hcl_parser.py isn't available to
+// read back. If you change the repo in config.ini, remember to update it
+// here too.
 QStringList debianTestRepoLines(const QString &profile) {
   if (profile == "full") {
     return {
@@ -140,7 +143,7 @@ QStringList debianTestRepoLines(const QString &profile) {
         "deb http://security.debian.org/debian-security testing-security main contrib non-free non-free-firmware",
     };
   }
-  // "default" (và mọi giá trị lạ khác) -> Stable, an toàn nhất.
+  // "default" (and any other unrecognized value) -> Stable, the safest option.
   return {
       "deb http://deb.debian.org/debian stable main contrib non-free non-free-firmware",
       "deb http://deb.debian.org/debian stable-updates main contrib non-free non-free-firmware",
@@ -168,7 +171,7 @@ QStringList commandOutput(const QString &program, const QStringList &args, int t
 }  // namespace
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
-  setWindowTitle(tr("Chào mừng đến với Hyggshi OS"));
+  setWindowTitle(tr("Welcome to Hyggshi OS"));
   setMinimumSize(720, 480);
   resize(kPreferredWidth, kPreferredHeight);
 
@@ -223,9 +226,9 @@ void MainWindow::loadPreferences() {
   m_largeText = settings.value("accessibility/large_text", false).toBool();
   m_installProfile = settings.value("software/profile", "normal").toString();
   m_debianTesting = settings.value("software/debian_testing", false).toBool();
-  // Profile: nếu user chưa từng lưu tên (key chưa tồn tại trong file) thì
-  // pre-fill từ GECOS hiện tại của /etc/passwd để Welcome không bắt người
-  // dùng gõ lại tên đã đặt lúc cài hệ thống.
+  // Profile: if the user has never saved a name (the key doesn't exist in
+  // the file yet), pre-fill from the current GECOS in /etc/passwd so
+  // Welcome doesn't make the user retype the name they set during install.
   const QVariant storedFullName = settings.value("profile/full_name");
   m_profileFullName = storedFullName.isNull() ? loginGecos() : storedFullName.toString();
   m_profileAvatarPath = settings.value("profile/avatar").toString();
@@ -266,8 +269,8 @@ void MainWindow::loadPreferences() {
     m_selectedTheme = "auto";
   }
   if (m_selectedTheme == "custom" && m_selectedCustomTheme.isEmpty()) {
-    // Không có theme tuỳ chỉnh nào được lưu (hoặc theme đã lưu không còn
-    // tồn tại trên máy) -> quay lại "auto" để tránh áp theme rỗng.
+    // No custom theme was ever saved (or the saved theme no longer exists
+    // on the machine) -> fall back to "auto" to avoid applying an empty theme.
     m_selectedTheme = "auto";
   }
 }
@@ -301,12 +304,12 @@ QWidget *MainWindow::buildWelcomePage() {
                                                         Qt::SmoothTransformation));
   logo->setAlignment(Qt::AlignCenter);
 
-  auto *title = new QLabel(tr("Chào mừng đến với Hyggshi OS"));
+  auto *title = new QLabel(tr("Welcome to Hyggshi OS"));
   title->setAlignment(Qt::AlignCenter);
   title->setStyleSheet("font-size:24px; font-weight:600; color:#f2f3f5;");
 
-  auto *subtitle = new QLabel(tr("Thiết lập nhanh máy của bạn trong vài bước.\n"
-                                "Mọi lựa chọn đều có thể đổi lại trong Cài đặt."));
+  auto *subtitle = new QLabel(tr("Quickly set up your machine in a few steps.\n"
+                                "Every choice can be changed later in Settings."));
   subtitle->setAlignment(Qt::AlignCenter);
   subtitle->setStyleSheet("font-size:13px; color:#9aa0ab;");
   subtitle->setWordWrap(true);
@@ -327,10 +330,11 @@ QString MainWindow::loginUserName() {
 QString MainWindow::loginGecos() {
   QString gecos;
   if (const passwd *pw = getpwuid(getuid())) gecos = QString::fromLocal8Bit(pw->pw_gecos);
-  // Trường GECOS có dạng "Full Name,,," — chỉ lấy phần tên.
+  // The GECOS field looks like "Full Name,,," — only take the name part.
   gecos = gecos.section(',', 0, 0).trimmed();
-  // Installer thường để GECOS trùng tên đăng nhập; coi như chưa có tên
-  // hiển thị riêng để Welcome để ô trống, thay vì hiển thị lại username.
+  // The installer usually leaves GECOS the same as the login name; treat
+  // that as "no display name set" so Welcome leaves the field blank instead
+  // of showing the username again.
   if (gecos.isEmpty() || gecos == loginUserName()) return {};
   return gecos;
 }
@@ -346,8 +350,9 @@ QPixmap MainWindow::renderProfileAvatarPixmap(int size) const {
   if (!m_profileAvatarPath.isEmpty()) {
     const QPixmap src(m_profileAvatarPath);
     if (!src.isNull()) {
-      // Center-crop vuông rồi bo tròn — đa số DE cũng mask avatar thành
-      // vòng tròn, bo sẵn ở đây giúp preview sát với thực tế.
+      // Square center-crop then round it off — most DEs also mask avatars
+      // into a circle, so rounding it here keeps the preview close to the
+      // real result.
       const int side = qMax(1, qMin(src.width(), src.height()));
       const QRect crop((src.width() - side) / 2, (src.height() - side) / 2, side, side);
       p.drawPixmap(0, 0, src.copy(crop).scaled(size, size, Qt::IgnoreAspectRatio,
@@ -365,8 +370,8 @@ QPixmap MainWindow::renderProfileAvatarPixmap(int size) const {
       p.end();
       return out;
     }
-    // Ảnh đã chọn nhưng đọc không được -> rơi về avatar chữ cái, không để
-    // preview trống.
+    // An image was picked but couldn't be read -> fall back to the letter
+    // avatar instead of leaving the preview blank.
   }
 
   const QString name = m_profileFullName.trimmed();
@@ -379,8 +384,8 @@ QPixmap MainWindow::renderProfileAvatarPixmap(int size) const {
     }
   }
 
-  // Bảng màu pastel tối giản — màu chọn theo qHash(tên) để avatar của mỗi
-  // người ổn định giữa các lần mở Welcome.
+  // Minimal pastel palette — color picked via qHash(name) so each person's
+  // avatar stays stable across different runs of Welcome.
   static const char *kAvatarColors[] = {
       "#5aa9ff", "#f28b82", "#81c995", "#fbbc5a",
       "#c58af9", "#78d9ec", "#ff8bcb", "#9aa0ab",
@@ -408,12 +413,12 @@ void MainWindow::pickProfileAvatar() {
   const QString picturesDir = QDir::homePath() + "/Pictures";
   const QString startDir = QDir(picturesDir).exists() ? picturesDir : QDir::homePath();
   const QString file = QFileDialog::getOpenFileName(
-      this, tr("Chọn ảnh đại diện"), startDir,
-      tr("Ảnh (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
+      this, tr("Choose profile picture"), startDir,
+      tr("Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
   if (file.isEmpty()) return;
   if (QPixmap(file).isNull()) {
-    QMessageBox::warning(this, tr("Ảnh không hợp lệ"),
-                         tr("Không đọc được file này dưới dạng ảnh. Hãy chọn file PNG/JPG khác."));
+    QMessageBox::warning(this, tr("Invalid image"),
+                         tr("This file couldn't be read as an image. Please choose a different PNG/JPG file."));
     return;
   }
   m_profileAvatarPath = file;
@@ -427,10 +432,10 @@ QWidget *MainWindow::buildProfilePage() {
   layout->setContentsMargins(70, 45, 70, 35);
   layout->setSpacing(14);
 
-  auto *title = new QLabel(tr("Hồ sơ của bạn"));
+  auto *title = new QLabel(tr("Your profile"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Đặt tên hiển thị và ảnh đại diện cho tài khoản. Chúng xuất hiện ở "
-                             "màn hình đăng nhập, menu người dùng và Ứng dụng cài đặt."));
+  auto *desc = new QLabel(tr("Set a display name and profile picture for the account. They appear on "
+                             "the login screen, the user menu, and Settings."));
   desc->setWordWrap(true);
   desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
 
@@ -440,13 +445,13 @@ QWidget *MainWindow::buildProfilePage() {
   m_profileAvatarPreview = new QLabel;
   m_profileAvatarPreview->setFixedSize(96, 96);
   m_profileAvatarPreview->setAlignment(Qt::AlignCenter);
-  m_profileAvatarPreview->setToolTip(tr("Ảnh đại diện — chọn ảnh của bạn hoặc để avatar chữ cái"));
+  m_profileAvatarPreview->setToolTip(tr("Profile picture — choose your own photo or keep the letter avatar"));
   updateProfileAvatarPreview();
 
   auto *fieldCol = new QVBoxLayout;
   fieldCol->setSpacing(8);
 
-  auto *nameLabel = new QLabel(tr("Tên hiển thị"));
+  auto *nameLabel = new QLabel(tr("Display name"));
   nameLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
   m_profileNameEdit = new QLineEdit(m_profileFullName);
   m_profileNameEdit->setPlaceholderText(loginUserName());
@@ -458,13 +463,13 @@ QWidget *MainWindow::buildProfilePage() {
       "QLineEdit:focus { border:1px solid #5aa9ff; }");
 
   m_profileLoginLabel = new QLabel(
-      tr("Tên đăng nhập: <b>%1</b> — không thể đổi sau khi hệ thống đã cài.")
+      tr("Login name: <b>%1</b> — cannot be changed after the system is installed.")
           .arg(loginUserName().toHtmlEscaped()));
   m_profileLoginLabel->setTextFormat(Qt::RichText);
   m_profileLoginLabel->setStyleSheet("color:#6f7480; font-size:11px;");
 
-  m_profileAvatarBtn = new QPushButton(tr("Chọn ảnh..."));
-  m_profileAvatarResetBtn = new QPushButton(tr("Dùng avatar chữ cái"));
+  m_profileAvatarBtn = new QPushButton(tr("Choose picture..."));
+  m_profileAvatarResetBtn = new QPushButton(tr("Use letter avatar"));
   for (QPushButton *btn : {m_profileAvatarBtn, m_profileAvatarResetBtn}) {
     btn->setCursor(Qt::PointingHandCursor);
     btn->setStyleSheet("QPushButton { padding:6px 12px; font-size:12px; }");
@@ -486,10 +491,10 @@ QWidget *MainWindow::buildProfilePage() {
   row->addLayout(fieldCol, 1);
 
   auto *note = new QLabel(tr(
-      "Tên hiển thị và avatar được lưu vào hồ sơ tài khoản (GECOS + "
-      "~/.face + AccountsService). Khi đồng bộ với hệ thống, có thể bạn sẽ "
-      "được nhắc nhập mật khẩu quản trị — bỏ qua cũng không sao, lựa chọn "
-      "vẫn được lưu trong welcome.conf."));
+      "The display name and avatar are saved to the account profile (GECOS + "
+      "~/.face + AccountsService). When syncing with the system, you may be "
+      "prompted for an administrator password — it's fine to skip it, your "
+      "choices are still saved in welcome.conf."));
   note->setWordWrap(true);
   note->setStyleSheet("color:#6f7480; font-size:11px;");
 
@@ -501,7 +506,7 @@ QWidget *MainWindow::buildProfilePage() {
 
   connect(m_profileNameEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
     m_profileFullName = text.trimmed();
-    // Avatar chữ cái cập nhật ngay khi gõ; ảnh tuỳ chọn giữ nguyên.
+    // The letter avatar updates as you type; the chosen picture stays unchanged.
     if (m_profileAvatarPath.isEmpty()) updateProfileAvatarPreview();
   });
   connect(m_profileNameEdit, &QLineEdit::editingFinished, this, [this]() {
@@ -523,19 +528,19 @@ QWidget *MainWindow::buildNetworkPage() {
   layout->setContentsMargins(70, 55, 70, 40);
   layout->setSpacing(14);
 
-  auto *title = new QLabel(tr("Kết nối mạng"));
+  auto *title = new QLabel(tr("Network connection"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Kiểm tra nhanh kết nối hiện tại. Hyggshi Welcome không tự quản lý Wi-Fi, mà mở công cụ hệ thống khi cần."));
+  auto *desc = new QLabel(tr("Quick check of the current connection. Hyggshi Welcome doesn't manage Wi-Fi itself — it opens the system tool when needed."));
   desc->setWordWrap(true);
   desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
 
-  m_networkStatus = new QLabel(tr("Đang kiểm tra..."));
+  m_networkStatus = new QLabel(tr("Checking..."));
   m_networkStatus->setStyleSheet("font-size:14px; color:#d8dbe1; padding:14px; border:1px solid #2c2f38; border-radius:8px;");
   m_networkStatus->setWordWrap(true);
 
   auto *row = new QHBoxLayout;
-  auto *refresh = new QPushButton(tr("Kiểm tra lại"));
-  auto *settings = new QPushButton(tr("Mở Network Settings"));
+  auto *refresh = new QPushButton(tr("Check again"));
+  auto *settings = new QPushButton(tr("Open Network Settings"));
   refresh->setCursor(Qt::PointingHandCursor);
   settings->setCursor(Qt::PointingHandCursor);
   connect(refresh, &QPushButton::clicked, this, &MainWindow::refreshNetworkStatus);
@@ -564,7 +569,7 @@ QWidget *MainWindow::buildThemePage() {
   layout->setContentsMargins(70, 55, 70, 40);
   layout->setSpacing(18);
 
-  auto *title = new QLabel(tr("Chọn giao diện"));
+  auto *title = new QLabel(tr("Choose an appearance"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
 
   auto *cardsRow = new QHBoxLayout;
@@ -573,10 +578,10 @@ QWidget *MainWindow::buildThemePage() {
   m_themeGroup->setExclusive(true);
 
   const QVector<ThemeOpt> opts = {
-      {"light", tr("Sáng"), "/usr/share/backgrounds/hyggshi/car-light.png"},
-      {"dark", tr("Tối"), "/usr/share/backgrounds/hyggshi/car-Dark.png"},
-      {"auto", tr("Tự động"), "/usr/share/backgrounds/hyggshi/car-light.png"},
-      {"custom", tr("Tuỳ chỉnh"), "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"light", tr("Light"), "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"dark", tr("Dark"), "/usr/share/backgrounds/hyggshi/car-Dark.png"},
+      {"auto", tr("Auto"), "/usr/share/backgrounds/hyggshi/car-light.png"},
+      {"custom", tr("Custom"), "/usr/share/backgrounds/hyggshi/car-light.png"},
   };
 
   for (int i = 0; i < opts.size(); ++i) {
@@ -587,8 +592,8 @@ QWidget *MainWindow::buildThemePage() {
     card->setCursor(Qt::PointingHandCursor);
     card->setText("\n\n" + opt.label);
 
-    // "custom" dùng chung ảnh nền theme-auto.png vì đây là theme do người
-    // dùng tự chọn, không có ảnh minh hoạ cố định.
+    // "custom" shares the theme-auto.png background image since this theme
+    // is user-chosen and has no fixed illustration.
     const QString imageName =
         QString("theme-%1.png").arg(opt.id == "custom" ? "auto" : opt.id);
     card->setStyleSheet(QString(
@@ -616,12 +621,12 @@ QWidget *MainWindow::buildThemePage() {
     m_selectedTheme = "auto";
   }
 
-  m_customThemeLabel = new QLabel(tr("Theme GTK tuỳ chỉnh"));
+  m_customThemeLabel = new QLabel(tr("Custom GTK theme"));
   m_customThemeLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:10px;");
   m_customThemeBox = new QComboBox;
   const QStringList installedThemes = listInstalledThemes();
   if (installedThemes.isEmpty()) {
-    m_customThemeBox->addItem(tr("Không tìm thấy theme nào trong ~/.themes"), QString());
+    m_customThemeBox->addItem(tr("No themes found in ~/.themes"), QString());
     m_customThemeBox->setEnabled(false);
   } else {
     for (const QString &themeName : installedThemes) {
@@ -644,7 +649,7 @@ QWidget *MainWindow::buildThemePage() {
           });
   updateCustomThemeVisibility();
 
-  auto *wallpaperLabel = new QLabel(tr("Hình nền"));
+  auto *wallpaperLabel = new QLabel(tr("Wallpaper"));
   wallpaperLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:10px;");
   auto *wallpaperBox = new QComboBox;
   wallpaperBox->addItem(tr("Verdant Valley"), "/usr/share/backgrounds/hyggshi/Verdant-Valley.png");
@@ -659,7 +664,7 @@ QWidget *MainWindow::buildThemePage() {
             }
           });
 
-  auto *note = new QLabel(tr("Tự động sẽ bám theo theme hiện tại của desktop khi hoàn tất thiết lập."));
+  auto *note = new QLabel(tr("Auto will follow the desktop's current theme once setup is complete."));
   note->setWordWrap(true);
   note->setStyleSheet("color:#6f7480; font-size:11px; margin-top:10px;");
 
@@ -681,24 +686,24 @@ QWidget *MainWindow::buildSoftwarePage() {
   outer->setContentsMargins(55, 35, 55, 30);
   outer->setSpacing(10);
 
-  auto *title = new QLabel(tr("Tùy chỉnh & Phần mềm"));
+  auto *title = new QLabel(tr("Customize & Software"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Các lựa chọn trước đây nằm ở Customize và Additional Software nay được thực hiện trong Hyggshi Welcome sau khi đăng nhập. Có LibreOffice, ONLYOFFICE, WPS Office, VLC, Visual Studio Code, Google Chrome và nhiều ứng dụng khác. Chọn một bộ Office phù hợp hoặc dùng Tùy chỉnh."));
+  auto *desc = new QLabel(tr("The choices that used to live in Customize and Additional Software are now done in Hyggshi Welcome after login. LibreOffice, ONLYOFFICE, WPS Office, VLC, Visual Studio Code, Google Chrome and many other apps are available. Pick a suitable Office bundle or use Customize."));
   desc->setWordWrap(true);
   desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
 
-  auto *profileLabel = new QLabel(tr("Kiểu cài đặt phần mềm"));
+  auto *profileLabel = new QLabel(tr("Software install profile"));
   profileLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
   m_installProfileBox = new QComboBox;
-  m_installProfileBox->addItem(tr("Đầy đủ — cài toàn bộ"), "full");
-  m_installProfileBox->addItem(tr("Thông thường — bộ cơ bản"), "normal");
-  m_installProfileBox->addItem(tr("Tối giản — không cài thêm"), "minimal");
-  m_installProfileBox->addItem(tr("Tùy chỉnh — tự chọn"), "custom");
+  m_installProfileBox->addItem(tr("Full — install everything"), "full");
+  m_installProfileBox->addItem(tr("Normal — basic set"), "normal");
+  m_installProfileBox->addItem(tr("Minimal — no extras"), "minimal");
+  m_installProfileBox->addItem(tr("Custom — pick your own"), "custom");
   const int profileIndex = m_installProfileBox->findData(m_installProfile);
   m_installProfileBox->setCurrentIndex(profileIndex >= 0 ? profileIndex : 1);
 
-  auto *testingBox = new QCheckBox(tr("Dùng package Debian Testing"));
-  testingBox->setToolTip(tr("Chỉ áp dụng cho Debian. Dùng kho Debian Testing khi cài các phần mềm đã chọn."));
+  auto *testingBox = new QCheckBox(tr("Use Debian Testing packages"));
+  testingBox->setToolTip(tr("Only applies to Debian. Uses the Debian Testing repository when installing the selected software."));
   m_debianTestingCheck = testingBox;
   const bool isDebian = isDebianSystem();
   testingBox->setVisible(isDebian);
@@ -710,8 +715,8 @@ QWidget *MainWindow::buildSoftwarePage() {
       return;
     }
     QMessageBox::StandardButton answer = QMessageBox::warning(
-        this, tr("Cảnh báo: Debian Testing"),
-        tr("Debian Testing là kho phát triển, có thể chứa package chưa ổn định và có thể gây xung đột hoặc làm hệ thống khó nâng cấp.\n\nChỉ bật tùy chọn này nếu bạn hiểu rủi ro và muốn dùng package Testing cho phần mềm đã chọn. Hyggshi OS không khuyến nghị bật trên máy chính.\n\nBạn có muốn tiếp tục không?"),
+        this, tr("Warning: Debian Testing"),
+        tr("Debian Testing is a development repository that may contain unstable packages and could cause conflicts or make the system harder to upgrade.\n\nOnly enable this option if you understand the risk and want Testing packages for the software you've selected. Hyggshi OS doesn't recommend enabling it on your main machine.\n\nDo you want to continue?"),
         QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel);
     if (answer != QMessageBox::Ok) {
       const QSignalBlocker blocker(testingBox);
@@ -725,20 +730,20 @@ QWidget *MainWindow::buildSoftwarePage() {
     savePreferences();
   });
 
-  auto *testProfileLabel = new QLabel(tr("Kho apt gốc của hệ thống (Debian)"));
+  auto *testProfileLabel = new QLabel(tr("System's root apt repository (Debian)"));
   testProfileLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
   testProfileLabel->setVisible(isDebian);
   m_debianTestProfileBox = new QComboBox;
   m_debianTestProfileBox->setVisible(isDebian);
   m_debianTestProfileBox->setToolTip(tr(
-      "Chỉ áp dụng cho Debian. Ghi đè /etc/apt/sources.list theo profile "
-      "đã chọn — khác với ô 'Dùng package Debian Testing' phía trên (ô đó "
-      "chỉ ảnh hưởng các gói bạn tự chọn thêm ở dưới)."));
-  m_debianTestProfileBox->addItem(tr("Giữ nguyên (không đổi)"), "off");
-  m_debianTestProfileBox->addItem(tr("full — Testing, nhiều gói mới nhất"), "full");
-  m_debianTestProfileBox->addItem(tr("normal — Testing, khuyến nghị"), "normal");
-  m_debianTestProfileBox->addItem(tr("default — Stable, ổn định nhất"), "default");
-  m_debianTestProfileBox->addItem(tr("unstable — Sid, chỉ dành cho thử nghiệm"), "unstable");
+      "Only applies to Debian. Overwrites /etc/apt/sources.list according to "
+      "the selected profile — different from the 'Use Debian Testing packages' "
+      "checkbox above (that one only affects the packages you select below)."));
+  m_debianTestProfileBox->addItem(tr("Keep as-is (no change)"), "off");
+  m_debianTestProfileBox->addItem(tr("full — Testing, most up-to-date packages"), "full");
+  m_debianTestProfileBox->addItem(tr("normal — Testing, recommended"), "normal");
+  m_debianTestProfileBox->addItem(tr("default — Stable, most stable"), "default");
+  m_debianTestProfileBox->addItem(tr("unstable — Sid, testing only"), "unstable");
   {
     const int idx = m_debianTestProfileBox->findData(m_debianTestProfile);
     m_debianTestProfileBox->setCurrentIndex(idx >= 0 ? idx : 0);
@@ -751,12 +756,12 @@ QWidget *MainWindow::buildSoftwarePage() {
 
             if (chosen != "off" && chosen != "default") {
               QMessageBox::StandardButton answer = QMessageBox::warning(
-                  this, tr("Cảnh báo: đổi kho apt gốc"),
-                  tr("Bạn sắp ghi đè /etc/apt/sources.list của toàn hệ thống sang "
-                     "profile '%1'. Profile Testing/Unstable có thể chứa package "
-                     "chưa ổn định, ảnh hưởng MỌI package trên máy (không chỉ phần "
-                     "mềm bạn tự cài thêm). Hyggshi OS không khuyến nghị dùng trên "
-                     "máy chính.\n\nBạn có chắc muốn tiếp tục không?")
+                  this, tr("Warning: changing the root apt repository"),
+                  tr("You're about to overwrite the whole system's /etc/apt/sources.list "
+                     "with profile '%1'. Testing/Unstable profiles may contain "
+                     "unstable packages, affecting EVERY package on the machine (not just "
+                     "the software you install yourself). Hyggshi OS doesn't recommend using "
+                     "this on your main machine.\n\nAre you sure you want to continue?")
                       .arg(chosen),
                   QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel);
               if (answer != QMessageBox::Ok) {
@@ -808,7 +813,7 @@ QWidget *MainWindow::buildSoftwarePage() {
             savePreferences();
           });
 
-  auto *softwareLabel = new QLabel(tr("Phần mềm bổ sung (APT + Flathub)"));
+  auto *softwareLabel = new QLabel(tr("Additional software (APT + Flathub)"));
   softwareLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:6px;");
 
   auto *scroll = new QScrollArea;
@@ -821,10 +826,10 @@ QWidget *MainWindow::buildSoftwarePage() {
 
   struct SoftwareOpt { const char *id; const char *label; const char *type; const char *group; };
   QVector<SoftwareOpt> options = {
-      {"ffmpeg", "Codec đa phương tiện (FFmpeg)", "apt", ""},
-      {"vlc", "VLC — trình phát đa phương tiện", "apt", "media"},
-      {"libreoffice", "LibreOffice — bộ ứng dụng văn phòng", "apt", "office"},
-      {"unattended-upgrades", "Cập nhật tự động (unattended-upgrades)", "apt", ""},
+      {"ffmpeg", "Multimedia codecs (FFmpeg)", "apt", ""},
+      {"vlc", "VLC — media player", "apt", "media"},
+      {"libreoffice", "LibreOffice — office suite", "apt", "office"},
+      {"unattended-upgrades", "Automatic updates (unattended-upgrades)", "apt", ""},
       {"thunderbird", "Thunderbird", "apt", ""},
       {"krita", "Krita", "apt", ""},
       {"virt-manager", "Virtual Machine Manager", "apt", ""},
@@ -843,28 +848,29 @@ QWidget *MainWindow::buildSoftwarePage() {
       {"com.obsproject.Studio", "OBS Studio", "flatpak", ""},
   };
 
-  // Debian Testing: mở rộng thêm 2 lựa chọn "nặng" — kernel mới nhất và
-  // bản Desktop Environment mới nhất từ kho Testing. Chỉ hiện trên Debian
-  // (isDebian) vì "Dùng package Debian Testing" ở trên cũng chỉ áp dụng
-  // cho Debian. DE hiển thị ĐÚNG 1 metapackage khớp desktop hiện tại của
-  // máy (XDG_CURRENT_DESKTOP) — ISO chỉ cài 1 DE duy nhất nên không có lý
-  // do liệt kê cả 6 DE khác không tồn tại trên máy.
+  // Debian Testing: adds 2 extra "heavy" options — the latest kernel and
+  // the latest Desktop Environment from the Testing repo. Only shown on
+  // Debian (isDebian) since "Use Debian Testing packages" above also only
+  // applies to Debian. The DE shows EXACTLY 1 metapackage matching the
+  // machine's current desktop (XDG_CURRENT_DESKTOP) — the ISO only installs
+  // a single DE, so there's no reason to list all 6 other DEs that don't
+  // exist on the machine.
   if (isDebian) {
-    options.push_back({"linux-image-amd64", "Kernel Linux mới nhất (Debian Testing)", "apt", "kernel"});
+    options.push_back({"linux-image-amd64", "Latest Linux kernel (Debian Testing)", "apt", "kernel"});
 
     const QString curDesktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
     if (curDesktop.contains("cinnamon")) {
-      options.push_back({"cinnamon-desktop-environment", "Cinnamon mới nhất (Debian Testing)", "apt", "de"});
+      options.push_back({"cinnamon-desktop-environment", "Latest Cinnamon (Debian Testing)", "apt", "de"});
     } else if (curDesktop.contains("xfce")) {
-      options.push_back({"task-xfce-desktop", "XFCE mới nhất (Debian Testing)", "apt", "de"});
+      options.push_back({"task-xfce-desktop", "Latest XFCE (Debian Testing)", "apt", "de"});
     } else if (curDesktop.contains("kde") || curDesktop.contains("plasma")) {
-      options.push_back({"kde-plasma-desktop", "KDE Plasma mới nhất (Debian Testing)", "apt", "de"});
+      options.push_back({"kde-plasma-desktop", "Latest KDE Plasma (Debian Testing)", "apt", "de"});
     } else if (curDesktop.contains("gnome")) {
-      options.push_back({"gnome-session", "GNOME mới nhất (Debian Testing)", "apt", "de"});
+      options.push_back({"gnome-session", "Latest GNOME (Debian Testing)", "apt", "de"});
     } else if (curDesktop.contains("mate")) {
-      options.push_back({"mate-desktop-environment", "MATE mới nhất (Debian Testing)", "apt", "de"});
+      options.push_back({"mate-desktop-environment", "Latest MATE (Debian Testing)", "apt", "de"});
     } else if (curDesktop.contains("lxqt")) {
-      options.push_back({"lxqt", "LXQt mới nhất (Debian Testing)", "apt", "de"});
+      options.push_back({"lxqt", "Latest LXQt (Debian Testing)", "apt", "de"});
     }
   }
 
@@ -876,7 +882,7 @@ QWidget *MainWindow::buildSoftwarePage() {
     check->setCursor(Qt::PointingHandCursor);
     const QString optGroup = QString::fromLatin1(opt.group);
     if (optGroup == "kernel" || optGroup == "de") {
-      check->setToolTip(tr("Chỉ được cài khi bật 'Dùng package Debian Testing' ở trên. Sẽ kéo theo nhiều package phụ thuộc cũng được nâng lên bản Testing."));
+      check->setToolTip(tr("Can only be installed when 'Use Debian Testing packages' is enabled above. Will pull in many dependent packages that also get upgraded to the Testing version."));
     }
     check->setChecked(m_selectedSoftware.contains(QString::fromLatin1(opt.id)) ||
                       (m_installProfile == "normal" &&
@@ -921,7 +927,7 @@ QWidget *MainWindow::buildSoftwarePage() {
   listLayout->addStretch(1);
   scroll->setWidget(list);
 
-  m_softwareStatus = new QLabel(tr("Các gói sẽ được cài khi bạn bấm 'Bắt đầu sử dụng' ở cuối Welcome."));
+  m_softwareStatus = new QLabel(tr("Packages will be installed when you click 'Get started' at the end of Welcome."));
   m_softwareStatus->setWordWrap(true);
   m_softwareStatus->setStyleSheet("font-size:11px; color:#6f7480;");
 
@@ -946,15 +952,15 @@ QWidget *MainWindow::buildAccessibilityPage() {
   layout->setContentsMargins(70, 55, 70, 40);
   layout->setSpacing(12);
 
-  auto *title = new QLabel(tr("Trợ năng"));
+  auto *title = new QLabel(tr("Accessibility"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Các lựa chọn dưới đây được lưu cho tài khoản hiện tại và có thể được thay đổi sau này."));
+  auto *desc = new QLabel(tr("The options below are saved for the current account and can be changed later."));
   desc->setWordWrap(true);
   desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
 
-  m_reducedMotionChk = new QCheckBox(tr("Giảm chuyển động và animation"));
-  m_highContrastChk = new QCheckBox(tr("Tăng tương phản giao diện"));
-  m_largeTextChk = new QCheckBox(tr("Chữ lớn hơn"));
+  m_reducedMotionChk = new QCheckBox(tr("Reduce motion and animation"));
+  m_highContrastChk = new QCheckBox(tr("Increase interface contrast"));
+  m_largeTextChk = new QCheckBox(tr("Larger text"));
   m_reducedMotionChk->setChecked(m_reducedMotion);
   m_highContrastChk->setChecked(m_highContrast);
   m_largeTextChk->setChecked(m_largeText);
@@ -982,7 +988,7 @@ QWidget *MainWindow::buildSystemCheckPage() {
   layout->setContentsMargins(70, 45, 70, 35);
   layout->setSpacing(12);
 
-  auto *title = new QLabel(tr("Kiểm tra hệ thống"));
+  auto *title = new QLabel(tr("System check"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
 
   m_systemStatus = new QLabel;
@@ -990,7 +996,7 @@ QWidget *MainWindow::buildSystemCheckPage() {
   m_systemStatus->setTextFormat(Qt::RichText);
   m_systemStatus->setStyleSheet("font-size:12px; color:#d8dbe1; padding:14px; border:1px solid #2c2f38; border-radius:8px;");
 
-  auto *refresh = new QPushButton(tr("Kiểm tra lại"));
+  auto *refresh = new QPushButton(tr("Check again"));
   refresh->setCursor(Qt::PointingHandCursor);
   connect(refresh, &QPushButton::clicked, this, &MainWindow::refreshSystemStatus);
 
@@ -1006,21 +1012,21 @@ QWidget *MainWindow::buildUpdatePage() {
   layout->setContentsMargins(70, 55, 70, 40);
   layout->setSpacing(12);
 
-  auto *title = new QLabel(tr("Cập nhật hệ thống"));
+  auto *title = new QLabel(tr("System updates"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Chỉ kiểm tra trạng thái cập nhật; Welcome không tự cài package hay yêu cầu quyền quản trị."));
+  auto *desc = new QLabel(tr("Only checks the update status; Welcome doesn't install packages itself or request admin rights."));
   desc->setWordWrap(true);
   desc->setStyleSheet("color:#9aa0ab; font-size:12px;");
 
-  m_updateStatus = new QLabel(tr("Chưa kiểm tra."));
+  m_updateStatus = new QLabel(tr("Not checked yet."));
   m_updateStatus->setWordWrap(true);
   m_updateStatus->setStyleSheet("font-size:13px; color:#d8dbe1; padding:14px; border:1px solid #2c2f38; border-radius:8px;");
 
-  m_updateCheckBtn = new QPushButton(tr("Kiểm tra cập nhật"));
+  m_updateCheckBtn = new QPushButton(tr("Check for updates"));
   m_updateCheckBtn->setCursor(Qt::PointingHandCursor);
   connect(m_updateCheckBtn, &QPushButton::clicked, this, &MainWindow::checkForUpdates);
 
-  auto *open = new QPushButton(tr("Mở System Updater"));
+  auto *open = new QPushButton(tr("Open System Updater"));
   open->setCursor(Qt::PointingHandCursor);
   connect(open, &QPushButton::clicked, this, []() {
     if (hasExecutable("update-manager")) QProcess::startDetached("update-manager");
@@ -1041,10 +1047,10 @@ QWidget *MainWindow::buildUpdatePage() {
 
 QWidget *MainWindow::buildFeaturesPage() {
   m_features = {
-      {"🚀", tr("Khởi động nhanh"), tr("Hyggshi OS tối ưu trải nghiệm và tài nguyên nền cho sử dụng hằng ngày.")},
-      {"🎨", tr("Giao diện tuỳ biến"), tr("Đổi theme, icon và panel dễ dàng ngay trong Cài đặt hệ thống.")},
-      {"🧩", tr("Hệ sinh thái riêng"), tr("nexfetch, HOSC và các thành phần Hyggshi được tích hợp theo hướng đồng bộ.")},
-      {"🔒", tr("An toàn theo mặc định"), tr("Các thiết lập nền tảng hợp lý được chuẩn bị sẵn để bắt đầu.")},
+      {"🚀", tr("Fast startup"), tr("Hyggshi OS optimizes background resources and experience for everyday use.")},
+      {"🎨", tr("Customizable interface"), tr("Change theme, icons and panel easily right from System Settings.")},
+      {"🧩", tr("Its own ecosystem"), tr("nexfetch, HOSC and other Hyggshi components are integrated in a cohesive way.")},
+      {"🔒", tr("Secure by default"), tr("Sensible baseline settings are prepared ahead of time to get you started.")},
   };
 
   auto *page = new QWidget;
@@ -1053,7 +1059,7 @@ QWidget *MainWindow::buildFeaturesPage() {
   layout->setSpacing(10);
   layout->setAlignment(Qt::AlignCenter);
 
-  auto *title = new QLabel(tr("Tính năng nổi bật"));
+  auto *title = new QLabel(tr("Highlighted features"));
   title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
   title->setAlignment(Qt::AlignHCenter);
 
@@ -1164,15 +1170,15 @@ QWidget *MainWindow::buildFinishPage() {
   auto *icon = new QLabel("🎉");
   icon->setAlignment(Qt::AlignCenter);
   icon->setStyleSheet("font-size:48px;");
-  auto *title = new QLabel(tr("Đã sẵn sàng!"));
+  auto *title = new QLabel(tr("All set!"));
   title->setAlignment(Qt::AlignCenter);
   title->setStyleSheet("font-size:22px; font-weight:600; color:#f2f3f5;");
-  auto *desc = new QLabel(tr("Hyggshi OS đã sẵn sàng. Các lựa chọn của bạn đã được lưu."));
+  auto *desc = new QLabel(tr("Hyggshi OS is ready. Your choices have been saved."));
   desc->setAlignment(Qt::AlignCenter);
   desc->setStyleSheet("font-size:13px; color:#9aa0ab;");
   desc->setWordWrap(true);
 
-  auto *communityLabel = new QLabel(tr("Tham gia cộng đồng Hyggshi OS"));
+  auto *communityLabel = new QLabel(tr("Join the Hyggshi OS community"));
   communityLabel->setAlignment(Qt::AlignCenter);
   communityLabel->setStyleSheet("font-size:12px; color:#9aa0ab;");
 
@@ -1184,7 +1190,7 @@ QWidget *MainWindow::buildFinishPage() {
   socialRow->addWidget(makeSocialButton(":/icons/x.png",
                                          "https://x.com/hyggshios", tr("X (Twitter)")));
 
-  m_dontAskAgainChk = new QCheckBox(tr("Không hỏi lại lần sau"));
+  m_dontAskAgainChk = new QCheckBox(tr("Don't ask again next time"));
   m_dontAskAgainChk->setChecked(true);
   m_dontAskAgainChk->setCursor(Qt::PointingHandCursor);
 
@@ -1208,7 +1214,7 @@ QWidget *MainWindow::buildNavBar() {
   auto *layout = new QHBoxLayout(bar);
   layout->setContentsMargins(24, 0, 24, 0);
 
-  m_backBtn = new QPushButton(tr("Quay lại"));
+  m_backBtn = new QPushButton(tr("Back"));
   m_backBtn->setCursor(Qt::PointingHandCursor);
   connect(m_backBtn, &QPushButton::clicked, this, &MainWindow::goBack);
 
@@ -1221,11 +1227,11 @@ QWidget *MainWindow::buildNavBar() {
     dotsRow->addWidget(dot);
   }
 
-  m_skipBtn = new QPushButton(tr("Bỏ qua"));
+  m_skipBtn = new QPushButton(tr("Skip"));
   m_skipBtn->setCursor(Qt::PointingHandCursor);
   connect(m_skipBtn, &QPushButton::clicked, this, &MainWindow::finishSetup);
 
-  m_nextBtn = new QPushButton(tr("Tiếp tục"));
+  m_nextBtn = new QPushButton(tr("Continue"));
   m_nextBtn->setCursor(Qt::PointingHandCursor);
   m_nextBtn->setStyleSheet("QPushButton { background:#5aa9ff; color:#0d1017; font-weight:600; border-radius:8px; padding:8px 22px; } QPushButton:hover { background:#77b9ff; } QPushButton:disabled { background:#33465b; color:#66717f; }");
   connect(m_nextBtn, &QPushButton::clicked, this, &MainWindow::goNext);
@@ -1256,7 +1262,7 @@ void MainWindow::updateNavState() {
   m_skipBtn->setVisible(!isLast);
   m_skipBtn->setEnabled(!busy);
   m_nextBtn->setEnabled(!busy);
-  m_nextBtn->setText(isLast ? tr("Bắt đầu sử dụng") : tr("Tiếp tục"));
+  m_nextBtn->setText(isLast ? tr("Get started") : tr("Continue"));
   updateDots(index);
 
   m_stack->setReducedMotion(m_reducedMotion);
@@ -1270,14 +1276,14 @@ void MainWindow::goNext() {
     return;
   }
   if (index == kPageProfile) {
-    // editingFinished không nhất thiết bắn khi user bấm "Tiếp tục" ngay
-    // sau khi gõ — chốt lại tên + lưu một lần trước khi rời trang.
+    // editingFinished doesn't necessarily fire when the user clicks "Continue"
+    // right after typing — commit the name + save once before leaving the page.
     if (m_profileNameEdit) m_profileFullName = m_profileNameEdit->text().trimmed();
     savePreferences();
   }
   if (index == kPageNetwork) refreshNetworkStatus();
   if (index == kPageSystemCheck) refreshSystemStatus();
-  if (index == kPageUpdates) setUpdateStatus(tr("Bạn có thể kiểm tra cập nhật ngay hoặc tiếp tục."));
+  if (index == kPageUpdates) setUpdateStatus(tr("You can check for updates now or continue."));
   m_stack->slideToIndex(index + 1);
   updateNavState();
 }
@@ -1310,19 +1316,21 @@ void MainWindow::applyAccessibility() {
   qApp->setFont(font);
 }
 
-// Đồng bộ hồ sơ đã chọn ở trang Profile vào hệ thống khi bấm "Bắt đầu sử
-// dụng". Ba phần, mỗi phần độc lập và best-effort:
-//   1) ~/.face (+ ~/.face.icon) — ảnh vuông 192px center-crop. GDM,
-//      LightDM, Cinnamon, KDE... đều đọc vị trí chuẩn này, nên avatar hoạt
-//      động kể cả khi không có quyền root.
-//   2) chfn -f <tên> — cập nhật GECOS để màn hình đăng nhập hiện tên hiển
-//      thị. Cần root nên chạy qua pkexec; thiếu pkexec thì bỏ qua (giá trị
-//      đã nằm trong welcome.conf, tool hệ thống khác vẫn đổi được sau này).
-//   3) /var/lib/AccountsService/users/<user> — mục [User] lưu Icon= và
-//      SystemAccount=false. KHÔNG ghi đè cả file (các key khác như
-//      XSession/Language vẫn còn giá trị): xoá dòng Icon/SystemAccount cũ
-//      rồi append key mới — file này luôn có duy nhất section [User] nên
-//      append vẫn thuộc đúng section.
+// Syncs the profile chosen on the Profile page into the system when
+// clicking "Get started". Three parts, each independent and best-effort:
+//   1) ~/.face (+ ~/.face.icon) — 192px square center-crop image. GDM,
+//      LightDM, Cinnamon, KDE... all read this standard location, so the
+//      avatar works even without root privileges.
+//   2) chfn -f <name> — updates GECOS so the login screen shows the
+//      display name. Needs root, so it runs via pkexec; if pkexec is
+//      missing, this part is skipped (the value is already in
+//      welcome.conf, and other system tools can still change it later).
+//   3) /var/lib/AccountsService/users/<user> — the [User] section stores
+//      Icon= and SystemAccount=false. Does NOT overwrite the whole file
+//      (other keys like XSession/Language keep their values): the old
+//      Icon/SystemAccount lines are removed then the new keys are
+//      appended — this file always has exactly one [User] section, so
+//      the append still lands in the right section.
 void MainWindow::applyProfileChanges() {
   const QString userName = loginUserName();
   const QString home = QDir::homePath();
@@ -1339,7 +1347,7 @@ void MainWindow::applyProfileChanges() {
                                          Qt::SmoothTransformation);
       faceWritten = square.save(home + "/.face", "PNG");
       if (faceWritten) {
-        // Một số DE (KDE Plasma) quy ước ~/.face.icon thay vì ~/.face.
+        // Some DEs (KDE Plasma) use the convention ~/.face.icon instead of ~/.face.
         QFile::remove(home + "/.face.icon");
         QFile::copy(home + "/.face", home + "/.face.icon");
       }
@@ -1351,8 +1359,8 @@ void MainWindow::applyProfileChanges() {
   const bool nameChanged = !desiredName.isEmpty() && desiredName != loginGecos();
   if (!nameChanged && !faceWritten) return;
 
-  // Root (phiên live ISO) chạy thẳng sh; user thường thì qua pkexec. Không
-  // có pkexec -> bỏ qua phần hệ thống, ~/.face ở trên vẫn còn hiệu lực.
+  // Root (live ISO session) runs sh directly; a regular user goes through
+  // pkexec. No pkexec -> skip the system part, ~/.face above still takes effect.
   const bool asRoot = (geteuid() == 0);
   if (!asRoot && !hasExecutable("pkexec")) return;
 
@@ -1364,9 +1372,9 @@ void MainWindow::applyProfileChanges() {
   if (faceWritten) {
     const QString faceFile = home + "/.face";
     const QString usersFile = "/var/lib/AccountsService/users/" + userName;
-    // Ghép bằng ';' từng lệnh một (tránh pitfall ưu tiên &&/|| của sh) và
-    // truyền đường dẫn qua biến + printf '%s' (path chứa '%' sẽ không bị
-    // printf hiểu thành format specifier).
+    // Join commands one at a time with ';' (avoids the &&/|| precedence
+    // pitfall in sh) and pass the path through a variable + printf '%s'
+    // (a path containing '%' won't be misread by printf as a format specifier).
     const QStringList asScript = {
         QString("F=%1").arg(shellQuoteArg(usersFile)),
         QString("FACE=%1").arg(shellQuoteArg(faceFile)),
@@ -1406,14 +1414,14 @@ void MainWindow::refreshNetworkStatus() {
         break;
       }
     }
-    text = connected ? tr("✓ Đang kết nối\nThiết bị: %1%2").arg(interfaceName, type.isEmpty() ? QString() : " (" + type + ")")
-                     : tr("⚠ Chưa có kết nối mạng hoạt động.");
+    text = connected ? tr("✓ Connected\nDevice: %1%2").arg(interfaceName, type.isEmpty() ? QString() : " (" + type + ")")
+                     : tr("⚠ No active network connection.");
   } else {
     const QStringList route = commandOutput("sh", {"-c", "ip route get 1.1.1.1 2>/dev/null"});
     connected = !route.isEmpty();
-    text = connected ? tr("✓ Có route mạng đang hoạt động.") : tr("⚠ Không xác định được trạng thái mạng.");
+    text = connected ? tr("✓ An active network route was found.") : tr("⚠ Could not determine network status.");
   }
-  if (!hasExecutable("nmcli")) text += "\n" + tr("NetworkManager/nmcli chưa có; hãy kiểm tra bằng công cụ desktop.");
+  if (!hasExecutable("nmcli")) text += "\n" + tr("NetworkManager/nmcli is not available; please check with the desktop's tool.");
   m_networkStatus->setText(text);
 }
 
@@ -1428,7 +1436,7 @@ void MainWindow::refreshSystemStatus() {
   const bool settings = hasExecutable("gsettings") || hasExecutable("xfconf-query");
   const bool wallpaperTools = hasExecutable("gsettings") || hasExecutable("xfconf-query") || QFile::exists("/usr/local/bin/hyggshi-set-wallpaper.sh");
 
-  QString memoryInfo = tr("Không đọc được RAM");
+  QString memoryInfo = tr("Couldn't read RAM");
   QFile memFile("/proc/meminfo");
   if (memFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
     const QString data = QString::fromLocal8Bit(memFile.readAll());
@@ -1445,10 +1453,10 @@ void MainWindow::refreshSystemStatus() {
   html += tr("<b>Kernel:</b> %1<br>").arg(kernel.toHtmlEscaped());
   html += tr("<b>Architecture:</b> %1<br>").arg(cpu.toHtmlEscaped());
   html += tr("<b>Memory:</b> %1<br><br>").arg(memoryInfo.toHtmlEscaped());
-  html += tr("%1 Cấu hình người dùng ghi được<br>").arg(configWritable ? "✓" : "✗");
-  html += tr("%1 Desktop environment phát hiện được<br>").arg(desktopDetected ? "✓" : "⚠");
-  html += tr("%1 Công cụ theme/settings khả dụng<br>").arg(settings ? "✓" : "⚠");
-  html += tr("%1 Công cụ wallpaper khả dụng").arg(wallpaperTools ? "✓" : "⚠");
+  html += tr("%1 User configuration writable<br>").arg(configWritable ? "✓" : "✗");
+  html += tr("%1 Desktop environment detected<br>").arg(desktopDetected ? "✓" : "⚠");
+  html += tr("%1 Theme/settings tool available<br>").arg(settings ? "✓" : "⚠");
+  html += tr("%1 Wallpaper tool available").arg(wallpaperTools ? "✓" : "⚠");
   m_systemStatus->setText(html);
 }
 
@@ -1459,7 +1467,7 @@ void MainWindow::setUpdateStatus(const QString &text) {
 void MainWindow::checkForUpdates() {
   if (!m_updateCheckBtn || !m_updateStatus) return;
   m_updateCheckBtn->setEnabled(false);
-  setUpdateStatus(tr("Đang kiểm tra..."));
+  setUpdateStatus(tr("Checking..."));
 
   auto *process = new QProcess(this);
   QString program;
@@ -1471,7 +1479,7 @@ void MainWindow::checkForUpdates() {
   else if (hasExecutable("pacman") && hasExecutable("checkupdates")) { program = "checkupdates"; }
 
   if (program.isEmpty()) {
-    setUpdateStatus(tr("Không tìm thấy công cụ kiểm tra cập nhật. Hãy dùng System Updater của desktop."));
+    setUpdateStatus(tr("No update-checking tool found. Please use the desktop's System Updater."));
     m_updateCheckBtn->setEnabled(true);
     process->deleteLater();
     return;
@@ -1482,10 +1490,10 @@ void MainWindow::checkForUpdates() {
             const QString out = QString::fromLocal8Bit(process->readAllStandardOutput()).trimmed();
             const QString err = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
             m_updateCheckBtn->setEnabled(true);
-            if (status != QProcess::NormalExit) setUpdateStatus(tr("Không thể hoàn tất kiểm tra cập nhật."));
-            else if (exitCode == 0) setUpdateStatus(out.isEmpty() ? tr("✓ Không phát hiện package cần cập nhật.") : tr("✓ Công cụ cập nhật đã trả kết quả:\n%1").arg(out.left(1200)));
-            else if (exitCode == 100 && err.isEmpty()) setUpdateStatus(tr("Có package cần cập nhật. Hãy mở System Updater để xem chi tiết."));
-            else setUpdateStatus(err.isEmpty() ? tr("Không thể xác định trạng thái cập nhật.") : err.left(1200));
+            if (status != QProcess::NormalExit) setUpdateStatus(tr("Couldn't complete the update check."));
+            else if (exitCode == 0) setUpdateStatus(out.isEmpty() ? tr("✓ No packages need updating.") : tr("✓ The update tool returned:\n%1").arg(out.left(1200)));
+            else if (exitCode == 100 && err.isEmpty()) setUpdateStatus(tr("Packages need updating. Open System Updater for details."));
+            else setUpdateStatus(err.isEmpty() ? tr("Couldn't determine the update status.") : err.left(1200));
             process->deleteLater();
           });
   process->start(program, args);
@@ -1498,9 +1506,9 @@ QString MainWindow::resolveAutoWallpaper() const {
   return "/usr/share/backgrounds/hyggshi/wallpaper.png";
 }
 
-// Quét các thư mục GTK theme chuẩn (hệ thống + của người dùng) và trả về
-// tên các theme hợp lệ (có index.theme hoặc thư mục gtk-3.0/gtk-4.0), để
-// người dùng chọn làm theme "Tuỳ chỉnh" trong Welcome.
+// Scans the standard GTK theme directories (system + user) and returns
+// the names of valid themes (containing index.theme or a gtk-3.0/gtk-4.0
+// folder), for the user to pick as the "Custom" theme in Welcome.
 QStringList MainWindow::listInstalledThemes() const {
   QStringList dirs = {
       "/usr/share/themes",
@@ -1558,7 +1566,7 @@ void MainWindow::applyDebianTestProfile(const QString &profile) {
   if (!hasExecutable("pkexec")) {
     if (m_softwareStatus) {
       m_softwareStatus->setText(
-          tr("Không tìm thấy pkexec; không thể đổi kho apt gốc sang profile '%1'.").arg(profile));
+          tr("pkexec not found; can't switch the root apt repository to profile '%1'.").arg(profile));
     }
     return;
   }
@@ -1568,15 +1576,16 @@ void MainWindow::applyDebianTestProfile(const QString &profile) {
   printfArgs << "printf" << "'%s\\n'";
   for (const QString &line : lines) printfArgs << shellQuoteArg(line);
 
-  // Ghi đè /etc/apt/sources.list (khớp target="/etc/apt/sources.list" trong
-  // [package-debian-test.<profile>] của config.ini) rồi apt-get update ngay
-  // để người dùng thấy lỗi (nếu có: mirror sai, mất mạng...) trong lúc còn
-  // đang ở Welcome, thay vì lần cập nhật hệ thống tiếp theo mới phát hiện.
+  // Overwrites /etc/apt/sources.list (matches target="/etc/apt/sources.list"
+  // in [package-debian-test.<profile>] of config.ini) then runs apt-get
+  // update right away so the user sees any error (bad mirror, no network...)
+  // while still in Welcome, instead of only discovering it at the next
+  // system update.
   const QString command = printfArgs.join(' ') + " > /etc/apt/sources.list && apt-get update";
 
   if (m_softwareStatus) {
     m_softwareStatus->setText(
-        tr("Đang đổi kho apt gốc sang profile '%1'. Có thể cần nhập mật khẩu quản trị...").arg(profile));
+        tr("Switching the root apt repository to profile '%1'. An admin password may be required...").arg(profile));
     qApp->processEvents();
   }
 
@@ -1584,10 +1593,10 @@ void MainWindow::applyDebianTestProfile(const QString &profile) {
   if (m_softwareStatus) {
     if (rc == 0) {
       m_softwareStatus->setText(
-          tr("OK: đã đổi /etc/apt/sources.list sang profile '%1' và cập nhật danh sách gói.").arg(profile));
+          tr("OK: /etc/apt/sources.list switched to profile '%1' and the package list was updated.").arg(profile));
     } else {
       m_softwareStatus->setText(
-          tr("⚠ Đổi kho apt gốc sang '%1' thất bại (rc=%2). sources.list có thể chưa đổi hoặc apt-get update lỗi — kiểm tra mạng/mirror.")
+          tr("⚠ Switching the root apt repository to '%1' failed (rc=%2). sources.list may not have changed, or apt-get update failed — check your network/mirror.")
               .arg(profile)
               .arg(rc));
     }
@@ -1631,12 +1640,12 @@ bool MainWindow::installSelectedSoftware() {
   if (aptPackages.isEmpty() && flatpakApps.isEmpty()) return true;
 
   if (!hasExecutable("pkexec")) {
-    if (m_softwareStatus) m_softwareStatus->setText(tr("Không tìm thấy pkexec; bỏ qua cài phần mềm bổ sung."));
+    if (m_softwareStatus) m_softwareStatus->setText(tr("pkexec not found; skipping installation of additional software."));
     return false;
   }
 
   if (m_softwareStatus) {
-    m_softwareStatus->setText(tr("Đang cài phần mềm. Có thể cần nhập mật khẩu quản trị...\n\nGói APT: %1\nỨng dụng Flatpak: %2")
+    m_softwareStatus->setText(tr("Installing software. An admin password may be required...\n\nAPT packages: %1\nFlatpak apps: %2")
                                   .arg(aptPackages.join(", "), flatpakApps.join(", ")));
     qApp->processEvents();
   }
@@ -1726,16 +1735,16 @@ bool MainWindow::installSelectedSoftware() {
   if (rc != 0) {
     if (m_softwareStatus) {
       if (rc == 42) {
-        m_softwareStatus->setText(tr("⚠ Debian Testing đã bị chặn: package bạn chọn sẽ làm nâng cấp một package Stable đang có lên Testing. Hệ thống Stable được giữ nguyên. Hãy chọn ít package hơn hoặc tắt Debian Testing."));
+        m_softwareStatus->setText(tr("⚠ Debian Testing was blocked: the package you selected would upgrade an existing Stable package to Testing. The Stable system was left unchanged. Please select fewer packages or turn off Debian Testing."));
       } else if (rc == 41) {
-        m_softwareStatus->setText(tr("Không thể kiểm tra trước thay đổi của Debian Testing. Không có package nào được cài."));
+        m_softwareStatus->setText(tr("Couldn't pre-check the Debian Testing change. No packages were installed."));
       } else {
-        m_softwareStatus->setText(tr("Không cài được một hoặc nhiều phần mềm. Kiểm tra Internet và thử lại trong Hyggshi Welcome."));
+        m_softwareStatus->setText(tr("One or more software packages couldn't be installed. Check your Internet connection and try again in Hyggshi Welcome."));
       }
     }
     return false;
   }
-  if (m_softwareStatus) m_softwareStatus->setText(tr("✓ Đã cài xong phần mềm bổ sung."));
+  if (m_softwareStatus) m_softwareStatus->setText(tr("✓ Additional software installed successfully."));
   return true;
 }
 
@@ -1746,15 +1755,17 @@ void MainWindow::finishSetup() {
   const bool useCustomTheme =
       m_selectedTheme == "custom" && !m_selectedCustomTheme.isEmpty();
 
-  // BUGFIX ("hoàn tất Welcome bị reverting Applications về Adwaita thay vì
-  // Hyggshi-Light"): trước đây light/auto hardcode "Adwaita", dark là
-  // "Adwaita-dark". Trong khi đó ISO Hyggshi OS (Cinnamon) cài theme GTK riêng
-  // Hyggshi-Light/Hyggshi-Dark vào /usr/share/themes và dconf mặc định của bản
-  // build (scripts/desktop.sh, theme-light-enabled/theme-dark-enabled trong
-  // config.ini) ĐÃ đặt đúng theme đó làm mặc định — nên mỗi lần Finish Welcome
-  // với lựa chọn mặc định là ghi đè theme Hyggshi của user về theme mặc định của
-  // DE. Giải pháp: ưu tiên theme Hyggshi nếu có trên hệ thống > Adwaita chung
-  // (fallback cho các bản build DE không ship theme Hyggshi, ví dụ XFCE).
+  // BUGFIX ("finishing Welcome reverts Applications to Adwaita instead of
+  // Hyggshi-Light"): previously light/auto hardcoded "Adwaita", dark used
+  // "Adwaita-dark". Meanwhile the Hyggshi OS ISO (Cinnamon) installs its own
+  // GTK themes Hyggshi-Light/Hyggshi-Dark into /usr/share/themes, and the
+  // build's default dconf (scripts/desktop.sh, theme-light-enabled/
+  // theme-dark-enabled in config.ini) ALREADY sets that theme as the
+  // default — so every time Finish Welcome ran with the default selection,
+  // it overwrote the user's Hyggshi theme back to the DE's default theme.
+  // Solution: prefer the Hyggshi theme if it exists on the system, falling
+  // back to generic Adwaita (fallback for DE build variants that don't ship
+  // a Hyggshi theme, e.g. XFCE).
   auto resolveBuiltinTheme = [this](bool dark) {
     const QString preferred = dark ? QStringLiteral("Hyggshi-Dark")
                                    : QStringLiteral("Hyggshi-Light");
@@ -1767,12 +1778,13 @@ void MainWindow::finishSetup() {
       useCustomTheme ? m_selectedCustomTheme
                      : resolveBuiltinTheme(m_selectedTheme == "dark");
 
-  // "auto" = bám theo theme HIỆN TẠI của desktop, đúng như note ở trang Giao
-  // diện đã hứa — KHÔNG ghi bất kỳ key theme/color-scheme nào. Trước đây guard
-  // m_selectedTheme != "auto" chỉ chặn nhánh XFCE, còn trên Cinnamon/GNOME/MATE
-  // chế độ auto (lựa chọn mặc định!) vẫn ghi Adwaita như thường.
-  // Việc sáng/tối theo giờ ở chế độ auto do theme.conf (MODE=auto) + daemon
-  // theme của Hyggshi lo.
+  // "auto" = follow the desktop's CURRENT theme, exactly as promised in the
+  // note on the Appearance page — writes NO theme/color-scheme key at all.
+  // Previously the guard m_selectedTheme != "auto" only blocked the XFCE
+  // branch, while on Cinnamon/GNOME/MATE auto mode (the default choice!)
+  // still wrote Adwaita as usual.
+  // Light/dark-by-time-of-day in auto mode is handled by theme.conf
+  // (MODE=auto) + the Hyggshi theme daemon.
   if (m_selectedTheme != "auto") {
     if (desktop.contains("xfce")) {
       if (hasExecutable("xfconf-query")) QProcess::execute("xfconf-query", {"-c", "xsettings", "-p", "/Net/ThemeName", "-s", themeName});
@@ -1781,8 +1793,9 @@ void MainWindow::finishSetup() {
       // Setting only gtk-theme made the Dark/Light buttons look selectable but
       // did not reliably change the actual application color scheme. Set both
       // the Cinnamon GTK theme and the shared color-scheme key.
-      // Với theme "custom" không rõ đây là theme sáng hay tối, nên đoán dựa
-      // vào tên theme (chứa "dark") thay vì luôn ép "default".
+      // For a "custom" theme it's unclear whether it's light or dark, so
+      // guess based on the theme name (contains "dark") instead of always
+      // forcing "default".
       const QString colorScheme = m_selectedTheme == "dark" ? "prefer-dark"
                                   : m_selectedTheme == "light" ? "prefer-light"
                                   : (themeName.contains("dark", Qt::CaseInsensitive)
@@ -1790,11 +1803,12 @@ void MainWindow::finishSetup() {
                                          : "prefer-light");
       if (desktop.contains("cinnamon")) {
         setGsettings("org.cinnamon.desktop.interface", "gtk-theme", themeName);
-        // dconf của bản build (01-hyggshi-theme trong scripts/desktop.sh) đặt BỘ
-        // BA key: interface/gtk-theme + wm/preferences/theme + cinnamon/theme
-        // name. Welcome phải đổi cả ba cùng nhau — nếu chỉ đổi gtk-theme thì
-        // titlebar (wm) và Desktop row (cinnamon theme) giữ giá trị cũ, hệ thống
-        // trông như đổi nửa vời (apps Hyggshi-Dark nhưng Desktop vẫn
+        // The build's dconf (01-hyggshi-theme in scripts/desktop.sh) sets a
+        // SET OF THREE keys: interface/gtk-theme + wm/preferences/theme +
+        // cinnamon/theme name. Welcome must change all three together — if
+        // only gtk-theme is changed, the titlebar (wm) and Desktop row
+        // (cinnamon theme) keep their old values, and the system looks
+        // half-changed (Hyggshi-Dark apps but the Desktop still
         // Hyggshi-Light).
         setGsettings("org.cinnamon.desktop.wm.preferences", "theme", themeName);
         setGsettings("org.cinnamon.theme", "name", themeName);
@@ -1819,9 +1833,9 @@ void MainWindow::finishSetup() {
     }
   }
 
-  // Không còn applyLanguageAndKeyboard(): ngôn ngữ/bàn phím thuộc về hệ
-  // thống (Calamares đặt locale+keyboard lúc cài, desktop Settings chỉnh
-  // sau này) — xem ghi chú ở enum WizardPage.
+  // No more applyLanguageAndKeyboard(): language/keyboard belong to the
+  // system (Calamares sets locale+keyboard at install time, the desktop's
+  // Settings changes them afterwards) — see the note on the WizardPage enum.
   applyAccessibility();
   savePreferences();
   applyProfileChanges();

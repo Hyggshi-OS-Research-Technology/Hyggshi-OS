@@ -48,11 +48,11 @@ class MainWindow : public QMainWindow {
   QCheckBox *m_largeTextChk = nullptr;
   QComboBox *m_installProfileBox = nullptr;
 
-  // Trang Profile (hồ sơ người dùng): tên hiển thị + ảnh đại diện.
-  // Tên đăng nhập chỉ để hiển thị — đổi username hệ thống nằm ngoài phạm
-  // vi của Welcome. Avatar custom là 1 file ảnh người dùng chọn; khi chưa
-  // chọn ảnh, hiển thị "chữ cái đầu" trên nền màu (giống initial avatar
-  // của GNOME).
+  // Profile page (user profile): display name + avatar picture. The login
+  // name is shown for reference only — changing the system username is
+  // outside Welcome's scope. The custom avatar is a single image file the
+  // user picks; when no image is picked, an "initial letter" avatar on a
+  // colored background is shown instead (similar to GNOME's initial avatar).
   QLineEdit *m_profileNameEdit = nullptr;
   QLabel *m_profileAvatarPreview = nullptr;
   QLabel *m_profileLoginLabel = nullptr;
@@ -60,11 +60,12 @@ class MainWindow : public QMainWindow {
   QPushButton *m_profileAvatarResetBtn = nullptr;
 
   QCheckBox *m_debianTestingCheck = nullptr;
-  // Chọn profile kho apt gốc của hệ thống (khớp [package-debian-test.*]
-  // trong iso-config/config/config.ini: full/normal/default/unstable).
-  // KHÁC với m_debianTestingCheck ở trên: cái đó chỉ pin riêng các gói
-  // phần mềm THÊM được chọn ở trang Software sang Testing; cái này ghi
-  // đè toàn bộ /etc/apt/sources.list của hệ thống.
+  // Selects the system's root apt-repository profile (matches
+  // [package-debian-test.*] in iso-config/config/config.ini:
+  // full/normal/default/unstable). DIFFERENT from m_debianTestingCheck
+  // above: that one only pins the extra software packages chosen on the
+  // Software page to Testing; this one overwrites the whole system's
+  // /etc/apt/sources.list.
   QComboBox *m_debianTestProfileBox = nullptr;
   QVector<QCheckBox *> m_softwareChecks;
   QLabel *m_softwareStatus = nullptr;
@@ -73,12 +74,13 @@ class MainWindow : public QMainWindow {
   QLabel *m_systemStatus = nullptr;
   QPushButton *m_updateCheckBtn = nullptr;
 
-  // Trang "Ngôn ngữ & Bàn phím" đã gỡ: language/keyboard theo luồng hệ
-  // thống (Calamares locale/keyboard lúc cài, Region & Language của desktop
-  // sau này) — Welcome không giữ state và không ghi đè input-sources.
+  // The "Language & Keyboard" page was removed: language/keyboard now
+  // follow the system flow (Calamares locale/keyboard at install time, the
+  // desktop's Region & Language afterwards) — Welcome no longer keeps
+  // state for this or overwrites input sources.
   QString m_selectedTheme = "auto";
-  // Tên GTK theme tuỳ chỉnh khi m_selectedTheme == "custom" (ví dụ theme
-  // do người dùng tự cài vào ~/.themes hoặc /usr/share/themes).
+  // Custom GTK theme name when m_selectedTheme == "custom" (e.g. a theme
+  // the user installed themselves into ~/.themes or /usr/share/themes).
   QString m_selectedCustomTheme;
   QString m_selectedWallpaper;
   bool m_reducedMotion = false;
@@ -86,12 +88,12 @@ class MainWindow : public QMainWindow {
   bool m_largeText = false;
   QString m_installProfile = "normal";
   bool m_debianTesting = false;
-  // Hồ sơ người dùng: tên hiển thị (GECOS/AccountsService) + đường dẫn ảnh
-  // avatar do người dùng chọn (rỗng = avatar chữ cái đầu).
+  // User profile: display name (GECOS/AccountsService) + path to the
+  // avatar image the user picked (empty = initial-letter avatar).
   QString m_profileFullName;
   QString m_profileAvatarPath;
-  // "off" = giữ nguyên sources.list mặc định của ảnh cài sẵn (hành vi cũ,
-  // không đổi gì). Giá trị khác: "full" | "normal" | "default" | "unstable".
+  // "off" = keep the pre-installed image's default sources.list unchanged
+  // (old behavior, no change). Other values: "full" | "normal" | "default" | "unstable".
   QString m_debianTestProfile = "off";
   QStringList m_selectedSoftware;
 
