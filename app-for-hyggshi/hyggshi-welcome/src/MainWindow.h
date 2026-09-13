@@ -9,7 +9,6 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QSet>
-#include <QTimer>
 #include <QVector>
 
 #include "SlideStackedWidget.h"
@@ -21,12 +20,6 @@ class MainWindow : public QMainWindow {
   explicit MainWindow(QWidget *parent = nullptr);
 
  private:
-  struct FeatureSlide {
-    QString icon;
-    QString title;
-    QString desc;
-  };
-
   struct ThemeOpt {
     QString id;
     QString label;
@@ -97,14 +90,6 @@ class MainWindow : public QMainWindow {
   QString m_debianTestProfile = "off";
   QStringList m_selectedSoftware;
 
-  QTimer *m_carouselTimer = nullptr;
-  QVector<FeatureSlide> m_features;
-  int m_featureIndex = 0;
-  QLabel *m_featureIcon = nullptr;
-  QLabel *m_featureTitle = nullptr;
-  QLabel *m_featureDesc = nullptr;
-  QVector<QLabel *> m_featureDots;
-
   QWidget *buildWelcomePage();
   QWidget *buildProfilePage();
   QWidget *buildNetworkPage();
@@ -142,7 +127,5 @@ class MainWindow : public QMainWindow {
   QString resolveAutoWallpaper() const;
   QStringList listInstalledThemes() const;
   void updateCustomThemeVisibility();
-  void showFeatureSlide(int index);
-  void advanceCarousel();
   void saveFirstRunState(bool completed);
 };
