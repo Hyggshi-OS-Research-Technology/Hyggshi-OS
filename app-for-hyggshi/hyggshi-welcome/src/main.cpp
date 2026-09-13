@@ -15,7 +15,7 @@ static QString markerPath() {
 int main(int argc, char *argv[]) {
   QApplication app(argc, argv);
   QApplication::setApplicationName("Hyggshi Welcome");
-  QApplication::setApplicationVersion("1.3.1");
+  QApplication::setApplicationVersion("1.3.2");
   QApplication::setOrganizationName("Hyggshi OS Foundation");
   QApplication::setDesktopSettingsAware(true);
   // Keep the Hyggshi icon on the running window/taskbar even when the

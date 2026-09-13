@@ -41,10 +41,19 @@ namespace {
 // Thứ tự trang của wizard. MỌI logic định vị trang (các hook trong
 // goNext(), số chấm điều hướng...) phải dùng các hằng này thay vì số
 // cứng — chèn/bỏ trang sẽ làm lệch toàn bộ chỉ số.
+//
+// Trang "Ngôn ngữ & Bàn phím" đã gỡ có chủ đích: language/keyboard là
+// thiết lập HỆ THỐNG, đi theo luồng nhất quán (systematic) thay vì một
+// trang wizard riêng:
+//   - locale + keyboard layout do Calamares đặt ngay lúc cài (modules
+//     "locale"/"keyboard" trong sequence của settings.conf),
+//   - sau đó user đổi trong Region & Language / Input Sources của desktop.
+// Welcome vì vậy KHÔNG có selector ngôn ngữ và cũng không được ghi đè
+// input-sources của hệ thống (bản cũ luôn ép đúng 1 layout xkb từ 4 lựa
+// chọn của trang đó, đè lên cấu hình hệ thống).
 enum WizardPage {
   kPageWelcome = 0,
   kPageProfile,
-  kPageLanguage,
   kPageNetwork,
   kPageTheme,
   kPageSoftware,
@@ -177,7 +186,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
   m_stack = new SlideStackedWidget;
   m_stack->addWidget(buildWelcomePage());
   m_stack->addWidget(buildProfilePage());
-  m_stack->addWidget(buildLanguagePage());
   m_stack->addWidget(buildNetworkPage());
   m_stack->addWidget(buildThemePage());
   m_stack->addWidget(buildSoftwarePage());
@@ -208,8 +216,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
 void MainWindow::loadPreferences() {
   QSettings settings(preferencesPath(), QSettings::IniFormat);
-  m_selectedLanguage = settings.value("language", "vi").toString();
-  m_selectedKeyboard = settings.value("keyboard", "vn-telex").toString();
   m_selectedTheme = settings.value("theme", "auto").toString();
   m_selectedCustomTheme = settings.value("theme_custom_name", "").toString();
   m_reducedMotion = settings.value("accessibility/reduced_motion", false).toBool();
@@ -255,8 +261,6 @@ void MainWindow::loadPreferences() {
                        << "com.obsproject.Studio";
   }
 
-  if (m_selectedLanguage.isEmpty()) m_selectedLanguage = "vi";
-  if (m_selectedKeyboard.isEmpty()) m_selectedKeyboard = "vn-telex";
   if (m_selectedTheme != "light" && m_selectedTheme != "dark" &&
       m_selectedTheme != "auto" && m_selectedTheme != "custom") {
     m_selectedTheme = "auto";
@@ -271,8 +275,6 @@ void MainWindow::loadPreferences() {
 void MainWindow::savePreferences() const {
   QDir().mkpath(configDirectory());
   QSettings settings(preferencesPath(), QSettings::IniFormat);
-  settings.setValue("language", m_selectedLanguage);
-  settings.setValue("keyboard", m_selectedKeyboard);
   settings.setValue("theme", m_selectedTheme);
   settings.setValue("theme_custom_name", m_selectedCustomTheme);
   settings.setValue("accessibility/reduced_motion", m_reducedMotion);
@@ -512,57 +514,6 @@ QWidget *MainWindow::buildProfilePage() {
     updateProfileAvatarPreview();
     savePreferences();
   });
-  return page;
-}
-
-QWidget *MainWindow::buildLanguagePage() {
-  auto *page = new QWidget;
-  auto *layout = new QVBoxLayout(page);
-  layout->setContentsMargins(70, 55, 70, 40);
-  layout->setSpacing(16);
-
-  auto *title = new QLabel(tr("Ngôn ngữ & Bàn phím"));
-  title->setStyleSheet("font-size:20px; font-weight:600; color:#f2f3f5;");
-
-  auto *langLabel = new QLabel(tr("Ngôn ngữ hiển thị"));
-  langLabel->setStyleSheet("color:#c7cad1; font-size:12px;");
-  m_languageBox = new QComboBox;
-  m_languageBox->addItem(tr("Tiếng Việt"), "vi");
-  m_languageBox->addItem(tr("English"), "en");
-  m_languageBox->addItem(tr("日本語"), "ja");
-  m_languageBox->addItem(tr("한국어"), "ko");
-  const int langIndex = m_languageBox->findData(m_selectedLanguage);
-  m_languageBox->setCurrentIndex(langIndex >= 0 ? langIndex : 0);
-  connect(m_languageBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          [this](int index) {
-            if (index >= 0) m_selectedLanguage = m_languageBox->itemData(index).toString();
-          });
-
-  auto *kbLabel = new QLabel(tr("Bố cục bàn phím"));
-  kbLabel->setStyleSheet("color:#c7cad1; font-size:12px; margin-top:8px;");
-  m_keyboardBox = new QComboBox;
-  m_keyboardBox->addItem("Vietnamese (TELEX)", "vn-telex");
-  m_keyboardBox->addItem("English (US)", "us");
-  m_keyboardBox->addItem("English (UK)", "gb");
-  const int kbIndex = m_keyboardBox->findData(m_selectedKeyboard);
-  m_keyboardBox->setCurrentIndex(kbIndex >= 0 ? kbIndex : 0);
-  connect(m_keyboardBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          [this](int index) {
-            if (index >= 0) m_selectedKeyboard = m_keyboardBox->itemData(index).toString();
-          });
-
-  auto *note = new QLabel(tr("Các lựa chọn được lưu cho tài khoản hiện tại."));
-  note->setStyleSheet("color:#6f7480; font-size:11px;");
-  note->setWordWrap(true);
-
-  layout->addWidget(title);
-  layout->addSpacing(8);
-  layout->addWidget(langLabel);
-  layout->addWidget(m_languageBox);
-  layout->addWidget(kbLabel);
-  layout->addWidget(m_keyboardBox);
-  layout->addWidget(note);
-  layout->addStretch(1);
   return page;
 }
 
@@ -1339,20 +1290,6 @@ void MainWindow::goBack() {
   updateNavState();
 }
 
-void MainWindow::applyLanguageAndKeyboard() {
-  savePreferences();
-  const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
-  QString xkbLayout = m_selectedKeyboard;
-  if (xkbLayout == "vn-telex") xkbLayout = "vn";
-  if (hasExecutable("gsettings")) {
-    if (desktop.contains("gnome")) {
-      setGsettings("org.gnome.desktop.input-sources", "sources", QString("[( 'xkb', '%1' )]").arg(xkbLayout));
-    } else if (desktop.contains("cinnamon")) {
-      setGsettings("org.cinnamon.desktop.input-sources", "sources", QString("[( 'xkb', '%1' )]").arg(xkbLayout));
-    }
-  }
-}
-
 void MainWindow::applyAccessibility() {
   savePreferences();
   const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower();
@@ -1882,7 +1819,9 @@ void MainWindow::finishSetup() {
     }
   }
 
-  applyLanguageAndKeyboard();
+  // Không còn applyLanguageAndKeyboard(): ngôn ngữ/bàn phím thuộc về hệ
+  // thống (Calamares đặt locale+keyboard lúc cài, desktop Settings chỉnh
+  // sau này) — xem ghi chú ở enum WizardPage.
   applyAccessibility();
   savePreferences();
   applyProfileChanges();

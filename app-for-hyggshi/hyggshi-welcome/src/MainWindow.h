@@ -42,8 +42,6 @@ class MainWindow : public QMainWindow {
   QButtonGroup *m_themeGroup = nullptr;
   QComboBox *m_customThemeBox = nullptr;
   QLabel *m_customThemeLabel = nullptr;
-  QComboBox *m_languageBox = nullptr;
-  QComboBox *m_keyboardBox = nullptr;
   QCheckBox *m_dontAskAgainChk = nullptr;
   QCheckBox *m_reducedMotionChk = nullptr;
   QCheckBox *m_highContrastChk = nullptr;
@@ -75,8 +73,9 @@ class MainWindow : public QMainWindow {
   QLabel *m_systemStatus = nullptr;
   QPushButton *m_updateCheckBtn = nullptr;
 
-  QString m_selectedLanguage = "vi";
-  QString m_selectedKeyboard = "vn-telex";
+  // Trang "Ngôn ngữ & Bàn phím" đã gỡ: language/keyboard theo luồng hệ
+  // thống (Calamares locale/keyboard lúc cài, Region & Language của desktop
+  // sau này) — Welcome không giữ state và không ghi đè input-sources.
   QString m_selectedTheme = "auto";
   // Tên GTK theme tuỳ chỉnh khi m_selectedTheme == "custom" (ví dụ theme
   // do người dùng tự cài vào ~/.themes hoặc /usr/share/themes).
@@ -106,7 +105,6 @@ class MainWindow : public QMainWindow {
 
   QWidget *buildWelcomePage();
   QWidget *buildProfilePage();
-  QWidget *buildLanguagePage();
   QWidget *buildNetworkPage();
   QWidget *buildThemePage();
   QWidget *buildSoftwarePage();
@@ -119,7 +117,6 @@ class MainWindow : public QMainWindow {
 
   void loadPreferences();
   void savePreferences() const;
-  void applyLanguageAndKeyboard();
   void applyAccessibility();
   void applyProfileChanges();
   void pickProfileAvatar();

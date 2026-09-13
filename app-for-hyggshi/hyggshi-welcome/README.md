@@ -6,14 +6,20 @@ Hyggshi Welcome is the first-run onboarding wizard for Hyggshi OS. It is a nativ
 
 1. Welcome
 2. Profile (display name + custom avatar)
-3. Language and keyboard
-4. Network status
-5. Appearance
-6. Accessibility
-7. System check
-8. Update check
-9. Hyggshi OS features
-10. Ready
+3. Network status
+4. Appearance
+5. Accessibility
+6. System check
+7. Update check
+8. Hyggshi OS features
+9. Ready
+
+There is deliberately **no Language & Keyboard step**: language and keyboard
+layout are system-managed settings that follow one consistent path — the
+Calamares installer applies locale + keyboard layout at install time
+(`locale`/`keyboard` modules), and users change them afterwards in the
+desktop's Region & Language / Input Sources settings. Welcome does not offer
+its own selector and never overwrites the system's `input-sources`.
 
 ## Profile page
 
