@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Hyggshi Welcome
-Name[vi]=Chào mừng Hyggshi
-Comment=Tự động mở Hyggshi Welcome cho mỗi user chưa hoàn tất thiết lập lần đầu
+Name=Hyggshi Welcome
+Comment=Automatically open Hyggshi Welcome for each user who hasn't completed the initial setup
 Exec=hyggshi-welcome
 TryExec=hyggshi-welcome
 Icon=hyggshi-welcome

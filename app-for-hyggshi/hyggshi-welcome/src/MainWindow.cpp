@@ -1057,7 +1057,7 @@ QWidget *MainWindow::buildFeaturesPage() {
   title->setAlignment(Qt::AlignHCenter);
   title->setWordWrap(true);
 
-  auto *desc = new QLabel(tr("Hyggshi App Center has a range of apps you can get started with."));
+  auto *desc = new QLabel(tr("GNOME Software has a range of apps you can get started with."));
   desc->setAlignment(Qt::AlignHCenter);
   desc->setWordWrap(true);
   desc->setStyleSheet("font-size:12px; color:#9aa0ab;");
