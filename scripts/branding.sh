@@ -413,7 +413,7 @@ echo "Welcome to $MOTD_TITLE — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc
 echo "===== Distributor logo ====="
 # 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
 LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \
-  \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+  \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.svg" \) 2>/dev/null | head -n1)
 
 # 2. Nếu không có, tải trực tiếp từ link người dùng dán vào ($LOGO_URL, xem workflow input "logo_url")
 if [ -z "$LOGO_FILE" ] && [ -n "$LOGO_URL" ]; then
