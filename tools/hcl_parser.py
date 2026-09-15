@@ -80,9 +80,20 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # trước (khác mọi function khác trong file) -> xem PATCH bare-call trong
 # read_sections(), nếu không có patch đó thì dù đăng ký tên function ở
 # đây, các dòng này vẫn bị bỏ qua hoàn toàn ngay từ bước đọc file.
+#
+# PATCH 6: thêm appremove/fileremove — dùng trong khối "Remove package and
+# image" của config.ini (vd `systemsettings-KDE = appremove(run = "sudo apt
+# remove systemsettings")`, `image-background = fileremove(run = "sudo rm -r
+# /usr/share/backgrounds/xfce")`). Cùng bug y hệt các function trước: chưa
+# đăng ký -> validate_every_entry() báo lỗi cứng cho cả 2 dòng này. Cả hai
+# đều chỉ cần 1 kwarg bắt buộc "run" (lệnh shell sẽ chạy lúc build/chroot),
+# KHÔNG có path nào để check tồn tại (khác fileinstall/filecustom/filetheme)
+# -> không thêm vào nhánh check-tồn-tại trong resolve_function(), giống lý
+# do flathubinstall/apply/installkernel không check tồn tại ở trên.
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
     "command", "make", "call", "installkernel", "apply", "flathubinstall",
+    "appremove", "fileremove",
 }
 
 SIZE_RE = re.compile(
@@ -457,6 +468,17 @@ class Resolver:
                     "error",
                     "apply(...) thiếu 'target' — bắt buộc để biết ghi file "
                     "vào đâu trên rootfs."))
+        if name in ("appremove", "fileremove"):
+            # appremove(run=...) / fileremove(run=...) — "run" là lệnh shell
+            # sẽ thực thi lúc build (gỡ package hoặc xoá file/thư mục), không
+            # phải path trong repo hay trên rootfs -> không check tồn tại,
+            # cùng lý do với installkernel()/apply() ở trên. Validate duy
+            # nhất: phải có "run", nếu không thì entry này không làm gì cả.
+            if not kwargs.get("run"):
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"{name}(...) thiếu 'run' — bắt buộc để biết lệnh gỡ/xoá "
+                    f"nào sẽ chạy."))
         return result
 
     def resolve_my_version_os_base(self) -> dict:
@@ -649,6 +671,31 @@ class Resolver:
                         out.append(app_id)
         return out
 
+    def resolve_removals(self) -> list:
+        """
+        PATCH 6: gom hết các entry `<key> = appremove(run=...)` và
+        `<key> = fileremove(run=...)` rải rác trong config (hiện tại trong
+        khối "Remove package and image", vd systemsettings-KDE/
+        image-background) — quét toàn bộ section thay vì hardcode tên
+        section, giống resolve_desktop_apply()/resolve_flathub_apps(), để
+        hỗ trợ thêm removal khác ở section khác sau này. Giữ nguyên thứ tự
+        khai báo trong file vì các lệnh remove có thể phụ thuộc thứ tự chạy
+        (vd gỡ package trước khi xoá file liên quan tới package đó).
+        """
+        out = []
+        for sec_name in self.order:
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") in ("appremove", "fileremove"):
+                    resolved = self.resolve_function(pv.value)
+                    out.append({
+                        "section": sec_name,
+                        "key": key,
+                        "type": pv.value.get("name"),
+                        "run": resolved.get("run", ""),
+                    })
+        return out
+
     def validate_every_entry(self):
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
@@ -665,6 +712,7 @@ class Resolver:
         result["apt_repository"] = self.resolve_apt_repository()
         result["desktop_apply"] = self.resolve_desktop_apply()
         result["flathub_apps"] = self.resolve_flathub_apps()
+        result["removals"] = self.resolve_removals()
         if "customization" in self.sections:
             result["customization"] = {
                 k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
@@ -835,6 +883,20 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     put("FLATPAK_ENABLED", str(install_flatpak).lower())
     put("FLATHUB_ENABLED", str(install_flathub).lower())
     put("FLATHUB_APPS", " ".join(resolved.get("flathub_apps", [])))
+
+    # PATCH 6: export danh sách lệnh appremove()/fileremove() (gom ở
+    # resolve_removals()) — trước đây các entry này chỉ bị validate (kwarg
+    # "run") rồi bỏ xó, không có cách nào để scripts/desktop.sh hay
+    # scripts/iso.sh biết cần chạy lệnh gỡ package / xoá file nào. Export
+    # theo số thứ tự (giống APT_REPO_{idx}) để giữ nguyên thứ tự khai báo,
+    # cộng REMOVE_COUNT để script build lặp qua đúng số lệnh mà không cần
+    # đoán mò biến nào tồn tại.
+    removals = resolved.get("removals", [])
+    put("REMOVE_COUNT", len(removals))
+    for idx, r in enumerate(removals, start=1):
+        put(f"REMOVE_{idx}_KEY", r.get("key"))
+        put(f"REMOVE_{idx}_TYPE", r.get("type"))
+        put(f"REMOVE_{idx}_RUN", r.get("run"))
 
     put("KERNEL_INSTALL_ENABLED", str(kernel_install is not None).lower())
     if kernel_install is not None:
