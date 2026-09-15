@@ -1267,6 +1267,49 @@ else
   echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua bước dọn package/hình ảnh theo config.ini (appremove/fileremove sẽ không có tác dụng gì trên ISO này)." >&2
 fi
 
+echo "===== Copy file theo config.ini (filecopy source=/target=) ====="
+# [Desktop-Environment] khối "Apply image background" ("xfce4-desktop-config
+# = filecopy(source=..., target=...)") được hcl_parser.py resolve sẵn vào
+# /tmp/hcl-resolved.json ("file_copies": [{"key","source","target"}, ...] —
+# xem resolve_file_copies()/PATCH 7 trong tools/hcl_parser.py) nhưng trước
+# đây KHÔNG có bước nào THỰC SỰ chạy lệnh copy đó, giống bug appremove/
+# fileremove ở khối ngay trên trước khi được sửa. "source" là path TRONG
+# REPO (vd ./iso-config/xfce/xfce4-desktop.xml) — không tồn tại trực tiếp
+# trong chroot, nên bước "Copy scripts vào chroot" (workflow .yml /
+# local-build.sh) phải stage sẵn từng "source" này vào
+# /tmp/hcl-filecopy-src/<path-tương-đối-trong-repo> TRƯỚC khi desktop.sh
+# chạy — xem stage step tương ứng. "target" là path chroot-relative
+# (không có "/" ở đầu, vd "etc/xdg/xfce4/...") -> đích thật trong chroot là
+# "/$target" (desktop.sh đang chạy TRONG chroot nên "/" ở đây chính là gốc
+# chroot, không phải gốc host).
+if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
+  while IFS=$'\t' read -r fc_key fc_src fc_tgt; do
+    [ -z "$fc_tgt" ] && continue
+    staged="/tmp/hcl-filecopy-src/${fc_src#./}"
+    dest="/${fc_tgt#/}"
+    if [ -f "$staged" ]; then
+      mkdir -p "$(dirname "$dest")"
+      cp -f "$staged" "$dest"
+      echo "OK: [HCL filecopy] $fc_key: $fc_src -> $dest"
+    else
+      echo "⚠️  [HCL filecopy] $fc_key: không thấy source đã stage ($staged) — bỏ qua. Kiểm tra bước stage /tmp/hcl-filecopy-src trong workflow/local-build.sh." >&2
+    fi
+  done < <(python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+except Exception:
+    raise SystemExit
+for fc in d.get('file_copies', []):
+    src = fc.get('source')
+    tgt = fc.get('target')
+    if src and tgt:
+        print(f\"{fc.get('key','')}\t{src}\t{tgt}\")
+" 2>/dev/null)
+else
+  echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua filecopy(source=,target=) theo config.ini." >&2
+fi
+
 # user mặc định cho live session
 useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
 # BUG CŨ: khi DEBUG_MODE=true (set -x ở đầu file), lệnh chpasswd bên dưới
