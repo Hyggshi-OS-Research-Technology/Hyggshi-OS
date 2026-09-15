@@ -64,9 +64,25 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # validate_every_entry() không báo "Function 'installkernel(...)' không nằm
 # trong FUNCTION set hợp lệ" (cùng loại bug đã gặp với filetheme/filecopy/
 # fileaddtext).
+#
+# PATCH 4: thêm apply — dùng trong [Desktop-Environment], khối "Apply image
+# background" (vd `xfce4 = apply(target = "usr/share/backgrounds/hyggshi/
+# Verdant-Valley.png" runcommand = "")`). Cùng bug y hệt 3 patch trước:
+# function mới xuất hiện trong config.ini nhưng chưa đăng ký -> toàn bộ
+# entry apply(...) bị validate_every_entry() báo lỗi cứng, build --strict
+# fail dù bản thân config.ini không sai gì cả.
+#
+# PATCH 5: thêm flathubinstall — dùng trong [Call-gnome-apps]
+# (`flathubinstall(org.gnome.Loupe)`, ...). Arg là Flatpak Application ID,
+# KHÔNG phải path trong repo -> resolve_function() không check tồn tại cho
+# tên function này (xem nhánh "arg" trong resolve_function). Lưu ý: các
+# dòng gọi flathubinstall(...) trong config.ini KHÔNG có "key =" phía
+# trước (khác mọi function khác trong file) -> xem PATCH bare-call trong
+# read_sections(), nếu không có patch đó thì dù đăng ký tên function ở
+# đây, các dòng này vẫn bị bỏ qua hoàn toàn ngay từ bước đọc file.
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
-    "command", "make", "call", "installkernel",
+    "command", "make", "call", "installkernel", "apply", "flathubinstall",
 }
 
 SIZE_RE = re.compile(
@@ -123,6 +139,11 @@ def read_sections(path: str) -> list:
     sections: list[RawSection] = []
     current: RawSection | None = None
     current_group = None
+    # PATCH 5: đếm riêng theo tên function, reset mỗi khi mở section mới —
+    # dùng để sinh key giả cho các dòng gọi function TRẦN (không có "key =",
+    # vd flathubinstall(org.gnome.Loupe) trong [Call-gnome-apps]). Xem nhánh
+    # bare-call phía dưới.
+    bare_call_counts: dict = {}
 
     def _is_delim(s: str) -> bool:
         return bool(re.fullmatch(r";={5,}", s.strip()))
@@ -159,6 +180,7 @@ def read_sections(path: str) -> list:
             current = RawSection(name=m.group(1))
             sections.append(current)
             current_group = None
+            bare_call_counts = {}
             i += 1
             continue
 
@@ -185,6 +207,44 @@ def read_sections(path: str) -> list:
                     f"mọi key phải thuộc 1 [section]."
                 )
             current.entries.append((key, val, current_group))
+            continue
+
+        # PATCH 5: dòng gọi function TRẦN, không có "key =" phía trước —
+        # vd `flathubinstall(org.gnome.Loupe)` trong [Call-gnome-apps].
+        # BUG TRƯỚC ĐÓ: nhánh "=" in stripped ở trên không match (không có
+        # dấu "="), nên các dòng này rơi thẳng xuống `i += 1` cuối vòng lặp
+        # và bị bỏ qua HOÀN TOÀN — [Call-gnome-apps] luôn resolve ra rỗng dù
+        # file có 8 dòng flathubinstall(...), lỗi giống hệt bug
+        # resolve_package_groups() đã sửa ở PATCH package-debian-test, chỉ
+        # khác là ở đây mất ngay từ bước đọc file (read_sections), không
+        # phải ở bước resolve. Sinh key giả "<fname>_<n>" (n đếm riêng theo
+        # từng fname, reset mỗi section) để mỗi lời gọi có 1 key duy nhất
+        # trong entries — bản thân key không có ý nghĩa gì, chỉ để tương
+        # thích với cấu trúc (key, val, group) mà mọi chỗ khác đang dùng.
+        bm = re.match(r"^([A-Za-z_]\w*)\(", stripped)
+        if bm:
+            fname = bm.group(1)
+            val = stripped
+            if val.count("(") > val.count(")"):
+                buf = [val]
+                depth = val.count("(") - val.count(")")
+                i += 1
+                while i < n and depth > 0:
+                    buf.append(lines[i].rstrip("\n"))
+                    depth += lines[i].count("(") - lines[i].count(")")
+                    i += 1
+                val = "\n".join(buf)
+            else:
+                i += 1
+
+            if current is None:
+                raise HclError(
+                    f"Dòng {i}: lệnh '{fname}(...)' nằm ngoài mọi section — "
+                    f"HCL yêu cầu mọi entry phải thuộc 1 [section]."
+                )
+            bare_call_counts[fname] = bare_call_counts.get(fname, 0) + 1
+            synthetic_key = f"{fname}_{bare_call_counts[fname]}"
+            current.entries.append((synthetic_key, val, current_group))
             continue
 
         i += 1
@@ -343,6 +403,13 @@ class Resolver:
             # đó là bản chất của nó (đích sinh ra sau, không phải trước).
             # Bug thật: gộp chung nhóm khiến build --strict fail oan ở CI
             # (xem log: "filecopy(...) — file/thư mục không tồn tại").
+            #
+            # flathubinstall(...) cũng KHÔNG nằm trong nhóm check-tồn-tại:
+            # arg của nó là Flatpak Application ID (vd "org.gnome.Loupe"),
+            # không phải đường dẫn file/thư mục nào trong repo hay trên
+            # rootfs, nên os.path.exists() không có ý nghĩa gì ở đây — nếu
+            # lỡ thêm vào nhóm check, mọi dòng flathubinstall(...) sẽ luôn
+            # báo lỗi "không tồn tại" oan uổng.
             if name in ("fileinstall", "filecustom", "filetheme", "make") and arg:
                 if arg.startswith("http://") or arg.startswith("https://"):
                     result["is_url"] = True
@@ -377,6 +444,19 @@ class Resolver:
                     "error",
                     "installkernel(...) thiếu 'kernel-version' — bắt buộc để "
                     "biết build/cài kernel version nào."))
+        if name == "apply":
+            # apply(target=..., runcommand=...) — "target" là đường dẫn ĐÍCH
+            # trên rootfs lúc build (vd usr/share/backgrounds/hyggshi/
+            # Verdant-Valley.png), KHÔNG phải path nguồn trong repo -> không
+            # check tồn tại, cùng lý do với filecopy()/installkernel() ở
+            # trên (đích sinh ra sau, không phải trước lúc build). Chỉ
+            # "target" là bắt buộc; "runcommand" có thể để trống ("") nếu
+            # chỉ cần ghi file tĩnh mà không cần chạy lệnh gì thêm.
+            if not kwargs.get("target"):
+                self.diags.append(Diagnostic(
+                    "error",
+                    "apply(...) thiếu 'target' — bắt buộc để biết ghi file "
+                    "vào đâu trên rootfs."))
         return result
 
     def resolve_my_version_os_base(self) -> dict:
@@ -525,6 +605,50 @@ class Resolver:
                     found[k] = kv[k]
         return found
 
+    def resolve_desktop_apply(self) -> list:
+        """
+        PATCH 4: gom hết các entry `<key> = apply(target=..., runcommand=...)`
+        rải rác trong config (hiện tại chỉ có trong [Desktop-Environment],
+        khối "Apply image background" — vd `xfce4 = apply(...)`), quét toàn
+        bộ section thay vì hardcode "Desktop-Environment" để hỗ trợ thêm
+        apply() ở section khác sau này (vd apply theme/icon riêng cho từng
+        DE). Mỗi entry giữ luôn section + key gốc (vd key "xfce4") để
+        to_env_lines() biết entry nào ứng với DE đang active.
+        """
+        out = []
+        for sec_name in self.order:
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "apply":
+                    resolved = self.resolve_function(pv.value)
+                    out.append({
+                        "section": sec_name,
+                        "key": key,
+                        "target": resolved.get("target"),
+                        "runcommand": resolved.get("runcommand", ""),
+                    })
+        return out
+
+    def resolve_flathub_apps(self) -> list:
+        """
+        PATCH 5: gom hết các lời gọi flathubinstall(<app-id>) — hiện chỉ có
+        trong [Call-gnome-apps], nhưng quét toàn bộ section (không hardcode
+        tên section) để hỗ trợ thêm nhóm app Flathub khác sau này (vd
+        [Call-kde-apps]). Dedupe vì lỡ khai trùng app-id 2 lần thì chỉ cần
+        cài 1 lần.
+        """
+        seen = set()
+        out = []
+        for sec_name in self.order:
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "flathubinstall":
+                    app_id = pv.value.get("arg", "").strip()
+                    if app_id and app_id not in seen:
+                        seen.add(app_id)
+                        out.append(app_id)
+        return out
+
     def validate_every_entry(self):
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
@@ -539,6 +663,8 @@ class Resolver:
         result["base_profile"] = self.resolve_my_version_os_base()
         result["package_groups"] = self.resolve_package_groups()
         result["apt_repository"] = self.resolve_apt_repository()
+        result["desktop_apply"] = self.resolve_desktop_apply()
+        result["flathub_apps"] = self.resolve_flathub_apps()
         if "customization" in self.sections:
             result["customization"] = {
                 k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
@@ -682,6 +808,33 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     put("DESKTOP_PACKAGES", " ".join(desktop_packages))
     put("DESKTOP_PACKAGE_GROUP", desktop_group)
     put("ALL_PACKAGES", " ".join(all_packages))
+
+    # PATCH 4: export apply() (background image + lệnh postinstall tuỳ
+    # chọn) ứng với DE đang active. Key trong config.ini đặt tên kiểu
+    # "xfce4" (không phải "xfce" như DE_GROUP_EXACT dùng cho tên gói) nên
+    # match bằng cách bỏ số ở cuối key rồi so lower-case, thay vì exact-match.
+    desktop_apply_entries = resolved.get("desktop_apply", [])
+    active_apply = next(
+        (a for a in desktop_apply_entries
+         if re.sub(r"\d+$", "", str(a.get("key", "")).lower()) == de),
+        None,
+    )
+    put("DESKTOP_APPLY_TARGET", active_apply.get("target") if active_apply else "")
+    put("DESKTOP_APPLY_RUNCOMMAND", active_apply.get("runcommand") if active_apply else "")
+
+    # PATCH 5: export danh sách app Flathub cần cài (flathubinstall(...) đã
+    # gom ở resolve_flathub_apps()). install-flatpak/install-flathub (2 key
+    # boolean nằm trong [package], dưới header "install flatpak and
+    # flathub" -> group đó, KHÔNG phải "(ungrouped)") trước giờ được
+    # resolve nhưng CHƯA BAO GIỜ export — desktop.sh không có cách nào biết
+    # có nên bật Flatpak/Flathub remote hay không, giống bug
+    # squashfs-max-compression đã sửa ở trên. Qué toàn bộ group thay vì
+    # đoán tên group, vì tên group phụ thuộc đúng text của comment header.
+    install_flatpak = any(g.get("install-flatpak") is True for g in pkg_groups.values())
+    install_flathub = any(g.get("install-flathub") is True for g in pkg_groups.values())
+    put("FLATPAK_ENABLED", str(install_flatpak).lower())
+    put("FLATHUB_ENABLED", str(install_flathub).lower())
+    put("FLATHUB_APPS", " ".join(resolved.get("flathub_apps", [])))
 
     put("KERNEL_INSTALL_ENABLED", str(kernel_install is not None).lower())
     if kernel_install is not None:
