@@ -536,6 +536,26 @@ class Resolver:
                     "error",
                     "apply(...) thiếu 'target' — bắt buộc để biết ghi file "
                     "vào đâu trên rootfs."))
+        if name == "filecopy" and "source" in kwargs:
+            # filecopy(source=..., target=...) — khác filecopy(<path>) dạng
+            # positional-arg ở nhánh "arg" phía trên (chỉ có 1 path = ĐÍCH
+            # trên rootfs, không check tồn tại). Dạng kwargs này tự đủ cả
+            # nguồn (source, path TRONG REPO, phải tồn tại lúc build — vd
+            # "xfce4-desktop-config" trong khối "Apply image background")
+            # và đích (target, trên rootfs, sinh ra sau -> không check,
+            # cùng lý do target của apply()/filecopy(<path>) không check).
+            src = str(kwargs.get("source", ""))
+            full = os.path.normpath(os.path.join(self.root, src))
+            if not os.path.exists(full):
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"filecopy(source={src}) — file/thư mục nguồn không tồn tại: {full}"))
+            result["exists"] = os.path.exists(full)
+            if not kwargs.get("target"):
+                self.diags.append(Diagnostic(
+                    "error",
+                    "filecopy(source=..., ...) thiếu 'target' — bắt buộc để "
+                    "biết copy nguồn vào đâu trên rootfs."))
         if name in ("appremove", "fileremove"):
             # appremove(run=...) / fileremove(run=...) — "run" là lệnh shell
             # sẽ thực thi lúc build (gỡ package hoặc xoá file/thư mục), không
@@ -764,6 +784,49 @@ class Resolver:
                     })
         return out
 
+    def resolve_file_copies(self) -> list:
+        """
+        PATCH 7: gom hết các entry `<key> = filecopy(source=..., target=...)`
+        rải rác trong config (hiện tại chỉ có "xfce4-desktop-config" trong
+        khối "Apply image background") — quét toàn bộ section thay vì
+        hardcode tên section/key, giống resolve_removals()/PATCH 6, để hỗ
+        trợ thêm filecopy(source=,target=) khác sau này mà không cần sửa
+        lại đây.
+
+        BUG ĐÃ SỬA: entry này trước đây KHÔNG được resolve bởi bất kỳ hàm
+        nào trong resolve_all() — resolve_desktop_apply() (PATCH 4) chỉ
+        quét function tên "apply", không phải "filecopy", nên
+        "xfce4-desktop-config" hoàn toàn biến mất khỏi kết quả (không có
+        trong --emit-json, không có trong --emit-env), dù validate_every_
+        entry() không báo lỗi gì (filecopy đã có trong FUNCTION_NAMES từ
+        trước) và source (./iso-config/xfce/xfce4-desktop.xml) có tồn tại
+        thật trong repo. desktop.sh vì vậy không có cách nào biết cần copy
+        file này vào đâu — file iso-config/xfce/xfce4-desktop.xml chưa
+        từng được apply lên ISO dù khai báo trong config.ini "có vẻ đúng".
+
+        Chỉ nhận dạng kwargs (source=...) — filecopy(<path>) dạng
+        positional-arg (chỉ có target trên rootfs, xem nhánh "arg" trong
+        resolve_function) là ngữ nghĩa khác (đích cho filetheme() ghép
+        riêng), không thuộc nhóm copy-nguồn-vào-đích này.
+        """
+        out = []
+        for sec_name in self.order:
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type != "FUNCTION" or pv.value.get("name") != "filecopy":
+                    continue
+                fn = pv.value
+                if "kwargs" not in fn or "source" not in fn["kwargs"]:
+                    continue
+                resolved = self.resolve_function(fn)
+                out.append({
+                    "section": sec_name,
+                    "key": key,
+                    "source": resolved.get("source"),
+                    "target": resolved.get("target"),
+                })
+        return out
+
     def validate_every_entry(self):
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
@@ -781,6 +844,7 @@ class Resolver:
         result["desktop_apply"] = self.resolve_desktop_apply()
         result["flathub_apps"] = self.resolve_flathub_apps()
         result["removals"] = self.resolve_removals()
+        result["file_copies"] = self.resolve_file_copies()
         if "customization" in self.sections:
             result["customization"] = {
                 k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
@@ -965,6 +1029,48 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         put(f"REMOVE_{idx}_KEY", r.get("key"))
         put(f"REMOVE_{idx}_TYPE", r.get("type"))
         put(f"REMOVE_{idx}_RUN", r.get("run"))
+
+    # PATCH 7: export các entry filecustom(...) trong [customization]
+    # (Calamares settings/branding/modules, logo Plymouth, ảnh nền desktop,
+    # ảnh nền GRUB). Cùng bug y hệt [config-setup-postpartum-care] và
+    # install-flatpak/install-flathub đã sửa ở trên: resolve_all() đã gom
+    # đúng section "customization" vào resolved["customization"] (xem
+    # resolve_all()), nhưng to_env_lines() trước đây KHÔNG BAO GIỜ đọc key
+    # này ra — nghĩa là toàn bộ "lệnh" filecustom() khai trong config.ini
+    # (linksettingscalamares/linkbrandingcalamares/linkmodulescalamares/
+    # linkimagelogo/linkimagebackground/linkgrubbackground) chỉ nằm chết
+    # trong --emit-json, KHÔNG có biến env nào để scripts/*.sh đọc ra mà
+    # "ra lệnh" (copy file/patch config) — file .ini khai gì cũng vô nghĩa
+    # với build thật, y hệt lý do [package] và customization đã bị coi là
+    # "chết" trước khi các PATCH ở trên được thêm. Export theo số thứ tự
+    # (giống APT_REPO_{idx}/REMOVE_{idx}) để giữ nguyên thứ tự khai báo và
+    # không cần đoán tên biến theo từng key.
+    customization = resolved.get("customization", {})
+    put("CUSTOM_COUNT", len(customization))
+    for idx, (key, val) in enumerate(customization.items(), start=1):
+        if not isinstance(val, dict):
+            continue
+        put(f"CUSTOM_{idx}_KEY", key)
+        put(f"CUSTOM_{idx}_TYPE", val.get("call"))
+        is_url = bool(val.get("is_url"))
+        put(f"CUSTOM_{idx}_IS_URL", str(is_url).lower())
+        put(f"CUSTOM_{idx}_PATH", val.get("url") if is_url else val.get("path"))
+
+    # PATCH 8: export các entry filecopy(source=,target=) đã gom ở
+    # resolve_file_copies()/PATCH 7. Cùng lý do PATCH 7 export
+    # "customization" ở trên: resolve_all() gom đúng vào
+    # resolved["file_copies"], nhưng to_env_lines() không đọc key này ra
+    # thì desktop.sh (chạy trong chroot, không đọc trực tiếp config.ini)
+    # không có biến nào để biết cần copy gì — lệnh filecopy() trong .ini
+    # coi như không tồn tại với build thật. Export theo số thứ tự (giống
+    # CUSTOM_{idx}/APT_REPO_{idx}) để desktop.sh lặp qua mà không cần biết
+    # trước có bao nhiêu entry hay tên key gì.
+    file_copies = resolved.get("file_copies", [])
+    put("FILECOPY_COUNT", len(file_copies))
+    for idx, fc in enumerate(file_copies, start=1):
+        put(f"FILECOPY_{idx}_KEY", fc.get("key"))
+        put(f"FILECOPY_{idx}_SOURCE", fc.get("source"))
+        put(f"FILECOPY_{idx}_TARGET", fc.get("target"))
 
     put("KERNEL_INSTALL_ENABLED", str(kernel_install is not None).lower())
     if kernel_install is not None:

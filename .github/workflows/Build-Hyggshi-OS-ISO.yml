@@ -348,6 +348,30 @@ jobs:
           sudo cp iso-config/branding/Hyggshi-OS-Installer.png "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo chmod 0644 "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo cp -f /tmp/hcl-resolved.json "${CHROOT_DIR}/tmp/hcl-resolved.json" 2>/dev/null || true
+          # Stage nguồn cho mọi entry filecopy(source=,target=) trong
+          # config.ini (xem resolve_file_copies()/PATCH 7 trong
+          # tools/hcl_parser.py) vào chroot /tmp/hcl-filecopy-src/, mirror
+          # đúng path tương đối trong repo — desktop.sh (chạy TRONG chroot)
+          # không có quyền đọc ra ngoài chroot nên cần bước stage này TRƯỚC.
+          # Quét thẳng resolved["file_copies"] thay vì hardcode
+          # "iso-config/xfce/xfce4-desktop.xml" để tự động hỗ trợ thêm
+          # filecopy(source=,target=) khác sau này mà không cần sửa lại
+          # bước stage này (giống triết lý resolve_removals()/PATCH 6).
+          sudo rm -rf "${CHROOT_DIR}/tmp/hcl-filecopy-src"
+          sudo mkdir -p "${CHROOT_DIR}/tmp/hcl-filecopy-src"
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/hcl-resolved.json'))
+          for fc in d.get('file_copies', []):
+              src = fc.get('source')
+              if src:
+                  print(src)
+          " | while IFS= read -r src; do
+            rel="${src#./}"
+            dest="${CHROOT_DIR}/tmp/hcl-filecopy-src/${rel}"
+            sudo mkdir -p "$(dirname "$dest")"
+            sudo cp "$src" "$dest"
+          done
           # Stage Hyggshi-Light/Hyggshi-Dark theme sources (iso-config/theme)
           # vào chroot. TRƯỚC ĐÂY BỊ THIẾU: config.ini có filetheme(...)/
           # filecopy(...) khai báo 2 theme này, hcl_parser.py resolve và
