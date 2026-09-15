@@ -3,3 +3,4 @@ build/image/
 build/*.iso
 *.iso
 *.squashfs
+log/
