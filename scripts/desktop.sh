@@ -1224,6 +1224,49 @@ if [ -n "$EXTRA_PACKAGES" ]; then
   apt-get install -y "${EXTRA_PACKAGE_LIST[@]}" || true
 fi
 
+echo "===== Dọn package/hình ảnh thừa theo config.ini (appremove/fileremove) ====="
+# [package] khối "Remove package and image" (systemsettings-KDE =
+# appremove(...), image-background = fileremove(...)) được hcl_parser.py
+# resolve sẵn vào /tmp/hcl-resolved.json ("removals": [{"key", "type",
+# "run"}, ...] — xem resolve_removals()/PATCH 6 trong tools/hcl_parser.py)
+# nhưng trước đây KHÔNG có bước nào trong desktop.sh thực sự CHẠY các lệnh
+# đó. Hệ quả: appremove/fileremove chỉ nằm chết trong JSON, ISO build ra
+# vẫn còn nguyên "KDE System Settings" trong menu ứng dụng và thư mục
+# /usr/share/backgrounds/xfce cũ — dù validate --strict pass và
+# tools/hcl_parser.py không báo lỗi gì (parser chỉ RESOLVE, không tự ý
+# THỰC THI side-effect thay cho desktop.sh).
+#
+# Chạy TRỄ ở đây (sau khi mọi DE/icon/keyboard/extra package đã cài xong,
+# TRƯỚC khi tạo user live) vì: appremove có thể cần gỡ gói vừa được kéo
+# vào như dependency của DE/package khác trong các bước phía trên; và
+# fileremove xoá file/thư mục do 1 gói apt tạo ra (vd wallpaper mặc định
+# đi kèm xfce4-desktop) nên phải chạy sau khi gói đó đã được cài, không
+# thể chạy trước.
+#
+# Mỗi lệnh chạy độc lập với cảnh báo thay vì `set -e` fail cứng — 1 lệnh
+# remove lỗi (vd gói không có sẵn trên distro/DE đang build) không nên
+# làm fail toàn bộ ISO, giống triết lý các bước dọn dẹp khác trong script
+# này (autoremove, purge theme lỗi...).
+if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
+  while IFS= read -r removal_cmd; do
+    [ -z "$removal_cmd" ] && continue
+    echo "[HCL removal] $removal_cmd"
+    bash -c "$removal_cmd" || echo "⚠️  Lệnh remove thất bại (bỏ qua): $removal_cmd" >&2
+  done < <(python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+except Exception:
+    raise SystemExit
+for r in d.get('removals', []):
+    cmd = r.get('run')
+    if cmd:
+        print(cmd)
+" 2>/dev/null)
+else
+  echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua bước dọn package/hình ảnh theo config.ini (appremove/fileremove sẽ không có tác dụng gì trên ISO này)." >&2
+fi
+
 # user mặc định cho live session
 useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
 # BUG CŨ: khi DEBUG_MODE=true (set -x ở đầu file), lệnh chpasswd bên dưới
