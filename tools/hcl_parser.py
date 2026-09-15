@@ -298,13 +298,48 @@ def classify(key: str, raw: str) -> ParsedValue:
 
     fm = FUNC_CALL_RE.match(raw)
     if fm:
-        fname, fargs = fm.group(1), fm.group(2).strip()
+        fname, fargs_raw = fm.group(1), fm.group(2)
+        fargs = fargs_raw.strip()
         if fname not in FUNCTION_NAMES:
             raise HclError(
                 f"Function '{fname}(...)' không nằm trong FUNCTION set hợp lệ "
                 f"của HCL 1.0: {sorted(FUNCTION_NAMES)}"
             )
-        if "\n" in fargs or "=" in fargs and fname == "command":
+        # PATCH 7: BUG — điều kiện cũ `"\n" in fargs` kiểm tra trên fargs ĐÃ
+        # .strip(), nên chỉ đúng khi function có ≥2 kwarg (mỗi kwarg 1 dòng
+        # -> sau strip() đầu/cuối vẫn còn ít nhất 1 "\n" ở GIỮA 2 dòng, vd
+        # fileaddtext(target=... \n content=...), command(file=... \n
+        # action=...)). Với function chỉ có ĐÚNG 1 kwarg viết nhiều dòng —
+        # đúng dạng appremove()/fileremove() trong config.ini:
+        #     appremove(
+        #         run = "sudo apt remove systemsettings"
+        #     )
+        # — fargs_raw TRƯỚC strip là "\n    run = \"...\"\n" (2 newline ở
+        # ĐẦU và CUỐI, không có newline nào Ở GIỮA vì chỉ có 1 dòng nội
+        # dung). .strip() xoá sạch 2 newline biên đó, để lại đúng 1 dòng
+        # "run = \"...\"" KHÔNG CÒN "\n" nào -> rơi nhầm vào nhánh "arg"
+        # (positional argument đơn) ở dưới, coi CẢ CHUỖI "run = \"sudo apt
+        # remove systemsettings\"" là 1 path/arg duy nhất thay vì kwarg
+        # "run" -> kwargs luôn rỗng -> "run" resolve ra "" (chuỗi rỗng) dù
+        # config.ini không sai cú pháp gì — bug lộ ra đúng lúc thêm
+        # appremove/fileremove (PATCH 6) vì đây là 2 function ĐẦU TIÊN chỉ
+        # cần 1 kwarg duy nhất.
+        #
+        # Fix: kiểm tra newline trên fargs_raw (TRƯỚC strip) — phản ánh
+        # đúng "function này được viết NHIỀU DÒNG trong file gốc hay
+        # không", không phụ thuộc số lượng kwarg bên trong. Thêm fallback
+        # regex `^[\w-]+\s*=`: nếu sau này ai viết gọn 1 dòng
+        # (`run = "..."`) không xuống dòng, vẫn nhận diện đúng là kwargs
+        # (không phải positional arg) — an toàn với mọi arg dạng path/URL/
+        # app-id hiện có (fileinstall(./x), flathubinstall(org.gnome.Loupe),
+        # make(https://...)) vì none trong số đó bắt đầu bằng
+        # "<định_danh> =".
+        is_kwargs_call = (
+            "\n" in fargs_raw
+            or bool(re.match(r"^[\w-]+\s*=", fargs))
+            or ("=" in fargs and fname == "command")
+        )
+        if is_kwargs_call:
             kwargs = {}
             for line in fargs.splitlines():
                 line = line.strip().rstrip(",")
@@ -337,8 +372,41 @@ def classify(key: str, raw: str) -> ParsedValue:
 
 class Resolver:
     def __init__(self, sections: list, root: str):
-        self.sections = {s.name: s for s in sections}
-        self.order = [s.name for s in sections]
+        # PATCH 8: config.ini có 2 section CÙNG TÊN "[package]" (1 cái ở
+        # gần đầu chỉ chứa "package-debian-test = full", 1 cái ở dưới chứa
+        # cmake/git/nexfetch/install-flatpak/...) — tác giả cố ý mở lại
+        # "[package]" lần 2 chỉ để ĐÓNG section [package-debian-test.unstable]
+        # lại (xem comment "ĐÓNG package-debian-test.unstable, MỞ LẠI
+        # [package] ở đây" trong config.ini), với ý định 2 section cùng tên
+        # sẽ được HIỂU LÀ MỘT.
+        #
+        # BUG: `{s.name: s for s in sections}` là dict comprehension — key
+        # trùng thì giá trị SAU ghi đè giá trị TRƯỚC, không merge. Nên
+        # self.sections["package"] chỉ còn trỏ tới section [package] THỨ
+        # HAI, entries của section ĐẦU TIÊN ("package-debian-test = full")
+        # biến mất hoàn toàn khỏi self._kv("package") — resolve_apt_repository()
+        # luôn thấy "package-debian-test" not in kv -> trả về None, toàn bộ
+        # tính năng chọn kênh apt (full/normal/default/unstable) im lặng
+        # không hoạt động dù validate --strict pass sạch (không phải lỗi cú
+        # pháp, chỉ là 1 section "biến mất" theo đúng ngữ nghĩa dict Python).
+        #
+        # Fix: merge entries của mọi section CÙNG TÊN theo đúng thứ tự xuất
+        # hiện trong file (nối tiếp, không ghi đè) — khớp với ý định "coi 2
+        # section cùng tên là một" mà tác giả comment đã nêu. self.order
+        # chỉ giữ mỗi tên DUY NHẤT MỘT LẦN (lần xuất hiện đầu tiên) để các
+        # hàm quét theo self.order (resolve_removals, resolve_flathub_apps,
+        # resolve_desktop_apply, validate_every_entry...) không xử lý trùng
+        # lặp cùng 1 section 2 lần.
+        merged: dict[str, RawSection] = {}
+        order: list[str] = []
+        for s in sections:
+            if s.name in merged:
+                merged[s.name].entries.extend(s.entries)
+            else:
+                merged[s.name] = RawSection(name=s.name, entries=list(s.entries))
+                order.append(s.name)
+        self.sections = merged
+        self.order = order
         self.root = root
         self.diags: list[Diagnostic] = []
 
