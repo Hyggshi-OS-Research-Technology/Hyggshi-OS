@@ -1324,7 +1324,7 @@ except Exception:
     raise SystemExit
 for fc in d.get('file_copies', []):
     src = fc.get('source')
-    tgt = fc.get('target')
+    tgt = fc.get('resolved_target') or fc.get('target')
     if src and tgt:
         print(f\"{fc.get('key','')}\t{src}\t{tgt}\")
 " 2>/dev/null)
