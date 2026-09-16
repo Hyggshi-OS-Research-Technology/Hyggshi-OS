@@ -879,7 +879,15 @@ if ! apt-get install -y polkitd pkexec; then
   apt-get install -y policykit-1 || true
 fi
 case "$DE" in
-  xfce)     apt-get install -y xfce-polkit || apt-get install -y policykit-1-gnome || true ;;
+  xfce)
+    # Trên Debian/Ubuntu, xfce-polkit không có trong apt repo và policykit-1-gnome đã bị gỡ từ Trixie.
+    # mate-polkit hoặc lxpolkit là polkit agent chuẩn cho XFCE.
+    apt-get install -y mate-polkit || apt-get install -y lxpolkit || apt-get install -y policykit-1-gnome || true
+    # mate-polkit mặc định có OnlyShowIn=MATE; — cho phép chạy cả trên XFCE
+    if [ -f /etc/xdg/autostart/polkit-mate-authentication-agent-1.desktop ]; then
+      sed -i 's/OnlyShowIn=MATE;/OnlyShowIn=MATE;XFCE;/' /etc/xdg/autostart/polkit-mate-authentication-agent-1.desktop || true
+    fi
+    ;;
   mate)     apt-get install -y mate-polkit || true ;;
   lxqt)     apt-get install -y lxqt-policykit || true ;;
   gnome)    : ;; # gnome-shell tự có agent tích hợp
@@ -1220,8 +1228,22 @@ fi
 
 # gói thêm do người dùng chỉ định
 if [ -n "$EXTRA_PACKAGES" ]; then
-  read -r -a EXTRA_PACKAGE_LIST <<< "$EXTRA_PACKAGES"
-  apt-get install -y "${EXTRA_PACKAGE_LIST[@]}" || true
+  read -r -a RAW_EXTRA_PACKAGE_LIST <<< "$EXTRA_PACKAGES"
+  EXTRA_PACKAGE_LIST=()
+  for pkg in "${RAW_EXTRA_PACKAGE_LIST[@]}"; do
+    case "$pkg" in
+      install-flatpak|install-flathub|theme-*|*-enabled)
+        # Bỏ qua các flag cấu hình không phải tên package apt
+        continue
+        ;;
+      *)
+        [ -n "$pkg" ] && EXTRA_PACKAGE_LIST+=("$pkg")
+        ;;
+    esac
+  done
+  if [ ${#EXTRA_PACKAGE_LIST[@]} -gt 0 ]; then
+    apt-get install -y "${EXTRA_PACKAGE_LIST[@]}" || true
+  fi
 fi
 
 echo "===== Dọn package/hình ảnh thừa theo config.ini (appremove/fileremove) ====="

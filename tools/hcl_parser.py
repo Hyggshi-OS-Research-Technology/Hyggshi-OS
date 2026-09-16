@@ -976,6 +976,13 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
                 if kernel_install is None:
                     kernel_install = v
             elif v is True:
+                # Bỏ qua các key boolean là feature flag / toggle cấu hình
+                # (vd install-flatpak, install-flathub, theme-*-enabled),
+                # KHÔNG phải tên gói apt — tránh lọt vào ALL_PACKAGES ->
+                # HCL_PACKAGES -> EXTRA_PACKAGES -> apt-get install gây lỗi:
+                # "E: Unable to locate package install-flatpak / install-flathub".
+                if k in ("install-flatpak", "install-flathub") or k.startswith("theme-"):
+                    continue
                 if is_de_group:
                     if is_active_de:
                         desktop_packages.append(k)

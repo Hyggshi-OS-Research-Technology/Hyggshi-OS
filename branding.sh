@@ -103,7 +103,7 @@ if [ "$WALLPAPER_APPLIED" = "true" ]; then
     echo "Patch: $f"
     sudo sed -i -E \
       -e 's#(<property name="last-image" type="string" value=")[^"]*(")#\1/usr/share/backgrounds/hyggshi/wallpaper.png\2#g' \
-      -e 's#(<property name="image-style" type="int" value=")[0-9]+(")#\g<1>5\2#g' \
+      -e 's#<property name="image-style" type="int" value="[0-9]+"#<property name="image-style" type="int" value="5"#g' \
       "$f" 2>/dev/null || true
   done
 else
