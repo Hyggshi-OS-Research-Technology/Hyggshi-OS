@@ -26,6 +26,25 @@ if [ "$HCL_CONFIG_OVERRIDE" = "true" ] && [ -f "$HCL_CONFIG_FILE" ] && [ -f "$HC
   if python3 "$HCL_PARSER" "$HCL_CONFIG_FILE" --root . --emit-json "$HCL_JSON" --strict; then
     HCL_CFG_VERSION="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['base_profile'].get('version') or '')" "$HCL_JSON" 2>/dev/null || true)"
     HCL_CFG_CODENAME="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['base_profile'].get('codename') or '')" "$HCL_JSON" 2>/dev/null || true)"
+    HCL_CFG_GREETER_SRC="$(python3 -c "import json,sys
+d = json.load(open(sys.argv[1]))
+for fc in d.get('file_copies', []):
+    if 'gtk.css' in fc.get('source', '') or 'gtk.css' in (fc.get('rename') or '') or 'Hyggshi-Greeter' in (fc.get('target') or ''):
+        print(fc.get('source') or '')
+        break
+custom = d.get('customization', {})
+for k in ('linkgreetercss', 'linkthemegreeter', 'linkgreetergtk'):
+    if k in custom:
+        print(custom[k].get('arg') or custom[k].get('path') or '')
+        break
+" "$HCL_JSON" 2>/dev/null | head -n1 || true)"
+    HCL_CFG_GREETER_TGT="$(python3 -c "import json,sys
+d = json.load(open(sys.argv[1]))
+for fc in d.get('file_copies', []):
+    if 'gtk.css' in fc.get('source', '') or 'gtk.css' in (fc.get('rename') or '') or 'Hyggshi-Greeter' in (fc.get('target') or ''):
+        print(fc.get('resolved_target') or fc.get('target') or '')
+        break
+" "$HCL_JSON" 2>/dev/null | head -n1 || true)"
     if [ -n "$HCL_CFG_VERSION" ]; then
       HYGGSHI_VERSION_ID="$HCL_CFG_VERSION"
       echo "  -> HYGGSHI_VERSION_ID lấy từ config.ini: $HYGGSHI_VERSION_ID"
@@ -33,6 +52,9 @@ if [ "$HCL_CONFIG_OVERRIDE" = "true" ] && [ -f "$HCL_CONFIG_FILE" ] && [ -f "$HC
     if [ -n "$HCL_CFG_CODENAME" ]; then
       HYGGSHI_CODENAME="$HCL_CFG_CODENAME"
       echo "  -> HYGGSHI_CODENAME lấy từ config.ini: $HYGGSHI_CODENAME"
+    fi
+    if [ -n "$HCL_CFG_GREETER_SRC" ]; then
+      echo "  -> LightDM Greeter GTK CSS lấy từ config.ini: $HCL_CFG_GREETER_SRC -> ${HCL_CFG_GREETER_TGT:-$GREETER_THEME_DIR/gtk.css}"
     fi
   else
     echo "!! HCL: config.ini có lỗi validate (xem log ở trên) — bỏ qua, dùng input/mặc định như cũ." >&2
@@ -167,9 +189,9 @@ fi
 echo "===== Custom màn hình đăng nhập (LightDM GTK Greeter) ====="
 # Mặc định lightdm-gtk-greeter dùng theme GTK gốc của hệ thống -> ra cái hộp
 # thoại trắng vuông vức, avatar xám xịt như ảnh mô tả trong issue. Ở đây ta
-# tự viết 1 GTK3 theme riêng CHỈ áp cho greeter (không đụng tới GTK theme
-# của desktop bên trong phiên đăng nhập), nên không phụ thuộc Windows-10/
-# Orchis theme có clone được hay không (xem khối clone theme trong desktop.sh).
+# áp GTK3 theme riêng CHỈ áp cho greeter (không đụng tới GTK theme
+# của desktop bên trong phiên đăng nhập), lấy từ iso-config/branding/gtk.css
+# (khai báo qua linkgreetercss = filecustom(...) trong config.ini).
 GREETER_THEME_DIR="$CHROOT/usr/share/themes/Hyggshi-Greeter/gtk-3.0"
 sudo mkdir -p "$GREETER_THEME_DIR"
 
@@ -186,139 +208,58 @@ IconTheme=Papirus-Dark
 CursorTheme=Bibata-Modern-Classic
 EOF
 
-sudo tee "$GREETER_THEME_DIR/gtk.css" > /dev/null <<'CSS'
-/* Hyggshi OS — theme riêng cho lightdm-gtk-greeter, viết từ đầu để không
-   phụ thuộc theme nào khác. Chỉ nhắm tới các widget-id mà lightdm-gtk-greeter
-   đặt sẵn (#login_window, #panel_window...) nên không ảnh hưởng theme GTK
-   của desktop session bên trong. */
+# Nguồn và đích gtk.css cho greeter: ưu tiên từ lệnh copy() trong config.ini, fallback về ./iso-config/branding/gtk.css
+GREETER_CSS_SRC=""
+GREETER_CSS_DEST=""
 
-* {
-  font-family: "Ubuntu", "Noto Sans", sans-serif;
-}
+if [ -n "$HCL_CFG_GREETER_SRC" ] && [ -f "$HCL_CFG_GREETER_SRC" ]; then
+  GREETER_CSS_SRC="$HCL_CFG_GREETER_SRC"
+  [ -n "$HCL_CFG_GREETER_TGT" ] && GREETER_CSS_DEST="$CHROOT/${HCL_CFG_GREETER_TGT#/}"
+elif [ -f /tmp/hcl-resolved.json ]; then
+  RESOLVED_INFO="$(python3 -c "import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+    for fc in d.get('file_copies', []):
+        if 'gtk.css' in fc.get('source', '') or 'gtk.css' in (fc.get('rename') or '') or 'Hyggshi-Greeter' in (fc.get('target') or ''):
+            src = fc.get('source', '')
+            tgt = fc.get('resolved_target') or fc.get('target', '')
+            print(f\"{src}\t{tgt}\")
+            break
+    custom = d.get('customization', {})
+    for k in ('linkgreetercss', 'linkthemegreeter', 'linkgreetergtk'):
+        if k in custom:
+            val = custom[k].get('arg') or custom[k].get('path') or ''
+            if val:
+                print(f\"{val}\t\")
+                break
+except Exception:
+    pass
+" 2>/dev/null | head -n1 || true)"
+  SRC_PART="$(echo "$RESOLVED_INFO" | cut -f1)"
+  TGT_PART="$(echo "$RESOLVED_INFO" | cut -f2)"
+  if [ -n "$SRC_PART" ] && [ -f "$SRC_PART" ]; then
+    GREETER_CSS_SRC="$SRC_PART"
+    if [ -n "$TGT_PART" ]; then
+      GREETER_CSS_DEST="$CHROOT/${TGT_PART#/}"
+    fi
+  fi
+fi
 
-window {
-  background-color: transparent;
-}
+if [ -z "$GREETER_CSS_SRC" ] && [ -f "iso-config/branding/gtk.css" ]; then
+  GREETER_CSS_SRC="iso-config/branding/gtk.css"
+fi
 
-/* Thanh panel trên cùng: đồng hồ, chọn session/ngôn ngữ, nút tắt máy */
-#panel_window {
-  background-color: rgba(13, 18, 32, 0.55);
-  color: #f2f5f7;
-}
-#panel_window button,
-#panel_window menuitem,
-#panel_window GtkLabel {
-  color: #f2f5f7;
-}
+if [ -z "$GREETER_CSS_DEST" ]; then
+  GREETER_CSS_DEST="$GREETER_THEME_DIR/gtk.css"
+fi
 
-/* Hộp đăng nhập chính — thay cho ô vuông trắng mặc định */
-#login_window {
-  background-color: rgba(15, 23, 38, 0.85);
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  padding: 28px 32px;
-  color: #f2f5f7;
-}
-#login_window GtkLabel { color: #f2f5f7; }
-
-/* Ô nhập username / password */
-#login_window entry,
-#login_window GtkEntry {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 10px;
-  padding: 8px 12px;
-  min-height: 22px;
-}
-#login_window entry:focus {
-  border-color: #7fd8c8;
-  box-shadow: 0 0 0 2px rgba(127, 216, 200, 0.25);
-}
-
-/* Nút Cancel / Log In */
-#login_window button,
-#login_window GtkButton {
-  background-image: none;
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  padding: 8px 18px;
-}
-#login_window button:hover,
-#login_window GtkButton:hover {
-  background-color: rgba(127, 216, 200, 0.22);
-  border-color: #7fd8c8;
-}
-#login_window #button_login,
-#login_window #login_button {
-  background-color: #2fae94;
-  border-color: #2fae94;
-  font-weight: 600;
-}
-#login_window #button_login:hover,
-#login_window #login_button:hover {
-  background-color: #37c6a8;
-  border-color: #37c6a8;
-}
-
-/* Dropdown chọn user / session / ngôn ngữ */
-#login_window combobox,
-#login_window GtkComboBox {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-/* Avatar user bo tròn thay vì vuông xám */
-#login_window GtkImage {
-  border-radius: 50%;
-}
-
-/* Text lỗi khi gõ sai mật khẩu */
-#login_window #message_label,
-#login_window .error {
-  color: #ff8a8a;
-}
-
-/* Menu power (Suspend/Hibernate/Restart/Shut Down) bung ra từ #panel_window
-   khi bấm icon nguồn — mặc định GTK vẽ menu này trơ trọi, chỉ chữ đen trên
-   nền trắng/xám (xem ảnh mô tả trong issue). Style lại thành khối tối bo
-   góc đồng bộ với #login_window, có highlight khi rê chuột, thay vì nhìn
-   như 1 tooltip lạc lõng giữa màn hình. */
-menu,
-GtkMenu {
-  background-color: rgba(15, 23, 38, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-}
-menu menuitem,
-GtkMenu GtkMenuItem {
-  color: #f2f5f7;
-  border-radius: 8px;
-  padding: 8px 14px;
-  min-width: 200px;
-}
-menu menuitem:hover,
-GtkMenu GtkMenuItem:hover {
-  background-color: rgba(127, 216, 200, 0.22);
-}
-/* Phím tắt (Alt+Delete, Alt+F4...) hiển thị mờ hơn chữ chính, đỡ rối mắt */
-menu menuitem accelerator,
-GtkMenu GtkMenuItem GtkAccelLabel {
-  color: rgba(242, 245, 247, 0.55);
-}
-menu separator,
-GtkMenu GtkSeparatorMenuItem {
-  background-color: rgba(255, 255, 255, 0.12);
-  margin: 4px 6px;
-}
-CSS
+if [ -n "$GREETER_CSS_SRC" ] && [ -f "$GREETER_CSS_SRC" ]; then
+  sudo mkdir -p "$(dirname "$GREETER_CSS_DEST")"
+  sudo install -m 0644 "$GREETER_CSS_SRC" "$GREETER_CSS_DEST"
+  echo "Đã copy [HCL copy] $GREETER_CSS_SRC -> $GREETER_CSS_DEST"
+else
+  echo "⚠️ Không thấy $GREETER_CSS_SRC (hoặc iso-config/branding/gtk.css) — greeter sẽ dùng theme GTK mặc định." >&2
+fi
 
 # Icon theme cho greeter: map theo $ICON_THEME đã chọn ở desktop.sh (mặc định papirus)
 case "${ICON_THEME:-papirus}" in
@@ -410,10 +351,11 @@ EOF
 printf "%s \\n \\l\n\n" "$ISSUE_TITLE" | sudo tee "$CHROOT/etc/issue" > /dev/null
 echo "Welcome to $MOTD_TITLE — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
-echo "===== Distributor logo ====="
+echo "===== Distributor logo (GNOME, XFCE, Cinnamon, system info, pixmaps) ====="
 # 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
 LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.svg" \) 2>/dev/null | head -n1)
+LOGO_SVG_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.svg" 2>/dev/null | head -n1)
 
 # 2. Nếu không có, tải trực tiếp từ link người dùng dán vào ($LOGO_URL, xem workflow input "logo_url")
 if [ -z "$LOGO_FILE" ] && [ -n "$LOGO_URL" ]; then
@@ -431,14 +373,100 @@ if [ -n "$LOGO_FILE" ]; then
   if ! command -v convert > /dev/null 2>&1; then
     echo "⚠️  imagemagick không cài được — bỏ qua đổi distributor logo."
   else
-  for size in 16 22 24 32 48 64 128 192 256; do
-    DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
-    sudo mkdir -p "$DEST"
-    convert "$LOGO_FILE" -resize ${size}x${size} "/tmp/logo-$size.png"
-    sudo cp "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
-  done
-  sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
-  echo "Đã áp logo custom: $LOGO_FILE"
+    echo "Tạo bộ icon nhiều kích thước từ: $LOGO_FILE"
+    for size in 16 22 24 32 48 64 128 192 256 512; do
+      convert "$LOGO_FILE" -resize ${size}x${size} "/tmp/logo-$size.png"
+    done
+
+    # 1. Cài vào theme mặc định hicolor (cho cả distributor-logo lẫn debian-logo)
+    for size in 16 22 24 32 48 64 128 192 256; do
+      DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
+      sudo mkdir -p "$DEST"
+      sudo cp -f "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
+      sudo cp -f "/tmp/logo-$size.png" "$DEST/distributor-logo-debian.png"
+      sudo cp -f "/tmp/logo-$size.png" "$DEST/debian-logo.png"
+      sudo cp -f "/tmp/logo-$size.png" "$DEST/hyggshi-logo.png"
+    done
+    if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
+      sudo mkdir -p "$CHROOT/usr/share/icons/hicolor/scalable/apps"
+      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/distributor-logo.svg"
+      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/distributor-logo-debian.svg"
+      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/debian-logo.svg"
+      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/hyggshi-logo.svg"
+    fi
+
+    # 2. GHI ĐÈ VÀO CÁC ICON THEME ĐÃ CÀI (Papirus, Adwaita, Tela...)
+    # GNOME/GTK luôn tìm trong icon theme active (như Papirus) TRƯỚC khi fallback về hicolor.
+    # Nếu không ghi đè vào theme active, GNOME Settings (gnome-control-center) sẽ lấy
+    # distributor-logo.svg có sẵn trong Papirus (vốn là logo xoáy đỏ Debian).
+    for theme_dir in "$CHROOT/usr/share/icons"/*; do
+      [ -d "$theme_dir" ] || continue
+      theme_name="$(basename "$theme_dir")"
+      [ "$theme_name" = "hicolor" ] && continue
+      [ "$theme_name" = "default" ] && continue
+      [ "$theme_name" = "locolor" ] && continue
+
+      # Tìm và ghi đè mọi icon distributor-logo* và debian-logo* có trong theme
+      find "$theme_dir" \( -name "distributor-logo*" -o -name "debian-logo*" \) 2>/dev/null | while read -r match_file; do
+        match_dir="$(dirname "$match_file")"
+        ext="${match_file##*.}"
+        if [ "$ext" = "svg" ]; then
+          if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
+            sudo cp -f "$LOGO_SVG_FILE" "$match_file"
+          else
+            sudo cp -f "/tmp/logo-256.png" "${match_file%.*}.png"
+            sudo rm -f "$match_file"
+          fi
+        else
+          # Lấy kích thước tương ứng nếu thư mục có dạng 64x64/apps
+          dir_size=$(echo "$match_dir" | grep -oE '[0-9]+x[0-9]+' | cut -d'x' -f1 || true)
+          if [ -n "$dir_size" ] && [ -f "/tmp/logo-$dir_size.png" ]; then
+            sudo cp -f "/tmp/logo-$dir_size.png" "$match_file"
+          else
+            sudo cp -f "/tmp/logo-256.png" "$match_file"
+          fi
+        fi
+      done
+
+      # Đảm bảo các thư mục apps/places phổ biến của theme luôn có distributor-logo
+      for sub in "scalable/apps" "scalable/places" "64x64/apps" "48x48/apps" "32x32/apps"; do
+        if [ -d "$theme_dir/$sub" ]; then
+          for icon_name in distributor-logo distributor-logo-debian debian-logo; do
+            if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
+              sudo cp -f "$LOGO_SVG_FILE" "$theme_dir/$sub/${icon_name}.svg"
+            fi
+            if [ -f "/tmp/logo-64.png" ]; then
+              sudo cp -f "/tmp/logo-64.png" "$theme_dir/$sub/${icon_name}.png"
+            fi
+          done
+        fi
+      done
+      sudo chroot "$CHROOT" gtk-update-icon-cache -f -q "/usr/share/icons/$theme_name" 2>/dev/null || true
+    done
+
+    # 3. Ghi đè vào /usr/share/pixmaps (nơi GNOME System Monitor, Hardinfo, Settings fallback tìm)
+    sudo mkdir -p "$CHROOT/usr/share/pixmaps"
+    sudo cp -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/distributor-logo.png"
+    sudo cp -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/debian-logo.png"
+    sudo cp -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/hyggshi-logo.png"
+    if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
+      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/pixmaps/distributor-logo.svg"
+      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/pixmaps/debian-logo.svg"
+    fi
+
+    # 4. Ghi đè thư mục debian-logos do gói desktop-base của Debian cung cấp (nếu có)
+    DEBIAN_LOGOS_DIR="$CHROOT/usr/share/desktop-base/debian-logos"
+    if [ -d "$DEBIAN_LOGOS_DIR" ]; then
+      for size in 64 128 256 512; do
+        [ -f "/tmp/logo-$size.png" ] || continue
+        sudo cp -f "/tmp/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-$size.png" 2>/dev/null || true
+        sudo cp -f "/tmp/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-text-version-$size.png" 2>/dev/null || true
+      done
+      echo "Đã ghi đè logo Hyggshi vào $DEBIAN_LOGOS_DIR"
+    fi
+
+    sudo chroot "$CHROOT" gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+    echo "Đã áp logo custom vào hicolor, active icon themes, pixmaps và desktop-base: $LOGO_FILE"
   fi
 else
   echo "⚠️  Không thấy file logo trong iso-config/branding/ — vẫn giữ logo mặc định của distro gốc."
