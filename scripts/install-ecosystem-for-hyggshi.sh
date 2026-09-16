@@ -206,15 +206,47 @@ if [ "${#DEB_FILES[@]}" -eq 0 ]; then
 else
   echo "===== Cài đặt ${#DEB_FILES[@]} gói .deb ====="
   $SUDO apt-get update -qq || true
+
+  # Tạo wrapper tạm thời cho unshare để tránh thông báo "unshare: unshare failed: Operation not permitted"
+  # trong môi trường chroot/docker/container khi script postinst của deb (vd nexcode-ide) kiểm tra user namespaces.
+  NEED_UNSHARE_WRAPPER=0
+  if [ -x /usr/bin/unshare ] && [ ! -f /usr/local/bin/unshare ]; then
+    cat <<'EOF' | $SUDO tee /usr/local/bin/unshare >/dev/null
+#!/bin/sh
+/usr/bin/unshare "$@" 2>/dev/null
+EOF
+    $SUDO chmod 755 /usr/local/bin/unshare
+    NEED_UNSHARE_WRAPPER=1
+  fi
+
   for DEB in "${DEB_FILES[@]}"; do
     echo "📥 Cài đặt: $(basename "$DEB")"
+    IS_NEXCODE=0
+    if [[ "$(basename "$DEB")" =~ ^nexcode-ide ]]; then
+      IS_NEXCODE=1
+      # nexcode-ide postinst cố gọi `chmod 4755 '/opt/NexCode IDE/chrome-sandbox'`,
+      # nhưng binary chrome-sandbox không có trong gói .deb. Tạo file tạm để postinst không báo lỗi.
+      $SUDO mkdir -p "/opt/NexCode IDE"
+      [ ! -e "/opt/NexCode IDE/chrome-sandbox" ] && $SUDO touch "/opt/NexCode IDE/chrome-sandbox"
+    fi
+
     if ! $SUDO apt-get install -y "$DEB"; then
       echo "   apt-get install thất bại, thử dpkg -i ..."
       $SUDO dpkg -i "$DEB" || true
       echo "   Sửa dependency còn thiếu (apt-get install -f) ..."
       $SUDO apt-get install -f -y
     fi
+
+    if [ "$IS_NEXCODE" -eq 1 ]; then
+      if [ -f "/opt/NexCode IDE/chrome-sandbox" ] && [ ! -s "/opt/NexCode IDE/chrome-sandbox" ]; then
+        $SUDO rm -f "/opt/NexCode IDE/chrome-sandbox"
+      fi
+    fi
   done
+
+  if [ "$NEED_UNSHARE_WRAPPER" -eq 1 ]; then
+    $SUDO rm -f /usr/local/bin/unshare
+  fi
 fi
 
 # ----- 5. Cấu hình logo + module cho nexfetch -----
