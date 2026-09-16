@@ -382,23 +382,22 @@ if [ -n "$LOGO_FILE" ]; then
     for size in 16 22 24 32 48 64 128 192 256; do
       DEST="$CHROOT/usr/share/icons/hicolor/${size}x${size}/apps"
       sudo mkdir -p "$DEST"
-      sudo cp -f "/tmp/logo-$size.png" "$DEST/distributor-logo.png"
-      sudo cp -f "/tmp/logo-$size.png" "$DEST/distributor-logo-debian.png"
-      sudo cp -f "/tmp/logo-$size.png" "$DEST/debian-logo.png"
-      sudo cp -f "/tmp/logo-$size.png" "$DEST/hyggshi-logo.png"
+      for name in distributor-logo distributor-logo-debian debian-logo hyggshi-logo; do
+        sudo rm -f "$DEST/${name}.png" 2>/dev/null || true
+        sudo cp --remove-destination -f "/tmp/logo-$size.png" "$DEST/${name}.png" 2>/dev/null || true
+      done
     done
     if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
       sudo mkdir -p "$CHROOT/usr/share/icons/hicolor/scalable/apps"
-      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/distributor-logo.svg"
-      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/distributor-logo-debian.svg"
-      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/debian-logo.svg"
-      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/hyggshi-logo.svg"
+      for name in distributor-logo distributor-logo-debian debian-logo hyggshi-logo; do
+        sudo rm -f "$CHROOT/usr/share/icons/hicolor/scalable/apps/${name}.svg" 2>/dev/null || true
+        sudo cp --remove-destination -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/icons/hicolor/scalable/apps/${name}.svg" 2>/dev/null || true
+      done
     fi
 
     # 2. GHI ĐÈ VÀO CÁC ICON THEME ĐÃ CÀI (Papirus, Adwaita, Tela...)
     # GNOME/GTK luôn tìm trong icon theme active (như Papirus) TRƯỚC khi fallback về hicolor.
-    # Nếu không ghi đè vào theme active, GNOME Settings (gnome-control-center) sẽ lấy
-    # distributor-logo.svg có sẵn trong Papirus (vốn là logo xoáy đỏ Debian).
+    # Dùng rm -f và --remove-destination để không bao giờ bị lỗi "dangling symlink".
     for theme_dir in "$CHROOT/usr/share/icons"/*; do
       [ -d "$theme_dir" ] || continue
       theme_name="$(basename "$theme_dir")"
@@ -410,20 +409,19 @@ if [ -n "$LOGO_FILE" ]; then
       find "$theme_dir" \( -name "distributor-logo*" -o -name "debian-logo*" \) 2>/dev/null | while read -r match_file; do
         match_dir="$(dirname "$match_file")"
         ext="${match_file##*.}"
+        sudo rm -f "$match_file" 2>/dev/null || true
         if [ "$ext" = "svg" ]; then
           if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
-            sudo cp -f "$LOGO_SVG_FILE" "$match_file"
+            sudo cp --remove-destination -f "$LOGO_SVG_FILE" "$match_file" 2>/dev/null || true
           else
-            sudo cp -f "/tmp/logo-256.png" "${match_file%.*}.png"
-            sudo rm -f "$match_file"
+            sudo cp --remove-destination -f "/tmp/logo-256.png" "${match_file%.*}.png" 2>/dev/null || true
           fi
         else
-          # Lấy kích thước tương ứng nếu thư mục có dạng 64x64/apps
           dir_size=$(echo "$match_dir" | grep -oE '[0-9]+x[0-9]+' | cut -d'x' -f1 || true)
           if [ -n "$dir_size" ] && [ -f "/tmp/logo-$dir_size.png" ]; then
-            sudo cp -f "/tmp/logo-$dir_size.png" "$match_file"
+            sudo cp --remove-destination -f "/tmp/logo-$dir_size.png" "$match_file" 2>/dev/null || true
           else
-            sudo cp -f "/tmp/logo-256.png" "$match_file"
+            sudo cp --remove-destination -f "/tmp/logo-256.png" "$match_file" 2>/dev/null || true
           fi
         fi
       done
@@ -433,10 +431,12 @@ if [ -n "$LOGO_FILE" ]; then
         if [ -d "$theme_dir/$sub" ]; then
           for icon_name in distributor-logo distributor-logo-debian debian-logo; do
             if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
-              sudo cp -f "$LOGO_SVG_FILE" "$theme_dir/$sub/${icon_name}.svg"
+              sudo rm -f "$theme_dir/$sub/${icon_name}.svg" 2>/dev/null || true
+              sudo cp --remove-destination -f "$LOGO_SVG_FILE" "$theme_dir/$sub/${icon_name}.svg" 2>/dev/null || true
             fi
             if [ -f "/tmp/logo-64.png" ]; then
-              sudo cp -f "/tmp/logo-64.png" "$theme_dir/$sub/${icon_name}.png"
+              sudo rm -f "$theme_dir/$sub/${icon_name}.png" 2>/dev/null || true
+              sudo cp --remove-destination -f "/tmp/logo-64.png" "$theme_dir/$sub/${icon_name}.png" 2>/dev/null || true
             fi
           done
         fi
@@ -446,21 +446,22 @@ if [ -n "$LOGO_FILE" ]; then
 
     # 3. Ghi đè vào /usr/share/pixmaps (nơi GNOME System Monitor, Hardinfo, Settings fallback tìm)
     sudo mkdir -p "$CHROOT/usr/share/pixmaps"
-    sudo cp -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/distributor-logo.png"
-    sudo cp -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/debian-logo.png"
-    sudo cp -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/hyggshi-logo.png"
-    if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
-      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/pixmaps/distributor-logo.svg"
-      sudo cp -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/pixmaps/debian-logo.svg"
-    fi
+    for p_name in distributor-logo debian-logo hyggshi-logo; do
+      sudo rm -f "$CHROOT/usr/share/pixmaps/${p_name}.png" "$CHROOT/usr/share/pixmaps/${p_name}.svg" 2>/dev/null || true
+      sudo cp --remove-destination -f "/tmp/logo-256.png" "$CHROOT/usr/share/pixmaps/${p_name}.png" 2>/dev/null || true
+      if [ -n "$LOGO_SVG_FILE" ] && [ -f "$LOGO_SVG_FILE" ]; then
+        sudo cp --remove-destination -f "$LOGO_SVG_FILE" "$CHROOT/usr/share/pixmaps/${p_name}.svg" 2>/dev/null || true
+      fi
+    done
 
     # 4. Ghi đè thư mục debian-logos do gói desktop-base của Debian cung cấp (nếu có)
     DEBIAN_LOGOS_DIR="$CHROOT/usr/share/desktop-base/debian-logos"
     if [ -d "$DEBIAN_LOGOS_DIR" ]; then
       for size in 64 128 256 512; do
         [ -f "/tmp/logo-$size.png" ] || continue
-        sudo cp -f "/tmp/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-$size.png" 2>/dev/null || true
-        sudo cp -f "/tmp/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-text-version-$size.png" 2>/dev/null || true
+        sudo rm -f "$DEBIAN_LOGOS_DIR/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-text-version-$size.png" 2>/dev/null || true
+        sudo cp --remove-destination -f "/tmp/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-$size.png" 2>/dev/null || true
+        sudo cp --remove-destination -f "/tmp/logo-$size.png" "$DEBIAN_LOGOS_DIR/logo-text-version-$size.png" 2>/dev/null || true
       done
       echo "Đã ghi đè logo Hyggshi vào $DEBIAN_LOGOS_DIR"
     fi
