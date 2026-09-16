@@ -90,10 +90,19 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # KHÔNG có path nào để check tồn tại (khác fileinstall/filecustom/filetheme)
 # -> không thêm vào nhánh check-tồn-tại trong resolve_function(), giống lý
 # do flathubinstall/apply/installkernel không check tồn tại ở trên.
+#
+# PATCH 9: thêm copy — dùng trong khối "Remove package and image" của
+# config.ini, cụ thể `image-background = copy(source=... rename=...
+# target=...)`. Khác filecopy(source=,target=) (PATCH 7 ở resolve_
+# file_copies): copy() có thêm kwarg "rename" — đổi tên file lúc copy sang
+# đích thay vì giữ nguyên basename của source. Đăng ký ở đây cùng lý do
+# mọi function mới trước đó: chưa có trong FUNCTION_NAMES -> classify()
+# ném HclError "không nằm trong FUNCTION set hợp lệ", validate_every_
+# entry() fail cứng dù cú pháp trong config.ini không sai gì.
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
     "command", "make", "call", "installkernel", "apply", "flathubinstall",
-    "appremove", "fileremove",
+    "appremove", "fileremove", "copy",
 }
 
 SIZE_RE = re.compile(
@@ -556,6 +565,40 @@ class Resolver:
                     "error",
                     "filecopy(source=..., ...) thiếu 'target' — bắt buộc để "
                     "biết copy nguồn vào đâu trên rootfs."))
+        if name == "copy":
+            # PATCH 9: copy(source=..., rename=..., target=...) — dùng trong
+            # khối "Remove package and image" (vd `image-background =
+            # copy(source="./iso-config/branding/desktop-grub.svg"
+            # rename="xfce-x.svg" target="/usr/share/backgrounds/xfce/")`).
+            # Giống filecopy(source=,target=) ở trên: source là path NGUỒN
+            # trong repo (phải tồn tại lúc build) -> check tồn tại; target
+            # là thư mục ĐÍCH trên rootfs (sinh ra sau lúc build) -> không
+            # check tồn tại, cùng lý do target của filecopy()/apply() không
+            # check. Khác filecopy(): có thêm "rename" (tên file mới lúc
+            # copy sang đích, thay vì giữ nguyên basename của source) —
+            # không bắt buộc; nếu bỏ trống thì basename gốc của source được
+            # dùng làm tên tại đích. "resolved_target" ghép sẵn target +
+            # tên file cuối cùng (rename nếu có, không thì basename(source))
+            # để nơi gọi (resolve_file_copies/to_env_lines) không phải tự
+            # ghép path lần nữa.
+            src = str(kwargs.get("source", ""))
+            full = os.path.normpath(os.path.join(self.root, src))
+            if not os.path.exists(full):
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"copy(source={src}) — file/thư mục nguồn không tồn tại: {full}"))
+            result["exists"] = os.path.exists(full)
+            target = kwargs.get("target")
+            if not target:
+                self.diags.append(Diagnostic(
+                    "error",
+                    "copy(source=..., ...) thiếu 'target' — bắt buộc để biết "
+                    "copy nguồn vào đâu trên rootfs."))
+            rename = kwargs.get("rename")
+            final_name = rename if rename else os.path.basename(src)
+            result["resolved_target"] = (
+                os.path.join(str(target), final_name) if target else None
+            )
         if name in ("appremove", "fileremove"):
             # appremove(run=...) / fileremove(run=...) — "run" là lệnh shell
             # sẽ thực thi lúc build (gỡ package hoặc xoá file/thư mục), không
@@ -808,12 +851,23 @@ class Resolver:
         positional-arg (chỉ có target trên rootfs, xem nhánh "arg" trong
         resolve_function) là ngữ nghĩa khác (đích cho filetheme() ghép
         riêng), không thuộc nhóm copy-nguồn-vào-đích này.
+
+        PATCH 9: gom thêm cả copy(source=..., rename=..., target=...) —
+        cùng nhóm ngữ nghĩa "copy nguồn trong repo vào đích trên rootfs"
+        với filecopy(source=,target=), chỉ khác copy() có thêm "rename".
+        Gom chung vào đây (thay vì thêm 1 hàm resolve_copies() riêng) để
+        to_env_lines() không phải nhớ thêm 1 danh sách nữa — mọi nơi gọi
+        resolve_file_copies() lấy được cả filecopy() lẫn copy() theo đúng
+        thứ tự khai báo trong file. "rename" giữ None nếu entry là
+        filecopy() (không có rename) để phân biệt với copy() không đặt
+        rename (basename gốc của source) — cả 2 trường hợp "resolved_target"
+        đều đã tính sẵn ở resolve_function().
         """
         out = []
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
                 pv = classify(key, raw)
-                if pv.type != "FUNCTION" or pv.value.get("name") != "filecopy":
+                if pv.type != "FUNCTION" or pv.value.get("name") not in ("filecopy", "copy"):
                     continue
                 fn = pv.value
                 if "kwargs" not in fn or "source" not in fn["kwargs"]:
@@ -822,8 +876,11 @@ class Resolver:
                 out.append({
                     "section": sec_name,
                     "key": key,
+                    "type": fn["name"],
                     "source": resolved.get("source"),
+                    "rename": resolved.get("rename"),
                     "target": resolved.get("target"),
+                    "resolved_target": resolved.get("resolved_target"),
                 })
         return out
 
@@ -1072,12 +1129,21 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     # coi như không tồn tại với build thật. Export theo số thứ tự (giống
     # CUSTOM_{idx}/APT_REPO_{idx}) để desktop.sh lặp qua mà không cần biết
     # trước có bao nhiêu entry hay tên key gì.
+    #
+    # PATCH 9: thêm FILECOPY_{idx}_TYPE (filecopy/copy) và
+    # FILECOPY_{idx}_RESOLVED_TARGET (target đã ghép sẵn tên file cuối
+    # cùng — basename(source) với filecopy(), hoặc rename với copy() nếu
+    # có khai) để desktop.sh không phải tự tính lại basename/rename bằng
+    # shell — chỉ cần `cp "$SOURCE" "$RESOLVED_TARGET"` là đủ cho cả 2 loại.
     file_copies = resolved.get("file_copies", [])
     put("FILECOPY_COUNT", len(file_copies))
     for idx, fc in enumerate(file_copies, start=1):
         put(f"FILECOPY_{idx}_KEY", fc.get("key"))
+        put(f"FILECOPY_{idx}_TYPE", fc.get("type"))
         put(f"FILECOPY_{idx}_SOURCE", fc.get("source"))
+        put(f"FILECOPY_{idx}_RENAME", fc.get("rename"))
         put(f"FILECOPY_{idx}_TARGET", fc.get("target"))
+        put(f"FILECOPY_{idx}_RESOLVED_TARGET", fc.get("resolved_target"))
 
     put("KERNEL_INSTALL_ENABLED", str(kernel_install is not None).lower())
     if kernel_install is not None:
