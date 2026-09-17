@@ -1915,7 +1915,11 @@ if [ "$BASE_DISTRO" = "debian" ]; then
   done
 fi
 
-apt-get clean
+if mountpoint -q /var/cache/apt/archives; then
+  echo "APT cache được bind-mount từ host — giữ nguyên kho .deb để tái sử dụng ở các lần build sau."
+else
+  apt-get clean
+fi
 rm -rf /var/lib/apt/lists/*
 
 echo "===== Dọn thêm để giảm kích thước ISO (doc/man sót từ base debootstrap, cache, log) ====="

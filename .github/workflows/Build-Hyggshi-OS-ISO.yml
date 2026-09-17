@@ -318,12 +318,42 @@ jobs:
         with:
           platforms: arm64
 
+      # === 0.9) CACHE: lưu và phục hồi base debootstrap & kho gói .deb ===
+      - name: Cache debootstrap base rootfs
+        uses: actions/cache@v4
+        with:
+          path: /tmp/debootstrap-cache
+          key: debootstrap-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}
+
+      - name: Cache APT packages (.deb)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/apt-deb-cache
+          key: apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}-${{ hashFiles('scripts/desktop.sh', 'iso-config/config/config.ini') }}
+          restore-keys: |
+            apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}-
+            apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-
+            apt-debs-${{ env.BASE_DISTRO }}-
+
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
       # build.sh chỉ là dispatcher: nó source đúng scripts/distros/build-<distro>.sh
       # bên trong (xem log con "Bootstrap rootfs riêng cho: ..."); tên step ở
       # đây ghi rõ distro để không cần mở log ra mới biết file nào đã chạy.
       - name: "[build.sh -> scripts/distros/build-${{ github.event.inputs.distro || 'debian' }}.sh] Chuẩn bị base rootfs"
         run: bash scripts/build.sh
+
+      # === 1.1) MOUNT APT CACHE vào chroot để desktop.sh dùng lại .deb cũ ===
+      - name: Mount APT cache vào chroot & cấu hình giữ package .deb
+        run: |
+          sudo mkdir -p /tmp/apt-deb-cache
+          sudo chmod 777 /tmp/apt-deb-cache
+          sudo mkdir -p "${CHROOT_DIR}/var/cache/apt/archives/partial"
+          sudo chmod 777 "${CHROOT_DIR}/var/cache/apt/archives/partial"
+          sudo mount --bind /tmp/apt-deb-cache "${CHROOT_DIR}/var/cache/apt/archives"
+          # Đảm bảo APT không tự động dọn sạch file .deb sau khi install
+          sudo rm -f "${CHROOT_DIR}/etc/apt/apt.conf.d/docker-clean" 2>/dev/null || true
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee "${CHROOT_DIR}/etc/apt/apt.conf.d/01keep-debs" > /dev/null
+          echo 'APT::Keep-Downloaded-Packages "true";' | sudo tee -a "${CHROOT_DIR}/etc/apt/apt.conf.d/01keep-debs" > /dev/null
 
       # === 2) Copy scripts vào chroot (tách riêng khỏi bước chạy chroot bên
       # dưới, và dùng THỐNG NHẤT $CHROOT_DIR cho mọi lệnh copy — trước đây

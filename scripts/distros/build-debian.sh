@@ -35,9 +35,22 @@ echo "Sẽ build trên: $DISTRO_LABEL"
   echo "ARCH=$ARCH"
 } >> "$GITHUB_ENV"
 
-echo "===== Debootstrap Debian ${BASE_CODENAME} (arch=$ARCH) ====="
-sudo debootstrap --arch="$(hyggshi_debootstrap_arch "$ARCH")" --variant=minbase \
-  "$BASE_CODENAME" live-build/chroot "$MIRROR"
+DEBOOTSTRAP_CACHE_DIR="/tmp/debootstrap-cache"
+DEBOOTSTRAP_TARBALL="${DEBOOTSTRAP_CACHE_DIR}/debootstrap-debian-${BASE_CODENAME}-${ARCH}.tar.zst"
+
+if [ -f "$DEBOOTSTRAP_TARBALL" ]; then
+  echo "===== Phục hồi base rootfs Debian từ cache: $DEBOOTSTRAP_TARBALL ====="
+  sudo mkdir -p live-build/chroot
+  sudo tar --zstd -xf "$DEBOOTSTRAP_TARBALL" -C live-build/chroot
+else
+  echo "===== Debootstrap Debian ${BASE_CODENAME} (arch=$ARCH) ====="
+  sudo debootstrap --arch="$(hyggshi_debootstrap_arch "$ARCH")" --variant=minbase \
+    "$BASE_CODENAME" live-build/chroot "$MIRROR"
+  if [ -d "$DEBOOTSTRAP_CACHE_DIR" ]; then
+    echo "===== Lưu base rootfs Debian vào cache: $DEBOOTSTRAP_TARBALL ====="
+    sudo tar --zstd -cf "$DEBOOTSTRAP_TARBALL" -C live-build/chroot .
+  fi
+fi
 
 echo "===== Mount virtual filesystems for chroot ====="
 sudo mount --bind /dev live-build/chroot/dev
