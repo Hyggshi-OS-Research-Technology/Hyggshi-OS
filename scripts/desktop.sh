@@ -1058,6 +1058,36 @@ if command -v flatpak >/dev/null 2>&1; then
   flatpak remotes --system || true
   # Dọn cache cũ có thể được tạo bởi các lần build lại cùng chroot.
   flatpak repair --system || true
+
+  # Cài đặt các ứng dụng Flathub theo config.ini (vd [Call-gnome-apps] khi dùng GNOME)
+  FLATHUB_APP_LIST=()
+  if [ -n "$FLATHUB_APPS" ]; then
+    read -r -a FLATHUB_APP_LIST <<< "$FLATHUB_APPS"
+  elif [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
+    while IFS= read -r app_id; do
+      [ -n "$app_id" ] && FLATHUB_APP_LIST+=("$app_id")
+    done < <(python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+    for app in d.get('flathub_apps', []):
+        print(app)
+except Exception:
+    pass
+" 2>/dev/null)
+  fi
+
+  if [ ${#FLATHUB_APP_LIST[@]} -gt 0 ]; then
+    echo "===== Cài đặt ứng dụng Flatpak/Flathub (${#FLATHUB_APP_LIST[@]} apps) ====="
+    for app in "${FLATHUB_APP_LIST[@]}"; do
+      echo "Đang cài đặt Flatpak app: $app..."
+      if ! flatpak install -y --system --noninteractive flathub "$app"; then
+        echo "CẢNH BÁO: Không thể cài Flatpak app '$app' — bỏ qua." >&2
+      else
+        echo "OK: Đã cài Flatpak app '$app'."
+      fi
+    done
+  fi
 fi
 
 # GNOME Software cache/database có thể được tạo trước khi Flathub được thêm.

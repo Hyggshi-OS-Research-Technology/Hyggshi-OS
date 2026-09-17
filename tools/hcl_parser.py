@@ -696,6 +696,11 @@ class Resolver:
 
         out["swap"] = self.resolve_value("swap", kv["swap"])
         out["config"] = self.resolve_value("config", kv["config"])
+        gnome_apps_raw = kv.get("gnome-apps")
+        if gnome_apps_raw is not None:
+            out["gnome_apps"] = classify("gnome-apps", gnome_apps_raw).value
+        else:
+            out["gnome_apps"] = None
 
         name_tpl = classify("name", kv["name"]).value
         name = name_tpl
@@ -800,17 +805,25 @@ class Resolver:
                     })
         return out
 
-    def resolve_flathub_apps(self) -> list:
+    def resolve_flathub_apps(self, active_de: str | None = None) -> list:
         """
-        PATCH 5: gom hết các lời gọi flathubinstall(<app-id>) — hiện chỉ có
-        trong [Call-gnome-apps], nhưng quét toàn bộ section (không hardcode
-        tên section) để hỗ trợ thêm nhóm app Flathub khác sau này (vd
-        [Call-kde-apps]). Dedupe vì lỡ khai trùng app-id 2 lần thì chỉ cần
-        cài 1 lần.
+        PATCH 5: gom các lời gọi flathubinstall(<app-id>).
+        Nếu section là [Call-gnome-apps], chỉ kích hoạt khi desktop environment
+        đang active là GNOME (active_de == "gnome") và gnome-apps trong
+        [my-version-os-base] không bị tắt (không phải False).
         """
         seen = set()
         out = []
         for sec_name in self.order:
+            if sec_name.lower() == "call-gnome-apps":
+                is_gnome = (active_de or "").strip().lower() == "gnome"
+                gnome_apps_val = None
+                if "my-version-os-base" in self.sections:
+                    kv = self._kv("my-version-os-base")
+                    if "gnome-apps" in kv:
+                        gnome_apps_val = classify("gnome-apps", kv["gnome-apps"]).value
+                if not is_gnome or gnome_apps_val is False:
+                    continue
             for key, raw, _group in self._entries(sec_name):
                 pv = classify(key, raw)
                 if pv.type == "FUNCTION" and pv.value.get("name") == "flathubinstall":
@@ -914,13 +927,17 @@ class Resolver:
                     self.diags.append(Diagnostic(
                         "error", f"[{sec_name}] {key} = {raw!r} — {e}"))
 
-    def resolve_all(self) -> dict:
+    def resolve_all(self, de_override: str | None = None) -> dict:
         result = {}
         result["base_profile"] = self.resolve_my_version_os_base()
+        bp = result["base_profile"]
+        kp = bp.get("kernel_profile") or {}
+        active_de = (de_override or kp.get("desktop") or "").strip().lower()
+
         result["package_groups"] = self.resolve_package_groups()
         result["apt_repository"] = self.resolve_apt_repository()
         result["desktop_apply"] = self.resolve_desktop_apply()
-        result["flathub_apps"] = self.resolve_flathub_apps()
+        result["flathub_apps"] = self.resolve_flathub_apps(active_de=active_de)
         result["removals"] = self.resolve_removals()
         result["file_copies"] = self.resolve_file_copies()
         if "customization" in self.sections:
@@ -1104,7 +1121,19 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     install_flathub = any(g.get("install-flathub") is True for g in pkg_groups.values())
     put("FLATPAK_ENABLED", str(install_flatpak).lower())
     put("FLATHUB_ENABLED", str(install_flathub).lower())
-    put("FLATHUB_APPS", " ".join(resolved.get("flathub_apps", [])))
+
+    gnome_apps_call = bp.get("gnome_apps")
+    is_gnome_active = (de == "gnome")
+    gnome_apps_enabled = is_gnome_active and (gnome_apps_call is not False and gnome_apps_call is not None)
+    put("GNOME_APPS_ENABLED", str(gnome_apps_enabled).lower())
+
+    flathub_apps = resolved.get("flathub_apps", [])
+    if de != "gnome":
+        flathub_apps = [
+            app for app in flathub_apps
+            if not app.startswith("org.gnome.") and app != "com.mattjakeman.ExtensionManager"
+        ]
+    put("FLATHUB_APPS", " ".join(flathub_apps))
 
     # PATCH 6: export danh sách lệnh appremove()/fileremove() (gom ở
     # resolve_removals()) — trước đây các entry này chỉ bị validate (kwarg
@@ -1278,7 +1307,7 @@ def main():
     resolver.validate_every_entry()
 
     try:
-        resolved = resolver.resolve_all()
+        resolved = resolver.resolve_all(de_override=args.de_override)
     except HclError as e:
         print(f"::error::[HCL resolve] {e}", file=sys.stderr)
         sys.exit(1)

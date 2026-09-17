@@ -109,6 +109,7 @@ sudo chroot live-build/chroot env \
   INCLUDE_BROWSER="$INCLUDE_BROWSER" INCLUDE_OFFICE="$INCLUDE_OFFICE" \
   HCL_SWAP_MODE="${HCL_SWAP_MODE:-}" HCL_SWAP_MB="${HCL_SWAP_MB:-0}" \
   SWAP_MODE="${SWAP_MODE:-}" SWAP_MB="${SWAP_MB:-0}" \
+  FLATHUB_APPS="${HCL_FLATHUB_APPS:-}" \
   EXTRA_PACKAGES="$EXTRA_PACKAGES ${HCL_PACKAGES:-}" /tmp/desktop.sh
 
 # ===== ECOSYSTEM: cài nexfetch, nexcode, nexwm... =====

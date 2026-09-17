@@ -418,6 +418,7 @@ jobs:
             SWAP_MB="${SWAP_MB:-0}" \
             AUTOLOGIN="$AUTOLOGIN" \
             AUTOSCALE_DISPLAY="$AUTOSCALE_DISPLAY" \
+            FLATHUB_APPS="${HCL_FLATHUB_APPS:-}" \
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
       # === 3.1) CINNAMON: sửa Dark/Light + Cinnamon Spices ===
