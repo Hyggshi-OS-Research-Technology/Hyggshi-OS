@@ -66,6 +66,41 @@ sudo cp -a iso-config/calamares live-build/chroot/tmp/calamares
 # Stage installer branding so desktop.sh can rebrand the Calamares launcher.
 sudo cp iso-config/branding/Hyggshi-OS-Installer.png live-build/chroot/tmp/Hyggshi-OS-Installer.png
 sudo chmod 0644 live-build/chroot/tmp/Hyggshi-OS-Installer.png
+# Stage HCL config và file_copies cho desktop.sh
+if [ -f "tools/hcl_parser.py" ] && [ -f "iso-config/config/config.ini" ]; then
+  python3 tools/hcl_parser.py iso-config/config/config.ini \
+    --root "$PWD" \
+    --de-override "$DE" \
+    --emit-json /tmp/hcl-resolved.json \
+    --emit-env "$GITHUB_ENV" \
+    --strict || true
+  sudo cp -f /tmp/hcl-resolved.json live-build/chroot/tmp/hcl-resolved.json 2>/dev/null || true
+  sudo rm -rf live-build/chroot/tmp/hcl-filecopy-src
+  sudo mkdir -p live-build/chroot/tmp/hcl-filecopy-src
+  if [ -f /tmp/hcl-resolved.json ]; then
+    python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+    for fc in d.get('file_copies', []):
+        src = fc.get('source')
+        if src:
+            print(src)
+except Exception:
+    pass
+" | while IFS= read -r src; do
+      rel="${src#./}"
+      dest="live-build/chroot/tmp/hcl-filecopy-src/${rel}"
+      if [ -d "$src" ]; then
+        sudo mkdir -p "$dest"
+        sudo cp -a "$src/." "$dest/"
+      else
+        sudo mkdir -p "$(dirname "$dest")"
+        sudo cp "$src" "$dest"
+      fi
+    done
+  fi
+fi
 sudo chmod +x live-build/chroot/tmp/desktop.sh
 sudo chroot live-build/chroot env \
   BASE_DISTRO="$BASE_DISTRO" DE="$DE" EDITION="$EDITION" DEBUG_MODE="$DEBUG_MODE" \

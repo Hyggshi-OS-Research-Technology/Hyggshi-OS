@@ -512,11 +512,15 @@ class Resolver:
             return result
         kwargs = fn["kwargs"]
         result = {"call": name, **kwargs}
-        if name == "command" and "file" in kwargs:
-            full = os.path.normpath(os.path.join(self.root, str(kwargs["file"])))
-            if not os.path.exists(full):
+        if name == "command":
+            if "file" in kwargs:
+                full = os.path.normpath(os.path.join(self.root, str(kwargs["file"])))
+                if not os.path.exists(full):
+                    self.diags.append(Diagnostic(
+                        "error", f"command(file={kwargs['file']}) — script không tồn tại: {full}"))
+            elif not kwargs.get("run"):
                 self.diags.append(Diagnostic(
-                    "error", f"command(file={kwargs['file']}) — script không tồn tại: {full}"))
+                    "error", "command(...) cần có 'file' hoặc 'run'."))
         if name == "installkernel":
             # installkernel(target=..., kernel-version=..., compilers=...)
             # "target" ở đây không phải path trong repo (khác fileinstall/
@@ -595,10 +599,24 @@ class Resolver:
                     "copy(source=..., ...) thiếu 'target' — bắt buộc để biết "
                     "copy nguồn vào đâu trên rootfs."))
             rename = kwargs.get("rename")
-            final_name = rename if rename else os.path.basename(src)
-            result["resolved_target"] = (
-                os.path.join(str(target), final_name) if target else None
-            )
+            is_dir = os.path.isdir(full) if os.path.exists(full) else False
+            result["is_dir"] = is_dir
+            if is_dir:
+                base_name = os.path.basename(src.rstrip("/"))
+                tgt_clean = str(target).rstrip("/") if target else ""
+                if rename:
+                    result["resolved_target"] = os.path.join(str(target), str(rename)) if target else None
+                elif tgt_clean.endswith("/" + base_name) or tgt_clean == base_name:
+                    result["resolved_target"] = tgt_clean
+                else:
+                    result["resolved_target"] = (
+                        os.path.join(str(target), base_name) if target else None
+                    )
+            else:
+                final_name = rename if rename else os.path.basename(src)
+                result["resolved_target"] = (
+                    os.path.join(str(target), final_name) if target else None
+                )
         if name in ("appremove", "fileremove"):
             # appremove(run=...) / fileremove(run=...) — "run" là lệnh shell
             # sẽ thực thi lúc build (gỡ package hoặc xoá file/thư mục), không
@@ -817,14 +835,16 @@ class Resolver:
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
                 pv = classify(key, raw)
-                if pv.type == "FUNCTION" and pv.value.get("name") in ("appremove", "fileremove"):
+                if pv.type == "FUNCTION" and pv.value.get("name") in ("appremove", "fileremove", "command"):
                     resolved = self.resolve_function(pv.value)
-                    out.append({
-                        "section": sec_name,
-                        "key": key,
-                        "type": pv.value.get("name"),
-                        "run": resolved.get("run", ""),
-                    })
+                    run_cmd = resolved.get("run")
+                    if run_cmd:
+                        out.append({
+                            "section": sec_name,
+                            "key": key,
+                            "type": pv.value.get("name"),
+                            "run": run_cmd,
+                        })
         return out
 
     def resolve_file_copies(self) -> list:
@@ -881,6 +901,7 @@ class Resolver:
                     "rename": resolved.get("rename"),
                     "target": resolved.get("target"),
                     "resolved_target": resolved.get("resolved_target"),
+                    "is_dir": resolved.get("is_dir", False),
                 })
         return out
 

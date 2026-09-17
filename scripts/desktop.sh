@@ -1309,7 +1309,11 @@ if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
     [ -z "$fc_tgt" ] && continue
     staged="/tmp/hcl-filecopy-src/${fc_src#./}"
     dest="/${fc_tgt#/}"
-    if [ -f "$staged" ]; then
+    if [ -d "$staged" ]; then
+      mkdir -p "$dest"
+      cp -a "$staged/." "$dest/"
+      echo "OK: [HCL filecopy dir] $fc_key: $fc_src -> $dest"
+    elif [ -f "$staged" ]; then
       mkdir -p "$(dirname "$dest")"
       cp -f "$staged" "$dest"
       echo "OK: [HCL filecopy] $fc_key: $fc_src -> $dest"
