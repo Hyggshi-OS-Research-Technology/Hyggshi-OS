@@ -75,6 +75,7 @@ Biến xuất ra `$GITHUB_ENV` bao gồm:
 - `HCL_APP_INSTALLS`: danh sách tất cả file và URL app khai báo qua `fileinstall(...)` (ví dụ `./app-for-hyggshi/nexfetch...` hoặc `https://.../app.deb`)
 - `HCL_PACKAGES`: danh sách tất cả các gói hệ thống được bật `= true` trong `[package]` (được tự động chuyển tiếp vào `EXTRA_PACKAGES` cho `desktop.sh`)
 - `HCL_WELCOME_SCRIPT`: script wizard chào mừng `command(file=...)`
+- `HCL_PLYMOUTH_SCRIPT`: script cấu hình Plymouth boot splash `command(file=...)`
 
 ## Step YAML để nối vào `.github/workflows/Build-Hyggshi-OS-ISO.yml`
 

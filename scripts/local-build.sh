@@ -114,4 +114,5 @@ else
 fi
 
 bash scripts/branding.sh
+bash scripts/plymouth.sh
 bash scripts/iso.sh

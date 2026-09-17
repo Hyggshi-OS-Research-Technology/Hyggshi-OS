@@ -641,6 +641,12 @@ jobs:
           set -o pipefail
           bash scripts/branding.sh 2>&1 | tee branding-debug.log
 
+      # === 6) PLYMOUTH: boot splash theme & initramfs ===
+      - name: "[plymouth.sh] Plymouth boot splash & initramfs"
+        run: |
+          set -o pipefail
+          bash scripts/plymouth.sh 2>&1 | tee plymouth-debug.log
+
       - name: Collect debug info (chỉ khi debug_mode = true)
         if: ${{ env.DEBUG_MODE == 'true' }}
         run: |
@@ -734,11 +740,12 @@ jobs:
             ecosystem-debug.log
             welcome-debug.log
             branding-debug.log
+            plymouth-debug.log
             debug-info.txt
           retention-days: 14
           if-no-files-found: ignore
 
-      # === 6) ISO: unmount, squashfs, grub, đóng gói ISO ===
+      # === 7) ISO: unmount, squashfs, grub, đóng gói ISO ===
       - name: "[iso.sh] Build squashfs + ISO bootable"
         run: |
           HCL_SQUASHFS_MAX_COMPRESSION="${HCL_SQUASHFS_MAX_COMPRESSION:-}" \
