@@ -437,26 +437,28 @@ done
   echo "  initrd /live/initrd"
   echo "}"
   echo ""
-  # Chỉ thêm mục Memory test nếu iso.sh thực sự tìm/chép được binary
-  # memtest86+ ở bước trên — tránh 1 mục GRUB trỏ tới file không tồn tại.
-  # LƯU Ý: linux16 dùng boot protocol 16-bit real-mode — CHỈ chạy được khi
-  # máy boot GRUB ở chế độ BIOS/legacy. Máy boot UEFI (kể cả Secure Boot đã
-  # vá ở trên) chọn mục này sẽ không vào được Memtest86+ (không có gì hỏng,
-  # chỉ đơn giản không chạy) — muốn hỗ trợ cả UEFI cần thêm biến thể .efi
-  # riêng (memtest86+x64.efi) qua chainloader, nằm ngoài phạm vi sửa lần này.
+  # Chỉ thêm mục Memory test và chainloader BIOS nếu boot ở chế độ BIOS (grub_platform = pc).
+  # Trên UEFI (đặc biệt là Secure Boot), linux16 và chainloader +1 không được hỗ trợ.
+  # Thay vào đó, UEFI cung cấp lệnh 'fwsetup' để vào thẳng cài đặt UEFI BIOS.
   if [ -f live-build/image/live/memtest86+.bin ]; then
-    echo "menuentry \"Memory test (Memtest86+)\" {"
-    echo "  linux16 /live/memtest86+.bin"
-    echo "}"
+    echo "if [ \"\${grub_platform}\" = \"pc\" ]; then"
+    echo "  menuentry \"Memory test (Memtest86+)\" {"
+    echo "    linux16 /live/memtest86+.bin"
+    echo "  }"
+    echo "fi"
     echo ""
   fi
-  # "Boot from first hard disk" — mục chuẩn trên live ISO Debian/Ubuntu để
-  # thoát sang ổ cứng đã cài (hữu ích khi máy để USB live cắm sẵn nhưng
-  # người dùng chỉ muốn boot bình thường vào hệ điều hành đã cài).
-  echo "menuentry \"Boot from first hard disk\" {"
-  echo "  set root=(hd0)"
-  echo "  chainloader +1"
-  echo "}"
+  echo "if [ \"\${grub_platform}\" = \"pc\" ]; then"
+  echo "  menuentry \"Boot from first hard disk\" {"
+  echo "    set root=(hd0)"
+  echo "    chainloader +1"
+  echo "  }"
+  echo "fi"
+  echo "if [ \"\${grub_platform}\" = \"efi\" ]; then"
+  echo "  menuentry \"UEFI Firmware Settings\" {"
+  echo "    fwsetup"
+  echo "  }"
+  echo "fi"
 } > live-build/image/boot/grub/grub.cfg
 
 # Tạo .disk/info theo chuẩn Debian/Ubuntu để GRUB và live-boot nhận diện chính xác
