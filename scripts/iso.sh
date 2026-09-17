@@ -167,7 +167,7 @@ fi
 echo "===== Cài đặt công cụ ISO / EFI trên host runner ====="
 sudo apt-get update -qq || true
 sudo apt-get install -y --no-install-recommends \
-  grub-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools xorriso \
+  grub-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools xorriso sbsigntool binutils \
   || echo "CẢNH BÁO: apt-get install công cụ EFI trên host gặp lỗi, tiếp tục thử..."
 
 SHIM_BIN=""
@@ -266,13 +266,46 @@ if [ -z "$SHIM_BIN" ] || [ -z "$GRUB_SIGNED_BIN" ]; then
   echo "CẢNH BÁO: không tìm thấy đầy đủ shim/grub ĐÃ KÝ." >&2
   echo "  shim: ${SHIM_BIN:-<không thấy>}" >&2
   echo "  grub: ${GRUB_SIGNED_BIN:-<không thấy>}" >&2
-  echo "-> Fallback: build ISO bằng grub-mkrescue (vẫn boot bình thường ở máy TẮT Secure Boot)." >&2
+  echo "-> Không đủ điều kiện phát hành ISO Secure Boot." >&2
 else
   SECURE_BOOT_OK=true
-  echo "OK: Đã tìm thấy shim-signed (Microsoft ký sẵn): $SHIM_BIN"
+  echo "OK: Đã tìm thấy shim-signed: $SHIM_BIN"
   echo "OK: Đã tìm thấy grub (signed): $GRUB_SIGNED_BIN"
   echo "OK: MokManager: ${MM_BIN:-<không có, bỏ qua>}"
   echo "OK: fbx64.efi (Fallback Manager) bị loại bỏ khỏi live ESP — tránh reboot loop."
+
+  echo "===== Kiểm tra Secure Boot signature thực sự (sbverify) ====="
+  if command -v sbverify >/dev/null 2>&1; then
+    if ! sbverify --list "$SHIM_BIN" >/dev/null 2>&1; then
+      echo "LỖI FATAL: shim ($SHIM_BIN) không có chữ ký Secure Boot hợp lệ." >&2
+      exit 1
+    fi
+    echo "OK: shim có signature hợp lệ:"
+    sbverify --list "$SHIM_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+
+    if ! sbverify --list "$GRUB_SIGNED_BIN" >/dev/null 2>&1; then
+      echo "LỖI FATAL: GRUB ($GRUB_SIGNED_BIN) không có chữ ký Secure Boot hợp lệ." >&2
+      exit 1
+    fi
+    echo "OK: GRUB có signature hợp lệ:"
+    sbverify --list "$GRUB_SIGNED_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+
+    if ! sbverify --list "$VMLINUZ_FILE" >/dev/null 2>&1; then
+      echo "LỖI FATAL: Linux kernel ($VMLINUZ_FILE) không có chữ ký Secure Boot hợp lệ." >&2
+      echo "Không phát hành ISO Secure Boot khi kernel chưa được ký." >&2
+      exit 1
+    fi
+    echo "OK: Linux kernel có signature hợp lệ:"
+    sbverify --list "$VMLINUZ_FILE" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+  else
+    echo "CẢNH BÁO: Không tìm thấy lệnh sbverify trên host." >&2
+  fi
+
+  echo "===== Kiểm tra embedded prefix của GRUB binary ====="
+  if command -v strings >/dev/null 2>&1; then
+    GRUB_PREFIX=$(strings "$GRUB_SIGNED_BIN" | grep -E '^/(boot/grub|EFI/debian|EFI/ubuntu)' | head -n1 || echo "")
+    echo "GRUB embedded prefix: ${GRUB_PREFIX:-<không thấy đường dẫn cứng, áp dụng redirect đa điểm>}"
+  fi
 fi
 
 mkdir -p live-build/image/boot/grub
@@ -536,10 +569,16 @@ XORRISO_ARGS+=(live-build/image)
 
 echo "Thực thi: xorriso -as mkisofs ${XORRISO_ARGS[*]}"
 if sudo xorriso -as mkisofs "${XORRISO_ARGS[@]}"; then
-  echo "OK: đã đóng gói thành công $ISO_FILENAME bằng xorriso (hỗ trợ Secure Boot chuẩn)."
+  echo "OK: Đã đóng gói thành công ISO Secure Boot: $ISO_FILENAME bằng xorriso."
 else
-  echo "CẢNH BÁO: xorriso trực tiếp thất bại -> fallback sang grub-mkrescue (chỉ boot máy tắt Secure Boot)..." >&2
-  sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image --compress=xz -- -volid "HYGGSHI_OS"
+  echo "LỖI FATAL: xorriso đóng gói thất bại." >&2
+  if [ "$SECURE_BOOT_OK" = "true" ]; then
+    echo "LỖI: Không fallback sang grub-mkrescue vì sẽ tự tạo GRUB unsigned và phá hỏng chuỗi Secure Boot." >&2
+    exit 1
+  else
+    echo "CẢNH BÁO: SECURE_BOOT_OK=false -> Thử fallback sang grub-mkrescue (chỉ boot máy tắt Secure Boot)..." >&2
+    sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image --compress=xz -- -volid "HYGGSHI_OS" || exit 1
+  fi
 fi
 
 ls -lh "$ISO_FILENAME"
