@@ -17,9 +17,22 @@ echo "Sẽ build trên: $DISTRO_LABEL"
   echo "DISTRO_LABEL=$DISTRO_LABEL"
 } >> "$GITHUB_ENV"
 
-echo "===== Debootstrap Ubuntu ${BASE_CODENAME} ====="
-sudo debootstrap --arch=amd64 --variant=minbase \
-  "$BASE_CODENAME" live-build/chroot "$MIRROR"
+DEBOOTSTRAP_CACHE_DIR="/tmp/debootstrap-cache"
+DEBOOTSTRAP_TARBALL="${DEBOOTSTRAP_CACHE_DIR}/debootstrap-ubuntu-${BASE_CODENAME}-amd64.tar.zst"
+
+if [ -f "$DEBOOTSTRAP_TARBALL" ]; then
+  echo "===== Phục hồi base rootfs Ubuntu từ cache: $DEBOOTSTRAP_TARBALL ====="
+  sudo mkdir -p live-build/chroot
+  sudo tar --zstd -xf "$DEBOOTSTRAP_TARBALL" -C live-build/chroot
+else
+  echo "===== Debootstrap Ubuntu ${BASE_CODENAME} ====="
+  sudo debootstrap --arch=amd64 --variant=minbase \
+    "$BASE_CODENAME" live-build/chroot "$MIRROR"
+  if [ -d "$DEBOOTSTRAP_CACHE_DIR" ]; then
+    echo "===== Lưu base rootfs Ubuntu vào cache: $DEBOOTSTRAP_TARBALL ====="
+    sudo tar --zstd -cf "$DEBOOTSTRAP_TARBALL" -C live-build/chroot .
+  fi
+fi
 
 echo "===== Mount virtual filesystems for chroot ====="
 sudo mount --bind /dev live-build/chroot/dev

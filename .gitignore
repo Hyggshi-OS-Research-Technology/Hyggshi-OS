@@ -4,3 +4,4 @@ build/*.iso
 *.iso
 *.squashfs
 log/
+*.zip

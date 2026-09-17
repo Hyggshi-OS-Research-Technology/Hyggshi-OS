@@ -31,6 +31,7 @@ sudo rm -rf live-build/chroot/var/tmp/* live-build/chroot/var/tmp/.* 2>/dev/null
 # Xoá cache apt và apt list index (Debian testing index tốn hàng trăm MB)
 sudo rm -rf live-build/chroot/var/cache/apt/archives/*.deb live-build/chroot/var/cache/apt/archives/partial/* 2>/dev/null || true
 sudo rm -rf live-build/chroot/var/lib/apt/lists/* 2>/dev/null || true
+sudo rm -f live-build/chroot/etc/apt/apt.conf.d/01keep-debs 2>/dev/null || true
 
 # Xoá cache user/root
 sudo rm -rf live-build/chroot/root/.cache/* live-build/chroot/home/*/.cache/* 2>/dev/null || true
