@@ -369,8 +369,13 @@ jobs:
           " | while IFS= read -r src; do
             rel="${src#./}"
             dest="${CHROOT_DIR}/tmp/hcl-filecopy-src/${rel}"
-            sudo mkdir -p "$(dirname "$dest")"
-            sudo cp "$src" "$dest"
+            if [ -d "$src" ]; then
+              sudo mkdir -p "$dest"
+              sudo cp -a "$src/." "$dest/"
+            else
+              sudo mkdir -p "$(dirname "$dest")"
+              sudo cp "$src" "$dest"
+            fi
           done
           # Stage Hyggshi-Light/Hyggshi-Dark theme sources (iso-config/theme)
           # vào chroot. TRƯỚC ĐÂY BỊ THIẾU: config.ini có filetheme(...)/
