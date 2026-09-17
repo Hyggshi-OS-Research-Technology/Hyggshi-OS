@@ -12,9 +12,8 @@
 #   - Chỉ Debian job (build-debian.sh + desktop.sh) đọc $ARCH. Ubuntu/Mint
 #     (build-ubuntu.sh/build-linuxmint.sh) và job container Arch/Fedora/
 #     Alpine chưa dùng file này, vẫn hardcode amd64.
-#   - iso.sh (UEFI Secure Boot signing) chỉ xử lý amd64 — arm64 build vẫn
-#     ra ISO boot được (grub-mkrescue fallback, giống hành vi trước khi có
-#     patch secure boot) nhưng KHÔNG có chain-of-trust đã ký.
+#   - iso.sh (UEFI Secure Boot) sử dụng shim-signed từ Debian (đã được Microsoft
+#     ký sẵn) và grub-signed, tạo chuỗi tin cậy chuẩn cho amd64 (và arm64).
 
 hyggshi_validate_arch() {
   case "${1:-amd64}" in
@@ -80,5 +79,62 @@ hyggshi_needs_qemu_binfmt() {
   case "$arch:$host_arch" in
     arm64:x86_64|arm64:amd64) echo "true" ;;
     *)                        echo "false" ;;
+  esac
+}
+
+# Gói UEFI Secure Boot (shim-signed đã được Microsoft ký sẵn + GRUB signed)
+# theo kiến trúc và distro.
+hyggshi_secureboot_packages() {
+  local arch="${1:-amd64}"
+  local distro="${2:-debian}"
+  case "$distro" in
+    debian)
+      case "$arch" in
+        arm64) printf '%s\n' shim-signed shim-helpers-arm64-signed grub-efi-arm64-signed ;;
+        *)     printf '%s\n' shim-signed shim-helpers-amd64-signed grub-efi-amd64-signed ;;
+      esac
+      ;;
+    ubuntu|linuxmint)
+      case "$arch" in
+        arm64) printf '%s\n' shim-signed grub-efi-arm64-signed ;;
+        *)     printf '%s\n' shim-signed grub-efi-amd64-signed ;;
+      esac
+      ;;
+  esac
+}
+
+# Tên file shim EFI mặc định theo kiến trúc (firmware nạp file này đầu tiên)
+hyggshi_shim_efi_name() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "BOOTAA64.EFI" ;;
+    *)     echo "BOOTX64.EFI" ;;
+  esac
+}
+
+# Tên file grub EFI mặc định theo kiến trúc
+hyggshi_grub_efi_name() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "grubaa64.efi" ;;
+    *)     echo "grubx64.efi" ;;
+  esac
+}
+
+# Tên file mokmanager EFI mặc định theo kiến trúc
+hyggshi_mm_efi_name() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "mmaa64.efi" ;;
+    *)     echo "mmx64.efi" ;;
+  esac
+}
+
+# Tên file fallback EFI mặc định theo kiến trúc
+hyggshi_fb_efi_name() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "fbaa64.efi" ;;
+    *)     echo "fbx64.efi" ;;
   esac
 }
