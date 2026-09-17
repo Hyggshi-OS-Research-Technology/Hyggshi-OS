@@ -111,6 +111,8 @@ echo "===== Cài GRUB + công cụ cho Calamares (partition/bootloader module) =
 echo "grub-pc grub-pc/install_devices_empty boolean true" | debconf-set-selections
 echo "grub-pc grub-pc/install_devices multiselect" | debconf-set-selections
 echo "grub-pc grub-pc/install_devices_disks_changed multiselect" | debconf-set-selections
+echo "grub-efi-amd64 grub2/force_efi_extra_removable boolean true" | debconf-set-selections
+echo "grub-efi-arm64 grub2/force_efi_extra_removable boolean true" | debconf-set-selections
 
 # apt-get install nhận NHIỀU gói trong 1 lệnh là MỘT giao dịch: nếu chỉ một
 # gói lỗi, CẢ LỆNH thất bại và KHÔNG gói nào được cài — kể cả các gói còn
@@ -137,6 +139,20 @@ if [ "$GRUB_INSTALL_FAILED" = "1" ]; then
   echo "thật nếu tiếp tục đóng ISO với chroot thiếu gói này. Dừng build ở" >&2
   echo "đây (thay vì chỉ cảnh báo rồi đóng ISO hỏng) để phát hiện sớm." >&2
   exit 1
+fi
+
+echo "===== Cài shim-signed (Microsoft ký sẵn) + GRUB signed cho UEFI Secure Boot ====="
+# Dùng shim-signed từ Debian (đã được Microsoft ký sẵn) làm bootloader trung gian,
+# kết hợp với grub-efi-*-signed từ Debian để đảm bảo chuỗi tin cậy Secure Boot hoàn chỉnh.
+if declare -f hyggshi_secureboot_packages >/dev/null 2>&1; then
+  mapfile -t SB_PACKAGES < <(hyggshi_secureboot_packages "$ARCH" "$BASE_DISTRO")
+  for pkg in "${SB_PACKAGES[@]}"; do
+    if apt-get install -y --no-install-recommends "$pkg"; then
+      echo "OK: Đã cài gói Secure Boot: $pkg"
+    else
+      echo "CẢNH BÁO: Không cài được gói Secure Boot '$pkg' — iso.sh sẽ tự tải deb dự phòng nếu cần." >&2
+    fi
+  done
 fi
 
 echo "===== Cài Calamares (installer) — optional, không làm fail cả build ====="
