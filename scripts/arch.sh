@@ -138,3 +138,12 @@ hyggshi_fb_efi_name() {
     *)     echo "fbx64.efi" ;;
   esac
 }
+
+# Tên file GRUB CD/removable signed mặc định theo kiến trúc (prefix /boot/grub)
+hyggshi_gcd_efi_name() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "gcdaa64.efi" ;;
+    *)     echo "gcdx64.efi" ;;
+  esac
+}
