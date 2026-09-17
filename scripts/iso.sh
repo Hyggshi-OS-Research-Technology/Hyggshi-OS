@@ -141,22 +141,24 @@ else
 fi
 
 # Xác định tên file EFI theo kiến trúc
+# LƯU Ý: KHÔNG bao gồm fbx64.efi (Fallback Manager) trên live ISO.
+# fbx64.efi đọc BOOT.CSV rồi gọi gRT->ResetSystem(EfiResetWarm) để
+# khôi phục NVRAM boot entries — trên live media không có NVRAM persistent
+# nên nó reboot vô hạn. Debian/Ubuntu live ISO chính thức cũng không đóng
+# gói fbx64.efi vào ESP của live media.
 if declare -f hyggshi_shim_efi_name >/dev/null 2>&1; then
   SHIM_TARGET_NAME=$(hyggshi_shim_efi_name "$ARCH")
   GRUB_TARGET_NAME=$(hyggshi_grub_efi_name "$ARCH")
   MM_TARGET_NAME=$(hyggshi_mm_efi_name "$ARCH")
-  FB_TARGET_NAME=$(hyggshi_fb_efi_name "$ARCH")
 else
   if [ "$ARCH" = "arm64" ]; then
     SHIM_TARGET_NAME="BOOTAA64.EFI"
     GRUB_TARGET_NAME="grubaa64.efi"
     MM_TARGET_NAME="mmaa64.efi"
-    FB_TARGET_NAME="fbaa64.efi"
   else
     SHIM_TARGET_NAME="BOOTX64.EFI"
     GRUB_TARGET_NAME="grubx64.efi"
     MM_TARGET_NAME="mmx64.efi"
-    FB_TARGET_NAME="fbx64.efi"
   fi
 fi
 
@@ -170,7 +172,7 @@ sudo apt-get install -y --no-install-recommends \
 SHIM_BIN=""
 GRUB_SIGNED_BIN=""
 MM_BIN=""
-FB_BIN=""
+# FB_BIN (fbx64.efi) bị loại bỏ hoàn toàn — xem ghi chú ở trên.
 
 if [ "$BASE_DISTRO" = "debian" ] || [ -z "$BASE_DISTRO" ]; then
   echo "===== UEFI Secure Boot: Dùng shim-signed từ Debian (Microsoft ký sẵn) làm bootloader trung gian ====="
@@ -191,8 +193,7 @@ if [ "$BASE_DISTRO" = "debian" ] || [ -z "$BASE_DISTRO" ]; then
     [ -z "$GRUB_SIGNED_BIN" ] && [ -f "live-build/chroot/usr/lib/grub/arm64-efi-signed/grubaa64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/arm64-efi-signed/grubaa64.efi.signed"
     [ -f "live-build/chroot/usr/lib/shim/mmaa64.efi.signed" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmaa64.efi.signed"
     [ -z "$MM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/mmaa64.efi" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmaa64.efi"
-    [ -f "live-build/chroot/usr/lib/shim/fbaa64.efi.signed" ] && FB_BIN="live-build/chroot/usr/lib/shim/fbaa64.efi.signed"
-    [ -z "$FB_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/fbaa64.efi" ] && FB_BIN="live-build/chroot/usr/lib/shim/fbaa64.efi"
+    # fbaa64.efi bị loại bỏ hoàn toàn — gây reboot loop trên live media
   else
     [ -f "live-build/chroot/usr/lib/shim/shimx64.efi.signed" ] && SHIM_BIN="live-build/chroot/usr/lib/shim/shimx64.efi.signed"
     [ -z "$SHIM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/shimx64.efi" ] && SHIM_BIN="live-build/chroot/usr/lib/shim/shimx64.efi"
@@ -200,8 +201,7 @@ if [ "$BASE_DISTRO" = "debian" ] || [ -z "$BASE_DISTRO" ]; then
     [ -z "$GRUB_SIGNED_BIN" ] && [ -f "live-build/chroot/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed"
     [ -f "live-build/chroot/usr/lib/shim/mmx64.efi.signed" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmx64.efi.signed"
     [ -z "$MM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/mmx64.efi" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmx64.efi"
-    [ -f "live-build/chroot/usr/lib/shim/fbx64.efi.signed" ] && FB_BIN="live-build/chroot/usr/lib/shim/fbx64.efi.signed"
-    [ -z "$FB_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/fbx64.efi" ] && FB_BIN="live-build/chroot/usr/lib/shim/fbx64.efi"
+    # fbx64.efi bị loại bỏ hoàn toàn — gây reboot loop trên live media
   fi
 
   # Cách 2: Nếu chroot chưa có, tải gói .deb chính thức từ Debian repository và giải nén bằng dpkg-deb
@@ -240,13 +240,13 @@ EOF
       [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/arm64-efi-signed" -maxdepth 1 -iname 'gcdaa64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/arm64-efi-signed" -maxdepth 1 -iname 'grubaa64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$MM_BIN" ] && MM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'mmaa64.efi*' 2>/dev/null | head -n1)
-      [ -z "$FB_BIN" ] && FB_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'fbaa64.efi*' 2>/dev/null | head -n1)
+      # fbaa64.efi bị loại bỏ hoàn toàn — gây reboot loop trên live media
     else
       [ -z "$SHIM_BIN" ] && SHIM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'shimx64.efi*' 2>/dev/null | head -n1)
       [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/x86_64-efi-signed" -maxdepth 1 -iname 'gcdx64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/x86_64-efi-signed" -maxdepth 1 -iname 'grubx64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$MM_BIN" ] && MM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'mmx64.efi*' 2>/dev/null | head -n1)
-      [ -z "$FB_BIN" ] && FB_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'fbx64.efi*' 2>/dev/null | head -n1)
+      # fbx64.efi bị loại bỏ hoàn toàn — gây reboot loop trên live media
     fi
   fi
 
@@ -256,7 +256,7 @@ else
   sudo apt-get install -y --no-install-recommends shim-signed grub-efi-amd64-signed || true
   SHIM_BIN=$(sudo find /usr/lib/shim -maxdepth 1 -iname 'shimx64.efi.signed*' 2>/dev/null | sort | tail -n1)
   MM_BIN=$(sudo find /usr/lib/shim -maxdepth 1 -iname 'mmx64.efi*' 2>/dev/null | sort | tail -n1)
-  FB_BIN=$(sudo find /usr/lib/shim -maxdepth 1 -iname 'fbx64.efi*' 2>/dev/null | sort | tail -n1)
+  # FB_BIN bị loại bỏ hoàn toàn — gây reboot loop trên live media
   GRUB_SIGNED_BIN=$(sudo find /usr/lib/grub/x86_64-efi-signed -maxdepth 1 -iname 'grubx64.efi.signed*' 2>/dev/null | sort | tail -n1)
 fi
 
@@ -271,7 +271,7 @@ else
   echo "OK: Đã tìm thấy shim-signed (Microsoft ký sẵn): $SHIM_BIN"
   echo "OK: Đã tìm thấy grub (signed): $GRUB_SIGNED_BIN"
   echo "OK: MokManager: ${MM_BIN:-<không có, bỏ qua>}"
-  echo "OK: Fallback: ${FB_BIN:-<không có, bỏ qua>}"
+  echo "OK: fbx64.efi (Fallback Manager) bị loại bỏ khỏi live ESP — tránh reboot loop."
 fi
 
 mkdir -p live-build/image/boot/grub
@@ -282,10 +282,11 @@ if [ "$SECURE_BOOT_OK" = "true" ]; then
   mkdir -p "$EFI_STAGE/EFI/BOOT"
 
   # BOOTX64.EFI / BOOTAA64.EFI = shim (đã được Microsoft ký sẵn) — firmware nạp file này đầu tiên
+  # ESP chỉ chứa: shim (BOOTX64.EFI) + grub signed (grubx64.efi) + mmx64.efi (tuỳ chọn)
+  # KHÔNG chứa fbx64.efi — gây reboot loop vô hạn trên live media
   sudo install -m 0644 "$SHIM_BIN" "$EFI_STAGE/EFI/BOOT/$SHIM_TARGET_NAME"
   sudo install -m 0644 "$GRUB_SIGNED_BIN" "$EFI_STAGE/EFI/BOOT/$GRUB_TARGET_NAME"
   [ -n "$MM_BIN" ] && sudo install -m 0644 "$MM_BIN" "$EFI_STAGE/EFI/BOOT/$MM_TARGET_NAME"
-  [ -n "$FB_BIN" ] && sudo install -m 0644 "$FB_BIN" "$EFI_STAGE/EFI/BOOT/$FB_TARGET_NAME"
   sudo chown -R "$(id -u)":"$(id -g)" "$EFI_STAGE"
 
   # Redirect grub.cfg: đặt ở tất cả path mà GRUB đã ký có thể tìm
@@ -320,7 +321,7 @@ REDIR_EOF
   sudo cp "$SHIM_BIN" "live-build/image/EFI/BOOT/$SHIM_TARGET_NAME"
   sudo cp "$GRUB_SIGNED_BIN" "live-build/image/EFI/BOOT/$GRUB_TARGET_NAME"
   [ -n "$MM_BIN" ] && sudo cp "$MM_BIN" "live-build/image/EFI/BOOT/$MM_TARGET_NAME"
-  [ -n "$FB_BIN" ] && sudo cp "$FB_BIN" "live-build/image/EFI/BOOT/$FB_TARGET_NAME"
+  # fbx64.efi không được chép vào ISO tree — tránh reboot loop
 
   # Redirect grub.cfg trong cây ISO
   for REDIRECT_DIR in live-build/image/EFI/debian live-build/image/EFI/ubuntu live-build/image/EFI/BOOT; do
