@@ -181,10 +181,14 @@ if [ "$BASE_DISTRO" = "debian" ] || [ -z "$BASE_DISTRO" ]; then
   #     -> /live/vmlinuz      (kernel Debian, ký bởi Debian Secure Boot CA — shim xác thực qua verify protocol)
 
   # Cách 1: Tìm trong live-build/chroot (đã cài đặt bởi desktop.sh)
+  # LƯU Ý: gcd*.efi.signed (GRUB CD/removable media) có embedded prefix là /boot/grub
+  # (khác grub*.efi.signed có prefix /EFI/debian cho ổ cứng cài đặt) — ưu tiên dùng gcd
+  # làm grubx64.efi/grubaa64.efi để bootloader trỏ thẳng tới /boot/grub/grub.cfg.
   if [ "$ARCH" = "arm64" ]; then
     [ -f "live-build/chroot/usr/lib/shim/shimaa64.efi.signed" ] && SHIM_BIN="live-build/chroot/usr/lib/shim/shimaa64.efi.signed"
     [ -z "$SHIM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/shimaa64.efi" ] && SHIM_BIN="live-build/chroot/usr/lib/shim/shimaa64.efi"
-    [ -f "live-build/chroot/usr/lib/grub/arm64-efi-signed/grubaa64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/arm64-efi-signed/grubaa64.efi.signed"
+    [ -f "live-build/chroot/usr/lib/grub/arm64-efi-signed/gcdaa64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/arm64-efi-signed/gcdaa64.efi.signed"
+    [ -z "$GRUB_SIGNED_BIN" ] && [ -f "live-build/chroot/usr/lib/grub/arm64-efi-signed/grubaa64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/arm64-efi-signed/grubaa64.efi.signed"
     [ -f "live-build/chroot/usr/lib/shim/mmaa64.efi.signed" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmaa64.efi.signed"
     [ -z "$MM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/mmaa64.efi" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmaa64.efi"
     [ -f "live-build/chroot/usr/lib/shim/fbaa64.efi.signed" ] && FB_BIN="live-build/chroot/usr/lib/shim/fbaa64.efi.signed"
@@ -192,7 +196,8 @@ if [ "$BASE_DISTRO" = "debian" ] || [ -z "$BASE_DISTRO" ]; then
   else
     [ -f "live-build/chroot/usr/lib/shim/shimx64.efi.signed" ] && SHIM_BIN="live-build/chroot/usr/lib/shim/shimx64.efi.signed"
     [ -z "$SHIM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/shimx64.efi" ] && SHIM_BIN="live-build/chroot/usr/lib/shim/shimx64.efi"
-    [ -f "live-build/chroot/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed"
+    [ -f "live-build/chroot/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed"
+    [ -z "$GRUB_SIGNED_BIN" ] && [ -f "live-build/chroot/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" ] && GRUB_SIGNED_BIN="live-build/chroot/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed"
     [ -f "live-build/chroot/usr/lib/shim/mmx64.efi.signed" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmx64.efi.signed"
     [ -z "$MM_BIN" ] && [ -f "live-build/chroot/usr/lib/shim/mmx64.efi" ] && MM_BIN="live-build/chroot/usr/lib/shim/mmx64.efi"
     [ -f "live-build/chroot/usr/lib/shim/fbx64.efi.signed" ] && FB_BIN="live-build/chroot/usr/lib/shim/fbx64.efi.signed"
@@ -232,11 +237,13 @@ EOF
 
     if [ "$ARCH" = "arm64" ]; then
       [ -z "$SHIM_BIN" ] && SHIM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'shimaa64.efi*' 2>/dev/null | head -n1)
+      [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/arm64-efi-signed" -maxdepth 1 -iname 'gcdaa64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/arm64-efi-signed" -maxdepth 1 -iname 'grubaa64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$MM_BIN" ] && MM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'mmaa64.efi*' 2>/dev/null | head -n1)
       [ -z "$FB_BIN" ] && FB_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'fbaa64.efi*' 2>/dev/null | head -n1)
     else
       [ -z "$SHIM_BIN" ] && SHIM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'shimx64.efi*' 2>/dev/null | head -n1)
+      [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/x86_64-efi-signed" -maxdepth 1 -iname 'gcdx64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$GRUB_SIGNED_BIN" ] && GRUB_SIGNED_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/grub/x86_64-efi-signed" -maxdepth 1 -iname 'grubx64.efi.signed*' 2>/dev/null | head -n1)
       [ -z "$MM_BIN" ] && MM_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'mmx64.efi*' 2>/dev/null | head -n1)
       [ -z "$FB_BIN" ] && FB_BIN=$(find "$DEBIAN_EFI_TMP/extracted/usr/lib/shim" -maxdepth 1 -iname 'fbx64.efi*' 2>/dev/null | head -n1)
@@ -283,10 +290,13 @@ if [ "$SECURE_BOOT_OK" = "true" ]; then
 
   # Redirect grub.cfg: đặt ở tất cả path mà GRUB đã ký có thể tìm
   # (/EFI/debian/grub.cfg, /EFI/BOOT/grub.cfg, /EFI/ubuntu/grub.cfg)
-  for REDIRECT_DIR in "$EFI_STAGE/EFI/debian" "$EFI_STAGE/EFI/ubuntu" "$EFI_STAGE/EFI/BOOT"; do
+  # Redirect grub.cfg: đặt ở tất cả path mà GRUB đã ký có thể tìm
+  # (/EFI/debian/grub.cfg, /EFI/BOOT/grub.cfg, /EFI/ubuntu/grub.cfg, /boot/grub/grub.cfg)
+  for REDIRECT_DIR in "$EFI_STAGE/EFI/debian" "$EFI_STAGE/EFI/ubuntu" "$EFI_STAGE/EFI/BOOT" "$EFI_STAGE/boot/grub"; do
     mkdir -p "$REDIRECT_DIR"
     cat <<'REDIR_EOF' > "$REDIRECT_DIR/grub.cfg"
 search --file --no-floppy --set=hyggshi_root /boot/grub/grub.cfg
+set prefix=($hyggshi_root)/boot/grub
 configfile ($hyggshi_root)/boot/grub/grub.cfg
 REDIR_EOF
   done
@@ -294,7 +304,7 @@ REDIR_EOF
   # Tạo efi.img (16MiB FAT filesystem)
   dd if=/dev/zero of=live-build/image/boot/grub/efi.img bs=1M count=16 status=none
   mkfs.vfat -n HYGGSHI_ESP live-build/image/boot/grub/efi.img >/dev/null
-  mmd -i live-build/image/boot/grub/efi.img ::EFI ::EFI/BOOT
+  mmd -i live-build/image/boot/grub/efi.img ::EFI ::EFI/BOOT ::boot ::boot/grub
   mcopy -i live-build/image/boot/grub/efi.img -s "$EFI_STAGE"/EFI/BOOT/* ::EFI/BOOT/
   for d in debian ubuntu; do
     if [ -d "$EFI_STAGE/EFI/$d" ]; then
@@ -302,6 +312,7 @@ REDIR_EOF
       mcopy -i live-build/image/boot/grub/efi.img "$EFI_STAGE/EFI/$d/grub.cfg" "::EFI/$d/" 2>/dev/null || true
     fi
   done
+  mcopy -i live-build/image/boot/grub/efi.img "$EFI_STAGE/boot/grub/grub.cfg" "::boot/grub/" 2>/dev/null || true
   rm -rf "$EFI_STAGE"
 
   # Chép vào cây thư mục ISO9660
@@ -372,6 +383,18 @@ else
   echo "WARNING: không tìm thấy iso-config/branding/desktop-grub.svg — bỏ qua SVG."
 fi
 
+# Đảm bảo font unicode.pf2 có sẵn trong boot/grub/fonts/ để gfxterm hiển thị font chuẩn
+mkdir -p live-build/image/boot/grub/fonts
+for font_candidate in \
+  live-build/chroot/usr/share/grub/unicode.pf2 \
+  /usr/share/grub/unicode.pf2; do
+  if [ -f "$font_candidate" ]; then
+    sudo cp "$font_candidate" live-build/image/boot/grub/fonts/unicode.pf2
+    echo "OK: đã chép font GRUB ($font_candidate) -> live-build/image/boot/grub/fonts/unicode.pf2"
+    break
+  fi
+done
+
 {
   echo "set timeout=10"
   echo "set default=0"
@@ -379,6 +402,9 @@ fi
   if [ "$GRUB_BACKGROUND_APPLIED" = "true" ]; then
     # Chuyển GRUB sang gfxterm và áp background PNG. Dùng if/then để nếu
     # firmware/GRUB thiếu module đồ hoạ thì menu text vẫn boot bình thường.
+    echo "if [ -e /boot/grub/fonts/unicode.pf2 ]; then"
+    echo "  loadfont /boot/grub/fonts/unicode.pf2"
+    echo "fi"
     echo "if insmod gfxterm; then"
     echo "  if insmod png; then"
     echo "    set gfxmode=auto"
@@ -436,36 +462,80 @@ mkdir -p live-build/image/.disk
 echo "${DISTRO_NAME:-Hyggshi OS} ${HYGGSHI_VERSION_ID:-1.0} (${BASE_CODENAME:-trixie}) - Official Build" | sudo tee live-build/image/.disk/info >/dev/null
 sudo touch live-build/image/.disk/base_installable
 
-sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image \
-  --compress=xz -- -volid "HYGGSHI_OS"
+echo "===== Đóng gói bootable hybrid ISO (UEFI Secure Boot + BIOS Legacy) ====="
 
-if [ "$SECURE_BOOT_OK" = "true" ]; then
-  echo "===== Ghi đè EFI image bằng bản đã build sẵn (shim Debian Microsoft ký + grub Debian ký) ====="
-  # grub-mkrescue ở trên VẪN tự sinh 1 boot/grub/efi.img + /EFI/BOOT/*.efi
-  # RIÊNG của nó (KHÔNG ký) rồi mới đóng gói — nên phải "replay" lại đúng
-  # cấu trúc El Torito/GPT nó vừa tạo (BIOS boot giữ nguyên, không đụng vào)
-  # nhưng thay nội dung phần EFI bằng bộ shim/grub đã ký ở bước trên.
-  # Đây là kỹ thuật chuẩn để "vá" Secure Boot vào 1 ISO grub-mkrescue có sẵn,
-  # KHÔNG phải tự dựng lại toàn bộ ISO bằng tay (rủi ro sai offset El Torito
-  # cao hơn nhiều so với replay từ 1 ISO grub-mkrescue đã build đúng).
-  if xorriso -indev "$ISO_FILENAME" \
-             -outdev "${ISO_FILENAME}.secureboot" \
-             -boot_image any replay \
-             -map live-build/image/boot/grub/efi.img /boot/grub/efi.img \
-             -update_r live-build/image/EFI /EFI \
-             -commit 2> xorriso-secureboot.log; then
-    mv "${ISO_FILENAME}.secureboot" "$ISO_FILENAME"
-    echo "OK: đã ghép shim-signed từ Debian (Microsoft ký sẵn) + GRUB signed vào $ISO_FILENAME."
-  else
-    echo "LỖI: xorriso replay thất bại khi vá Secure Boot — xem xorriso-secureboot.log." >&2
-    echo "GIỮ NGUYÊN ISO gốc (bootable ở máy TẮT Secure Boot, y hệt trước bản vá)." >&2
-    rm -f "${ISO_FILENAME}.secureboot"
-    cat xorriso-secureboot.log >&2 || true
+# 1. Chuẩn bị BIOS bootloader (i386-pc eltorito.img + MBR boot_hybrid.img)
+GRUB_PC_DIR=""
+if [ -d "live-build/chroot/usr/lib/grub/i386-pc" ]; then
+  GRUB_PC_DIR="live-build/chroot/usr/lib/grub/i386-pc"
+elif [ -d "/usr/lib/grub/i386-pc" ]; then
+  GRUB_PC_DIR="/usr/lib/grub/i386-pc"
+fi
+
+GRUB_HYBRID_MBR=""
+if [ -n "$GRUB_PC_DIR" ] && command -v grub-mkimage >/dev/null 2>&1; then
+  echo "===== Chuẩn bị GRUB BIOS bootloader (i386-pc) ====="
+  mkdir -p live-build/image/boot/grub/i386-pc
+  sudo cp -a "$GRUB_PC_DIR"/*.mod "$GRUB_PC_DIR"/*.lst live-build/image/boot/grub/i386-pc/ 2>/dev/null || true
+  
+  CORE_IMG=$(mktemp)
+  if grub-mkimage -d "$GRUB_PC_DIR" -o "$CORE_IMG" -O i386-pc --prefix=/boot/grub biosdisk iso9660; then
+    cat "$GRUB_PC_DIR/cdboot.img" "$CORE_IMG" > live-build/image/boot/grub/i386-pc/eltorito.img
+    sudo chmod 644 live-build/image/boot/grub/i386-pc/eltorito.img 2>/dev/null || true
+    echo "OK: đã tạo live-build/image/boot/grub/i386-pc/eltorito.img cho BIOS boot."
   fi
-  echo "LƯU Ý: bước vá Secure Boot này build theo đúng chuẩn kỹ thuật" \
-       "shim-signed từ Debian (Microsoft ký sẵn) + GRUB signed của Debian/Ubuntu."
+  rm -f "$CORE_IMG"
+
+  [ -f "$GRUB_PC_DIR/boot_hybrid.img" ] && GRUB_HYBRID_MBR="$GRUB_PC_DIR/boot_hybrid.img"
+fi
+[ -z "$GRUB_HYBRID_MBR" ] && [ -f "/usr/lib/grub/i386-pc/boot_hybrid.img" ] && GRUB_HYBRID_MBR="/usr/lib/grub/i386-pc/boot_hybrid.img"
+
+# 2. Đóng gói ISO bằng xorriso (chuẩn Debian Live-Build / Ubuntu hybrid ISO)
+# Thay vì grub-mkrescue (luôn tự biên dịch grub unsigned phá hỏng chuỗi tin cậy Secure Boot),
+# dùng xorriso -as mkisofs trực tiếp gắn shim Microsoft ký sẵn + grub signed vào El Torito
+# và phân vùng GPT EFI.
+XORRISO_ARGS=(
+  -iso-level 3
+  -full-iso9660-filenames
+  -volid "HYGGSHI_OS"
+  -output "$ISO_FILENAME"
+  -r
+  -graft-points
+)
+
+# BIOS Legacy boot options
+if [ -f "live-build/image/boot/grub/i386-pc/eltorito.img" ] && [ -n "$GRUB_HYBRID_MBR" ] && [ -f "$GRUB_HYBRID_MBR" ]; then
+  echo "Thêm cấu hình BIOS Legacy (eltorito.img + MBR hybrid: $GRUB_HYBRID_MBR)"
+  XORRISO_ARGS+=(
+    --grub2-mbr "$GRUB_HYBRID_MBR"
+    --protective-msdos-label
+    -partition_cyl_align off
+    -partition_offset 0
+    -b boot/grub/i386-pc/eltorito.img
+    -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info
+  )
+fi
+
+# UEFI Secure Boot options
+if [ "$SECURE_BOOT_OK" = "true" ] && [ -f "live-build/image/boot/grub/efi.img" ]; then
+  echo "Thêm cấu hình UEFI Secure Boot (shim-signed Microsoft ký sẵn + GRUB signed)"
+  XORRISO_ARGS+=(
+    -eltorito-alt-boot
+    -e boot/grub/efi.img
+    -no-emul-boot
+    -isohybrid-gpt-basdat
+    -efi-boot-part --efi-boot-image
+  )
+fi
+
+XORRISO_ARGS+=(live-build/image)
+
+echo "Thực thi: xorriso -as mkisofs ${XORRISO_ARGS[*]}"
+if sudo xorriso -as mkisofs "${XORRISO_ARGS[@]}"; then
+  echo "OK: đã đóng gói thành công $ISO_FILENAME bằng xorriso (hỗ trợ Secure Boot chuẩn)."
 else
-  echo "Bỏ qua vá Secure Boot (SECURE_BOOT_OK=false) — ISO chỉ boot được khi TẮT Secure Boot, y hệt hành vi cũ."
+  echo "CẢNH BÁO: xorriso trực tiếp thất bại -> fallback sang grub-mkrescue (chỉ boot máy tắt Secure Boot)..." >&2
+  sudo grub-mkrescue -o "$ISO_FILENAME" live-build/image --compress=xz -- -volid "HYGGSHI_OS"
 fi
 
 ls -lh "$ISO_FILENAME"
