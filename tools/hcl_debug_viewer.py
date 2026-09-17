@@ -234,7 +234,11 @@ class HclThread(QThread):
             return
         try:
             spec = importlib.util.spec_from_file_location("hcl_parser", prsr)
+            if spec is None or spec.loader is None:
+                self.err.emit(f"Không thể tạo module spec từ:\n  {prsr}")
+                return
             mod = importlib.util.module_from_spec(spec)
+            sys.modules["hcl_parser"] = mod
             spec.loader.exec_module(mod)
             sections = mod.read_sections(cfg)
             resolver = mod.Resolver(sections, root=self.root_dir)

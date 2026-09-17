@@ -911,6 +911,11 @@ class Resolver:
         result["welcome"] = {
             k: self.resolve_value(k, v) for k, v in welcome_kv.items()
         }
+        plymouth_kv = self._kv_scan("linkplymouth")
+        plymouth_kv.update(self._kv_scan("linkhyggshi-plymouth"))
+        result["plymouth"] = {
+            k: self.resolve_value(k, v) for k, v in plymouth_kv.items()
+        }
         return result
 
 
@@ -1168,6 +1173,14 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     welcome = resolved.get("welcome", {}).get("linkhyggshi-welcome", {})
     put("WELCOME_SCRIPT", welcome.get("file", ""))
     put("WELCOME_ACTION", welcome.get("action", ""))
+
+    plymouth = (
+        resolved.get("plymouth", {}).get("linkplymouth")
+        or resolved.get("plymouth", {}).get("linkhyggshi-plymouth")
+        or {}
+    )
+    put("PLYMOUTH_SCRIPT", plymouth.get("file", ""))
+    put("PLYMOUTH_ACTION", plymouth.get("action", ""))
 
     base_val     = str(bp.get("base") or "").lower()
     # BUG ĐÃ SỬA: dòng này trước đây tự đọc lại kp_val.get("desktop") (giá
