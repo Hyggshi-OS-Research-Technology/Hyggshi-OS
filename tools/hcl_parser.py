@@ -1029,6 +1029,16 @@ class Resolver:
         """
         out = []
         for sec_name in self.order:
+            # [Call-gnome-apps] installers chỉ chạy khi DE là GNOME
+            if sec_name.lower() == "call-gnome-apps":
+                is_gnome = (active_de or "").strip().lower() == "gnome"
+                gnome_apps_val = None
+                if "my-version-os-base" in self.sections:
+                    kv = self._kv("my-version-os-base")
+                    if "gnome-apps" in kv:
+                        gnome_apps_val = classify("gnome-apps", kv["gnome-apps"]).value
+                if not is_gnome or gnome_apps_val is False:
+                    continue
             for key, raw, _group in self._entries(sec_name):
                 pv = classify(key, raw)
                 if pv.type == "FUNCTION" and pv.value.get("name") == "installer":
