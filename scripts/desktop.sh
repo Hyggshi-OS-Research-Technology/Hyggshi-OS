@@ -1292,6 +1292,38 @@ if [ -n "$EXTRA_PACKAGES" ]; then
   fi
 fi
 
+echo "===== Cài package bổ sung theo config.ini (installer) ====="
+# installer(run=...) khai trong config.ini (vd gnome-system-monitor-install =
+# installer(run = "apt-get install -y gnome-system-monitor")) được hcl_parser.py
+# resolve sẵn vào /tmp/hcl-resolved.json ("installers": [{"key","type","run"}])
+# — xem resolve_installers()/PATCH 10 trong tools/hcl_parser.py.
+#
+# Chạy ĐẦY ĐỦ: SAU khi mọi DE/icon/keyboard/extra package đã cài xong (để
+# các dependency đã có sẵn), TRƯỚC khi removals dọn dẹp — đảm bảo thứ tự
+# cài → dọn, giống triết lý toàn bộ bước build trong script này.
+#
+# Mỗi lệnh chạy độc lập (|| true): 1 gói không tồn tại trên distro/DE đang
+# build không nên làm fail toàn bộ ISO — giống removals.
+if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
+  while IFS= read -r install_cmd; do
+    [ -z "$install_cmd" ] && continue
+    echo "[HCL installer] $install_cmd"
+    bash -c "$install_cmd" || echo "⚠️  Lệnh installer thất bại (bỏ qua): $install_cmd" >&2
+  done < <(python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/hcl-resolved.json'))
+except Exception:
+    raise SystemExit
+for r in d.get('installers', []):
+    cmd = r.get('run')
+    if cmd:
+        print(cmd)
+" 2>/dev/null)
+else
+  echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua installer() từ config.ini." >&2
+fi
+
 echo "===== Dọn package/hình ảnh thừa theo config.ini (appremove/fileremove) ====="
 # [package] khối "Remove package and image" (systemsettings-KDE =
 # appremove(...), image-background = fileremove(...)) được hcl_parser.py
@@ -1351,7 +1383,7 @@ echo "===== Copy file theo config.ini (filecopy source=/target=) ====="
 # "/$target" (desktop.sh đang chạy TRONG chroot nên "/" ở đây chính là gốc
 # chroot, không phải gốc host).
 if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
-  while IFS=$'\t' read -r fc_key fc_src fc_tgt; do
+  while IFS=$'\t' read -r fc_key fc_src fc_tgt fc_rename; do
     [ -z "$fc_tgt" ] && continue
     staged="/tmp/hcl-filecopy-src/${fc_src#./}"
     dest="/${fc_tgt#/}"
@@ -1361,8 +1393,17 @@ if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
       echo "OK: [HCL filecopy dir] $fc_key: $fc_src -> $dest"
     elif [ -f "$staged" ]; then
       mkdir -p "$(dirname "$dest")"
-      cp -f "$staged" "$dest"
-      echo "OK: [HCL filecopy] $fc_key: $fc_src -> $dest"
+      # Dùng tmpfile cùng thư mục rồi mv -f sang đích để ghi đè nguyên tử (atomic overwrite),
+      # kể cả khi file cũ tồn tại và là read-only thuộc package (vd gnome-background.xml của
+      # desktop-base). mv -f thay thế inode trực tiếp, không bị cản bởi permissions của file cũ.
+      tmp_dest="${dest}.hcl-tmp-$$"
+      cp -f "$staged" "$tmp_dest"
+      mv -f "$tmp_dest" "$dest"
+      if [ -n "$fc_rename" ]; then
+        echo "OK: [HCL copy+rename] $fc_key: $fc_src -> $dest (rename: $fc_rename)"
+      else
+        echo "OK: [HCL filecopy] $fc_key: $fc_src -> $dest"
+      fi
     else
       echo "⚠️  [HCL filecopy] $fc_key: không thấy source đã stage ($staged) — bỏ qua. Kiểm tra bước stage /tmp/hcl-filecopy-src trong workflow/local-build.sh." >&2
     fi
@@ -1375,8 +1416,9 @@ except Exception:
 for fc in d.get('file_copies', []):
     src = fc.get('source')
     tgt = fc.get('resolved_target') or fc.get('target')
+    rename = fc.get('rename') or ''
     if src and tgt:
-        print(f\"{fc.get('key','')}\t{src}\t{tgt}\")
+        print(f\"{fc.get('key','')}\t{src}\t{tgt}\t{rename}\")
 " 2>/dev/null)
 else
   echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua filecopy(source=,target=) theo config.ini." >&2
