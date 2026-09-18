@@ -99,10 +99,17 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # mọi function mới trước đó: chưa có trong FUNCTION_NAMES -> classify()
 # ném HclError "không nằm trong FUNCTION set hợp lệ", validate_every_
 # entry() fail cứng dù cú pháp trong config.ini không sai gì.
+# PATCH 10: thêm installer — dùng trong [Call-gnome-apps] và các khối khác
+# khi cần khai `<key> = installer(run = "apt install -y <pkg>")` (cài package
+# thêm bên trong chroot, không thuộc danh sách gói BOOLEAN thông thường).
+# Cùng cơ chế appremove/fileremove (PATCH 6): validate kwarg "run", gom vào
+# resolve_installers(), export INSTALLER_{idx} env, desktop.sh đọc JSON và
+# chạy lệnh trong chroot — KHÔNG tạo file .sh riêng, KHÔNG hardcode vào
+# workflow YAML.
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
     "command", "make", "call", "installkernel", "apply", "flathubinstall",
-    "appremove", "fileremove", "copy",
+    "appremove", "fileremove", "copy", "installer",
 }
 
 SIZE_RE = re.compile(
@@ -628,6 +635,16 @@ class Resolver:
                     "error",
                     f"{name}(...) thiếu 'run' — bắt buộc để biết lệnh gỡ/xoá "
                     f"nào sẽ chạy."))
+        if name == "installer":
+            # PATCH 10: installer(run=...) — "run" là lệnh shell cài package
+            # (thường là "apt-get install -y <pkg>"), chạy trong chroot lúc
+            # build. Không phải path -> không check tồn tại, giống appremove.
+            # Validate duy nhất: phải có "run".
+            if not kwargs.get("run"):
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"installer(...) thiếu 'run' — bắt buộc để biết lệnh "
+                    f"cài nào sẽ chạy."))
         return result
 
     def resolve_my_version_os_base(self) -> dict:
@@ -860,6 +877,37 @@ class Resolver:
                         })
         return out
 
+    def resolve_installers(self) -> list:
+        """
+        PATCH 10: gom hết các entry `<key> = installer(run=...)` rải rác
+        trong config (hiện tại trong [Call-gnome-apps] cho gnome-system-
+        monitor / gnome-disk-utility) — quét toàn bộ section, giống
+        resolve_removals()/PATCH 6, để hỗ trợ thêm installer() ở section
+        khác sau này mà không cần sửa lại đây.
+
+        Ngữ nghĩa: "run" là lệnh shell cài package (thường "apt-get install
+        -y <pkg>") chạy TRONG chroot lúc build, sau khi toàn bộ DE/icon/
+        keyboard/extra package đã cài xong — đảm bảo gói phụ thuộc đã có
+        sẵn trước khi cài package bổ sung này. Không dùng file .sh riêng,
+        không hardcode trong workflow YAML: desktop.sh đọc trực tiếp từ
+        /tmp/hcl-resolved.json (giống removals).
+        """
+        out = []
+        for sec_name in self.order:
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "installer":
+                    resolved = self.resolve_function(pv.value)
+                    run_cmd = resolved.get("run")
+                    if run_cmd:
+                        out.append({
+                            "section": sec_name,
+                            "key": key,
+                            "type": "installer",
+                            "run": run_cmd,
+                        })
+        return out
+
     def resolve_file_copies(self) -> list:
         """
         PATCH 7: gom hết các entry `<key> = filecopy(source=..., target=...)`
@@ -939,6 +987,7 @@ class Resolver:
         result["desktop_apply"] = self.resolve_desktop_apply()
         result["flathub_apps"] = self.resolve_flathub_apps(active_de=active_de)
         result["removals"] = self.resolve_removals()
+        result["installers"] = self.resolve_installers()  # PATCH 10
         result["file_copies"] = self.resolve_file_copies()
         if "customization" in self.sections:
             result["customization"] = {
@@ -1148,6 +1197,17 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         put(f"REMOVE_{idx}_KEY", r.get("key"))
         put(f"REMOVE_{idx}_TYPE", r.get("type"))
         put(f"REMOVE_{idx}_RUN", r.get("run"))
+
+    # PATCH 10: export danh sách lệnh installer(run=...) (gom ở
+    # resolve_installers()). Cùng cơ chế PATCH 6/removals: gom sẵn trong
+    # JSON, desktop.sh đọc và chạy trong chroot — không cần file .sh riêng
+    # hay bước workflow YAML mới. Export theo số thứ tự + INSTALLER_COUNT
+    # để desktop.sh lặp qua đúng số lệnh.
+    installers = resolved.get("installers", [])
+    put("INSTALLER_COUNT", len(installers))
+    for idx, r in enumerate(installers, start=1):
+        put(f"INSTALLER_{idx}_KEY", r.get("key"))
+        put(f"INSTALLER_{idx}_RUN", r.get("run"))
 
     # PATCH 7: export các entry filecustom(...) trong [customization]
     # (Calamares settings/branding/modules, logo Plymouth, ảnh nền desktop,
