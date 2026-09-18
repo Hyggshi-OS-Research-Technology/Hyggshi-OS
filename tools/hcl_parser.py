@@ -438,11 +438,21 @@ class Resolver:
     def resolve_enum_section(self, section_name: str) -> str | None:
         kv = self._kv(section_name)
         true_keys = []
+        is_de_sec = section_name.strip().lower() == "desktop-environment"
         for k, raw in kv.items():
+            k_clean = k.strip().lower().replace("_", "-")
+            if is_de_sec and k_clean in ("build-all-github-actions", "build-all-github-action", "build-all"):
+                continue
             pv = classify(k, raw)
             if pv.type == "BOOLEAN" and pv.value is True:
                 true_keys.append(k)
         if len(true_keys) == 0:
+            if is_de_sec:
+                # Nếu [Desktop-Environment] có Build-all-github-actions = true thì không cần 1 DE đơn lẻ nào = true
+                for k, raw in kv.items():
+                    if k.strip().lower().replace("_", "-") in ("build-all-github-actions", "build-all-github-action", "build-all"):
+                        if classify(k, raw).value is True:
+                            return None
             self.diags.append(Diagnostic(
                 "error", f"[{section_name}] không có key nào = true (cần đúng 1)."))
             return None
@@ -452,6 +462,57 @@ class Resolver:
                 f"[{section_name}] có {len(true_keys)} key = true cùng lúc "
                 f"({', '.join(true_keys)}) — section này phải là ENUM (chỉ 1 true)."))
         return true_keys[0]
+
+    def resolve_desktop_environment(self) -> dict:
+        """
+        PATCH 12: resolve [Desktop-Environment].
+        Hỗ trợ cờ Build-all-github-actions (build nhiều DEs song song trên GitHub Actions matrix)
+        và các DEs đơn lẻ (xfce, cinnamon, kde, lxqt, gnome, mate, cli).
+        """
+        sec = self._kv("Desktop-Environment") if "Desktop-Environment" in self.sections else {}
+        out = {
+            "build_all_github_actions": False,
+            "active_desktop": None,
+            "desktops_to_build": [],
+        }
+        known_desktops = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt"]
+        all_desktops_with_cli = known_desktops + ["cli"]
+
+        # 1. Tìm cờ Build-all-github-actions
+        for k, v in sec.items():
+            k_clean = k.strip().lower().replace("_", "-")
+            if k_clean in ("build-all-github-actions", "build-all-github-action", "build-all"):
+                pv = classify(k, v)
+                if pv.type == "BOOLEAN":
+                    out["build_all_github_actions"] = bool(pv.value)
+
+        # 2. Tìm các DE đang = true
+        true_desktops = []
+        for k, v in sec.items():
+            k_lower = k.strip().lower()
+            if k_lower in all_desktops_with_cli:
+                pv = classify(k, v)
+                if pv.type == "BOOLEAN" and pv.value is True:
+                    true_desktops.append(k_lower)
+
+        if out["build_all_github_actions"]:
+            # Nếu bật build all: nếu có chọn >=1 DE thì build các DE được chọn,
+            # nếu không chọn DE nào (tất cả false) thì build toàn bộ 6 DEs chính.
+            out["desktops_to_build"] = true_desktops if true_desktops else known_desktops
+            out["active_desktop"] = true_desktops[0] if true_desktops else "xfce"
+        else:
+            if len(true_desktops) == 1:
+                out["active_desktop"] = true_desktops[0]
+                out["desktops_to_build"] = [true_desktops[0]]
+            elif len(true_desktops) == 0:
+                # Không có DE nào true và không bật build-all
+                out["active_desktop"] = None
+                out["desktops_to_build"] = []
+            else:
+                out["active_desktop"] = true_desktops[0]
+                out["desktops_to_build"] = true_desktops
+
+        return out
 
     def resolve_reference_value(self, ref_name: str):
         if ref_name in self.sections:
@@ -1063,11 +1124,11 @@ class Resolver:
         result["base_profile"] = self.resolve_my_version_os_base()
         bp = result["base_profile"]
         kp = bp.get("kernel_profile") or {}
-        de_from_env_section = ""
-        try:
-            de_from_env_section = self.resolve_enum_section("Desktop-Environment") or ""
-        except Exception:
-            pass
+        
+        de_info = self.resolve_desktop_environment()
+        result["desktop_environment"] = de_info
+        
+        de_from_env_section = de_info.get("active_desktop") or ""
         active_de = (de_override or de_from_env_section or kp.get("desktop") or "").strip().lower()
 
         result["package_groups"] = self.resolve_package_groups()
@@ -1397,6 +1458,11 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     version_val  = bp.get("version")
     codename_val = bp.get("codename")
 
+    de_info = resolved.get("desktop_environment") or {}
+    build_all = de_info.get("build_all_github_actions", False)
+    put("HCL_BUILD_ALL_DESKTOPS", str(build_all).lower())
+    put("HCL_DESKTOPS_MATRIX", " ".join(de_info.get("desktops_to_build", [])))
+
     if base_val:
         lines.append(f"BASE_DISTRO={base_val}")
     if de_val:
@@ -1436,11 +1502,16 @@ def main():
         default=None,
         help=(
             "Desktop environment THẬT được người dùng chọn (vd $DE từ workflow "
-            "input 'desktop': xfce/cinnamon/kde/lxqt/gnome/mate/cli). Khi được "
+            "input 'desktop': xfce/cinnamon/kde/lxqt/gnome/mate/cli/all). Khi được "
             "truyền, giá trị này thay thế [kernel.<Edition>].desktop tĩnh trong "
             "config.ini làm nguồn lọc package_groups active — tránh gói của DE "
             "không được chọn (vd Cinnamon) lọt vào HCL_PACKAGES khi build DE khác (vd XFCE)."
         ),
+    )
+    ap.add_argument(
+        "--print-matrix-json",
+        action="store_true",
+        help="In mảng JSON danh sách desktop matrix cần build (dành cho GitHub Actions matrix strategy)"
     )
     ap.add_argument("--strict", action="store_true", help="exit(1) nếu có bất kỳ error nào sau validate")
     args = ap.parse_args()
@@ -1459,6 +1530,30 @@ def main():
     except HclError as e:
         print(f"::error::[HCL resolve] {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.print_matrix_json:
+        de_info = resolved.get("desktop_environment") or {}
+        de_override = (args.de_override or "").strip().lower()
+        if de_override == "all":
+            matrix_list = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt"]
+        elif de_override and de_override not in ("auto", "none"):
+            matrix_list = [de_override]
+        elif de_info.get("build_all_github_actions"):
+            matrix_list = de_info.get("desktops_to_build") or ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt"]
+        else:
+            active = de_info.get("active_desktop") or "xfce"
+            matrix_list = [active]
+        matrix_json = json.dumps(matrix_list)
+        print(matrix_json)
+        gh_output = os.environ.get("GITHUB_OUTPUT")
+        if gh_output:
+            try:
+                with open(gh_output, "a", encoding="utf-8") as f:
+                    f.write(f"matrix={matrix_json}\n")
+                    f.write(f"is_matrix={'true' if len(matrix_list) > 1 else 'false'}\n")
+            except Exception:
+                pass
+        sys.exit(0)
 
     errors = [d for d in resolver.diags if d.level == "error"]
     warnings = [d for d in resolver.diags if d.level == "warning"]

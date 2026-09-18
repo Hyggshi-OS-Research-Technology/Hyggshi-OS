@@ -70,11 +70,11 @@ on:
         options: [normal, developer, server, lite]
         default: "normal"
       desktop:
-        description: "Desktop environment (6 lựa chọn)"
+        description: "Desktop environment (auto = tự động theo config.ini / Build-all-github-actions, all = build song song cả 6 DEs, hoặc chọn 1 DE cụ thể)"
         required: false
         type: choice
-        options: [xfce, kde, lxqt, gnome, mate, cinnamon]
-        default: "xfce"
+        options: [auto, all, xfce, kde, lxqt, gnome, mate, cinnamon]
+        default: "auto"
       panel_style:
         description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
         required: false
@@ -193,13 +193,37 @@ env:
   PLYMOUTH_LOGO_URL: ${{ github.event.inputs.plymouth_logo_url || '' }}
 
 jobs:
-  build-iso:
+  matrix-prep:
+    name: "Chuẩn bị Desktop Matrix"
     runs-on: ubuntu-latest
-    # Chỉ chạy cho các distro dùng debootstrap/apt (Debian/Ubuntu/Mint).
-    # Alpine và Arch chạy ở 2 job riêng bên dưới, trong container gốc của
-    # chính distro đó — xem ghi chú trong build-alpine.sh / build-arch.sh về
-    # lý do (apk/pacman + keyring có sẵn, không cần giả lập trên Ubuntu).
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      is_matrix: ${{ steps.set-matrix.outputs.is_matrix }}
+    steps:
+      - name: Checkout repo (scripts, config files, branding...)
+        uses: actions/checkout@v4
+
+      - name: Xác định Desktop Matrix từ config.ini / input
+        id: set-matrix
+        run: |
+          python3 tools/hcl_parser.py iso-config/config/config.ini \
+            --root "$GITHUB_WORKSPACE" \
+            --de-override "${{ github.event.inputs.desktop || 'auto' }}" \
+            --print-matrix-json
+
+  build-iso:
+    name: "Build ISO (${{ matrix.desktop }})"
+    needs: matrix-prep
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        desktop: ${{ fromJson(needs.matrix-prep.outputs.matrix) }}
+    env:
+      DE: ${{ matrix.desktop }}
+      ISO_FILENAME: "hyggshi-os-${{ matrix.desktop }}-${{ github.run_number }}.iso"
     # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -215,16 +239,9 @@ jobs:
       # ở dưới (lấy từ workflow_dispatch input) để không âm thầm đè giá trị
       # người dùng chọn trên UI Actions. Chỉ dùng tools/hcl_parser.py Python
       # stdlib, không cần pip install.
-      # --de-override="$DE": $DE ở đây LÀ desktop THẬT người dùng chọn ở
-      # workflow input "desktop" (xem env.DE ở đầu file — đã có SẴN tại
-      # bước này, không cần đợi step "Resolve version theo distro"). Không
-      # truyền cờ này, hcl_parser.py sẽ lọc package_groups theo
-      # [kernel.<Edition>].desktop TĨNH trong config.ini (hiện là
-      # "Cinnamon" ở kernel.Desktop) — khác desktop input người dùng chọn
-      # thì gói của DE tĩnh đó (kể cả toàn bộ cinnamon/cinnamon-* trong
-      # nhóm ";Cinnamon") vẫn lọt vào HCL_PACKAGES -> EXTRA_PACKAGES ->
-      # apt-get install trong desktop.sh, cài chồng lên DE người dùng thật
-      # sự chọn (vd XFCE). Xem chú thích chi tiết trong to_env_lines().
+      # --de-override="$DE": $DE ở đây LÀ desktop THẬT (${{ matrix.desktop }})
+      # được ma trận chọn — hcl_parser.py sẽ resolve gói và removals chính xác
+      # cho desktop này.
       - name: Validate & resolve config.ini (HCL)
         run: |
           python3 tools/hcl_parser.py iso-config/config/config.ini \
@@ -237,7 +254,7 @@ jobs:
       - name: Upload resolved config.ini (debug)
         uses: actions/upload-artifact@v4
         with:
-          name: hcl-resolved-config
+          name: hcl-resolved-config-${{ matrix.desktop }}
           path: /tmp/hcl-resolved.json
           retention-days: 14
 
@@ -329,10 +346,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/apt-deb-cache
-          key: apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}-${{ hashFiles('scripts/desktop.sh', 'iso-config/config/config.ini') }}
+          key: apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}-${{ matrix.desktop }}-${{ hashFiles('scripts/desktop.sh', 'iso-config/config/config.ini') }}
           restore-keys: |
+            apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}-${{ matrix.desktop }}-
             apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-${{ env.ARCH || 'amd64' }}-
-            apt-debs-${{ env.BASE_DISTRO }}-${{ env.DEBIAN_VERSION || env.UBUNTU_VERSION || env.MINT_VERSION || 'trixie' }}-
             apt-debs-${{ env.BASE_DISTRO }}-
 
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
@@ -769,7 +786,7 @@ jobs:
         if: ${{ env.DEBUG_MODE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-debug
+          name: hyggshi-os-debug-${{ matrix.desktop }}
           path: |
             install-debug.log
             nexwm-build-debug.log
@@ -791,7 +808,7 @@ jobs:
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-iso
+          name: hyggshi-os-${{ matrix.desktop }}-iso
           path: |
             ${{ env.ISO_FILENAME }}
             ${{ env.ISO_FILENAME }}.sha256
