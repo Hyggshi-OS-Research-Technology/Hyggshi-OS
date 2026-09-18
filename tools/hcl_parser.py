@@ -645,6 +645,27 @@ class Resolver:
                     "error",
                     f"installer(...) thiếu 'run' — bắt buộc để biết lệnh "
                     f"cài nào sẽ chạy."))
+
+        # PATCH 11: Hỗ trợ điều kiện Desktop Environment (DE) cho
+        # appremove, fileremove, installer, command:
+        # - exclude_de = "kde" / exclude_de = "kde, gnome"
+        # - for_de = "xfce, gnome, cinnamon, lxqt"
+        # - desktop = "..." (nếu bắt đầu bằng "!" như "!kde" -> exclude_de = "kde")
+        if name in ("appremove", "fileremove", "installer", "command"):
+            exclude_de = kwargs.get("exclude_de") or kwargs.get("except_de") or kwargs.get("not_de")
+            for_de = kwargs.get("for_de") or kwargs.get("only_de")
+            desktop_kw = kwargs.get("desktop")
+            if desktop_kw:
+                d_str = str(desktop_kw).strip()
+                if d_str.startswith("!"):
+                    exclude_de = (str(exclude_de) + "," if exclude_de else "") + d_str[1:]
+                else:
+                    for_de = (str(for_de) + "," if for_de else "") + d_str
+            if exclude_de:
+                result["exclude_de"] = str(exclude_de).strip()
+            if for_de:
+                result["for_de"] = str(for_de).strip()
+
         return result
 
     def resolve_my_version_os_base(self) -> dict:
@@ -850,9 +871,48 @@ class Resolver:
                         out.append(app_id)
         return out
 
-    def resolve_removals(self) -> list:
+    def _is_de_excluded(
+        self,
+        active_de: str | None,
+        exclude_de: str | None,
+        for_de: str | None,
+        key: str = "",
+        run_cmd: str = "",
+    ) -> bool:
         """
-        PATCH 6: gom hết các entry `<key> = appremove(run=...)` và
+        Kiểm tra xem 1 entry (appremove, fileremove, installer) có bị loại trừ
+        theo DE đang active hay không.
+        - Safety invariant: nếu active_de là 'kde', KHÔNG BAO GIỜ gỡ systemsettings
+          (Control Center cốt lõi của KDE Plasma).
+        - exclude_de: danh sách DE bị loại trừ (vd 'kde' hoặc 'kde, gnome').
+        - for_de: danh sách DE được phép chạy (vd 'xfce, gnome, cinnamon, lxqt').
+        """
+        if not active_de:
+            return False
+        cur_de = active_de.strip().lower()
+
+        # Bảo vệ an toàn tuyệt đối cho KDE Plasma:
+        if cur_de == "kde":
+            if key == "systemsettings-KDE" or (
+                "systemsettings" in run_cmd and ("remove" in run_cmd or "purge" in run_cmd)
+            ):
+                return True
+
+        if exclude_de:
+            ex_list = [x.strip().lower() for x in str(exclude_de).split(",") if x.strip()]
+            if cur_de in ex_list:
+                return True
+
+        if for_de:
+            for_list = [x.strip().lower() for x in str(for_de).split(",") if x.strip()]
+            if cur_de not in for_list:
+                return True
+
+        return False
+
+    def resolve_removals(self, active_de: str | None = None) -> list:
+        """
+        PATCH 6 & 11: gom hết các entry `<key> = appremove(run=...)` và
         `<key> = fileremove(run=...)` rải rác trong config (hiện tại trong
         khối "Remove package and image", vd systemsettings-KDE/
         image-background) — quét toàn bộ section thay vì hardcode tên
@@ -860,6 +920,9 @@ class Resolver:
         hỗ trợ thêm removal khác ở section khác sau này. Giữ nguyên thứ tự
         khai báo trong file vì các lệnh remove có thể phụ thuộc thứ tự chạy
         (vd gỡ package trước khi xoá file liên quan tới package đó).
+
+        Lọc theo active_de nếu có exclude_de / for_de hoặc bảo vệ an toàn
+        cho DE (vd: không gỡ systemsettings khi chọn KDE).
         """
         out = []
         for sec_name in self.order:
@@ -868,18 +931,27 @@ class Resolver:
                 if pv.type == "FUNCTION" and pv.value.get("name") in ("appremove", "fileremove", "command"):
                     resolved = self.resolve_function(pv.value)
                     run_cmd = resolved.get("run")
+                    ex_de = resolved.get("exclude_de")
+                    f_de = resolved.get("for_de")
+                    if self._is_de_excluded(active_de, ex_de, f_de, key=key, run_cmd=run_cmd or ""):
+                        continue
                     if run_cmd:
-                        out.append({
+                        entry = {
                             "section": sec_name,
                             "key": key,
                             "type": pv.value.get("name"),
                             "run": run_cmd,
-                        })
+                        }
+                        if ex_de:
+                            entry["exclude_de"] = ex_de
+                        if f_de:
+                            entry["for_de"] = f_de
+                        out.append(entry)
         return out
 
-    def resolve_installers(self) -> list:
+    def resolve_installers(self, active_de: str | None = None) -> list:
         """
-        PATCH 10: gom hết các entry `<key> = installer(run=...)` rải rác
+        PATCH 10 & 11: gom hết các entry `<key> = installer(run=...)` rải rác
         trong config (hiện tại trong [Call-gnome-apps] cho gnome-system-
         monitor / gnome-disk-utility) — quét toàn bộ section, giống
         resolve_removals()/PATCH 6, để hỗ trợ thêm installer() ở section
@@ -891,6 +963,8 @@ class Resolver:
         sẵn trước khi cài package bổ sung này. Không dùng file .sh riêng,
         không hardcode trong workflow YAML: desktop.sh đọc trực tiếp từ
         /tmp/hcl-resolved.json (giống removals).
+
+        Lọc theo active_de nếu có exclude_de / for_de.
         """
         out = []
         for sec_name in self.order:
@@ -899,13 +973,22 @@ class Resolver:
                 if pv.type == "FUNCTION" and pv.value.get("name") == "installer":
                     resolved = self.resolve_function(pv.value)
                     run_cmd = resolved.get("run")
+                    ex_de = resolved.get("exclude_de")
+                    f_de = resolved.get("for_de")
+                    if self._is_de_excluded(active_de, ex_de, f_de, key=key, run_cmd=run_cmd or ""):
+                        continue
                     if run_cmd:
-                        out.append({
+                        entry = {
                             "section": sec_name,
                             "key": key,
                             "type": "installer",
                             "run": run_cmd,
-                        })
+                        }
+                        if ex_de:
+                            entry["exclude_de"] = ex_de
+                        if f_de:
+                            entry["for_de"] = f_de
+                        out.append(entry)
         return out
 
     def resolve_file_copies(self) -> list:
@@ -980,14 +1063,19 @@ class Resolver:
         result["base_profile"] = self.resolve_my_version_os_base()
         bp = result["base_profile"]
         kp = bp.get("kernel_profile") or {}
-        active_de = (de_override or kp.get("desktop") or "").strip().lower()
+        de_from_env_section = ""
+        try:
+            de_from_env_section = self.resolve_enum_section("Desktop-Environment") or ""
+        except Exception:
+            pass
+        active_de = (de_override or de_from_env_section or kp.get("desktop") or "").strip().lower()
 
         result["package_groups"] = self.resolve_package_groups()
         result["apt_repository"] = self.resolve_apt_repository()
         result["desktop_apply"] = self.resolve_desktop_apply()
         result["flathub_apps"] = self.resolve_flathub_apps(active_de=active_de)
-        result["removals"] = self.resolve_removals()
-        result["installers"] = self.resolve_installers()  # PATCH 10
+        result["removals"] = self.resolve_removals(active_de=active_de)
+        result["installers"] = self.resolve_installers(active_de=active_de)
         result["file_copies"] = self.resolve_file_copies()
         if "customization" in self.sections:
             result["customization"] = {

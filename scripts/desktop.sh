@@ -1310,13 +1310,21 @@ if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
     echo "[HCL installer] $install_cmd"
     bash -c "$install_cmd" || echo "⚠️  Lệnh installer thất bại (bỏ qua): $install_cmd" >&2
   done < <(python3 -c "
-import json
+import json, os
 try:
     d = json.load(open('/tmp/hcl-resolved.json'))
 except Exception:
     raise SystemExit
+cur_de = os.environ.get('DE', '').strip().lower()
 for r in d.get('installers', []):
-    cmd = r.get('run')
+    cmd = r.get('run', '')
+    ex = r.get('exclude_de')
+    f_de = r.get('for_de')
+    if cur_de:
+        if ex and cur_de in [x.strip().lower() for x in str(ex).split(',') if x.strip()]:
+            continue
+        if f_de and cur_de not in [x.strip().lower() for x in str(f_de).split(',') if x.strip()]:
+            continue
     if cmd:
         print(cmd)
 " 2>/dev/null)
@@ -1353,13 +1361,26 @@ if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
     echo "[HCL removal] $removal_cmd"
     bash -c "$removal_cmd" || echo "⚠️  Lệnh remove thất bại (bỏ qua): $removal_cmd" >&2
   done < <(python3 -c "
-import json
+import json, os
 try:
     d = json.load(open('/tmp/hcl-resolved.json'))
 except Exception:
     raise SystemExit
+cur_de = os.environ.get('DE', '').strip().lower()
 for r in d.get('removals', []):
-    cmd = r.get('run')
+    cmd = r.get('run', '')
+    key = r.get('key', '')
+    ex = r.get('exclude_de')
+    f_de = r.get('for_de')
+    # Bảo vệ an toàn tuyệt đối: nếu DE là kde thì không bao giờ gỡ systemsettings
+    if cur_de == 'kde':
+        if key == 'systemsettings-KDE' or ('systemsettings' in cmd and ('remove' in cmd or 'purge' in cmd)):
+            continue
+    if cur_de:
+        if ex and cur_de in [x.strip().lower() for x in str(ex).split(',') if x.strip()]:
+            continue
+        if f_de and cur_de not in [x.strip().lower() for x in str(f_de).split(',') if x.strip()]:
+            continue
     if cmd:
         print(cmd)
 " 2>/dev/null)
