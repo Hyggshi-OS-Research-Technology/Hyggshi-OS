@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Hyggshi Sound Shortcut
+Name[vi]=Hyggshi Phím Tắt Âm Thanh
+Comment=Volume key daemon with OSD popup for Hyggshi OS
+Comment[vi]=Daemon phím tắt âm lượng với OSD popup cho Hyggshi OS
+Exec=hyggshi-sound-shortcut
+Icon=hyggshi-sound-shortcut
+Terminal=false
+Categories=System;Settings;Audio;
+Keywords=volume;sound;shortcut;osd;mute;
+NoDisplay=false

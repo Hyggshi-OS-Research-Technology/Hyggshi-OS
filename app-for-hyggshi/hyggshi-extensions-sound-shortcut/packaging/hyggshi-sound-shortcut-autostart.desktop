@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Hyggshi Sound Shortcut
+Name[vi]=Hyggshi Phím Tắt Âm Thanh
+Comment=Hyggshi OS volume OSD daemon — handles Fn+Volume keys and shows popup
+Comment[vi]=Daemon phím tắt âm thanh Hyggshi OS — bắt Fn+Volume và hiện OSD popup
+Exec=hyggshi-sound-shortcut
+Icon=hyggshi-sound-shortcut
+Terminal=false
+OnlyShowIn=XFCE;MATE;Cinnamon;LXQt;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Application
+NoDisplay=true

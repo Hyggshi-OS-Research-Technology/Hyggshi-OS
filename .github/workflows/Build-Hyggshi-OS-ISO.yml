@@ -394,6 +394,11 @@ jobs:
           # Stage installer branding so desktop.sh can rebrand the Calamares launcher.
           sudo cp iso-config/branding/Hyggshi-OS-Installer.png "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo chmod 0644 "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
+          # Stage Hyggshi sound shortcut source & installer script cho desktop.sh
+          sudo rm -rf "${CHROOT_DIR}/tmp/hyggshi-extensions-sound-shortcut"
+          sudo cp -r app-for-hyggshi/hyggshi-extensions-sound-shortcut "${CHROOT_DIR}/tmp/hyggshi-extensions-sound-shortcut"
+          sudo cp app-for-hyggshi/sound-shortcut.sh "${CHROOT_DIR}/tmp/sound-shortcut.sh"
+          sudo chmod +x "${CHROOT_DIR}/tmp/sound-shortcut.sh"
           sudo cp -f /tmp/hcl-resolved.json "${CHROOT_DIR}/tmp/hcl-resolved.json" 2>/dev/null || true
           # Stage nguồn cho mọi entry filecopy(source=,target=) trong
           # config.ini (xem resolve_file_copies()/PATCH 7 trong

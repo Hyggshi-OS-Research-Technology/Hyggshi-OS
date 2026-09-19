@@ -66,6 +66,11 @@ sudo cp -a iso-config/calamares live-build/chroot/tmp/calamares
 # Stage installer branding so desktop.sh can rebrand the Calamares launcher.
 sudo cp iso-config/branding/Hyggshi-OS-Installer.png live-build/chroot/tmp/Hyggshi-OS-Installer.png
 sudo chmod 0644 live-build/chroot/tmp/Hyggshi-OS-Installer.png
+# Stage Hyggshi sound shortcut source & installer script cho desktop.sh
+sudo rm -rf live-build/chroot/tmp/hyggshi-extensions-sound-shortcut
+sudo cp -r app-for-hyggshi/hyggshi-extensions-sound-shortcut live-build/chroot/tmp/hyggshi-extensions-sound-shortcut
+sudo cp app-for-hyggshi/sound-shortcut.sh live-build/chroot/tmp/sound-shortcut.sh
+sudo chmod +x live-build/chroot/tmp/sound-shortcut.sh
 # Stage HCL config và file_copies cho desktop.sh
 if [ -f "tools/hcl_parser.py" ] && [ -f "iso-config/config/config.ini" ]; then
   python3 tools/hcl_parser.py iso-config/config/config.ini \
