@@ -735,7 +735,7 @@ LXQTMIMEOF
         ;;
       *)       apt-get install -y papirus-icon-theme ;;
     esac
-    ;;h
+    ;;
 
   gnome)
     # gnome-session cần cho phiên GNOME thật (không chỉ gnome-shell trần);
