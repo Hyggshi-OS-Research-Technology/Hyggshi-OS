@@ -926,6 +926,83 @@ EOF
         /usr/share/themes/Windows-10; then
       echo "⚠️  Clone theme Windows-10 thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
     fi
+
+    echo "===== Hyggshi Sound Shortcut (phím tắt âm thanh + OSD cho XFCE) ====="
+    # Daemon C++ bắt XF86AudioRaiseVolume/LowerVolume/Mute qua XGrabKey,
+    # điều khiển PipeWire/PulseAudio/ALSA và hiện OSD popup dark-theme.
+    #
+    # Binary được pre-build bởi CI từ
+    # app-for-hyggshi/hyggshi-extensions-sound-shortcut/ và stage vào
+    # /tmp/hyggshi-sound-shortcut trước khi desktop.sh chạy trong chroot
+    # (xem bước stage trong .github/workflows/Build-Hyggshi-OS-ISO.yml).
+    # Nếu không có binary pre-built, cài các deps và build từ source ngay
+    # trong chroot (fallback — chậm hơn nhưng không làm fail build).
+    #
+    # Deps runtime: libxtst (XGrabKey), Qt5/6 Widgets — thường đã có vì
+    # task-xfce-desktop kéo theo libqt5-default/libqt6-qpa-plugins.
+    SOUND_SHORTCUT_BIN="/tmp/hyggshi-sound-shortcut"
+    SOUND_SHORTCUT_INSTALL="/usr/local/bin/hyggshi-sound-shortcut"
+
+    if [ -x "$SOUND_SHORTCUT_BIN" ]; then
+      install -m 0755 "$SOUND_SHORTCUT_BIN" "$SOUND_SHORTCUT_INSTALL"
+      echo "OK: đã cài binary hyggshi-sound-shortcut từ pre-built ($SOUND_SHORTCUT_BIN)."
+    elif [ -x /tmp/sound-shortcut.sh ]; then
+      echo "Chạy script cài đặt /tmp/sound-shortcut.sh..."
+      SRC_DIR="/tmp/hyggshi-extensions-sound-shortcut" /tmp/sound-shortcut.sh || true
+    elif [ -d /tmp/hyggshi-extensions-sound-shortcut ]; then
+      # Fallback: build từ source trong chroot (cần Qt dev + X11 dev headers)
+      echo "Binary pre-built không có — thử build từ source trong chroot (fallback)..."
+      for pkg in cmake gcc g++ libx11-dev; do
+        apt-get install -y --no-install-recommends "$pkg" 2>/dev/null || \
+          echo "⚠️  Không cài được '$pkg' — build có thể thất bại." >&2
+      done
+      # Ưu tiên Qt6, fallback Qt5
+      if apt-cache show qt6-base-dev >/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends qt6-base-dev 2>/dev/null || true
+      else
+        apt-get install -y --no-install-recommends qtbase5-dev 2>/dev/null || true
+      fi
+      BUILD_DIR=$(mktemp -d)
+      if cmake -S /tmp/hyggshi-extensions-sound-shortcut -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local >/dev/null 2>&1 \
+          && cmake --build "$BUILD_DIR" -j"$(nproc)" >/dev/null 2>&1; then
+        cmake --install "$BUILD_DIR" >/dev/null 2>&1 || true
+        echo "OK: hyggshi-sound-shortcut build + install từ source thành công."
+      else
+        echo "⚠️  Build hyggshi-sound-shortcut từ source thất bại — phím tắt âm thanh sẽ không hoạt động." >&2
+      fi
+      rm -rf "$BUILD_DIR"
+    else
+      echo "⚠️  Không có binary pre-built và không có source tại /tmp/hyggshi-extensions-sound-shortcut — bỏ qua cài hyggshi-sound-shortcut." >&2
+    fi
+
+    # Ghi autostart .desktop vào /etc/xdg/autostart/ để daemon tự chạy cùng
+    # mọi session XFCE (kể cả user do Calamares tạo sau khi cài thật).
+    if command -v hyggshi-sound-shortcut >/dev/null 2>&1 \
+        || [ -x "$SOUND_SHORTCUT_INSTALL" ]; then
+      mkdir -p /etc/xdg/autostart
+      cat <<'SOUNDAUTOSTART' > /etc/xdg/autostart/hyggshi-sound-shortcut.desktop
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Hyggshi Sound Shortcut
+Name[vi]=Hyggshi Phím Tắt Âm Thanh
+Comment=Hyggshi OS volume OSD daemon — handles Fn+Volume keys and shows popup
+Comment[vi]=Daemon phím tắt âm thanh Hyggshi OS — bắt Fn+Volume và hiện OSD popup
+Exec=hyggshi-sound-shortcut
+Icon=hyggshi-sound-shortcut
+Terminal=false
+OnlyShowIn=XFCE;MATE;Cinnamon;LXQt;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Application
+NoDisplay=true
+SOUNDAUTOSTART
+      chmod 644 /etc/xdg/autostart/hyggshi-sound-shortcut.desktop
+      echo "OK: đã ghi /etc/xdg/autostart/hyggshi-sound-shortcut.desktop"
+    else
+      echo "⚠️  hyggshi-sound-shortcut không được cài — bỏ qua ghi autostart." >&2
+    fi
     ;;
 esac
 
