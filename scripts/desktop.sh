@@ -612,7 +612,25 @@ dpkg-reconfigure -f noninteractive tzdata || true
 
 case "$DE" in
   kde)
+    apt-get install -y kde-plasma-desktop plasma-workspace sddm \
+      plasma-nm bluedevil kde-config-sddm dolphin konsole || \
     apt-get install -y kde-plasma-desktop plasma-workspace sddm
+
+    # bluedevil là applet Bluetooth NATIVE cho KDE Plasma systray — blueman
+    # (cài chung mọi DE ở khối "Bluetooth + tiện ích quản lý mạng không dây"
+    # phía dưới) là app GTK, không tích hợp đúng chuẩn vào Plasma systray.
+    # Nếu bluedevil không cài được (thiếu trên mirror/version nào đó), vẫn
+    # còn blueman làm fallback — không cần thêm gì, vì blueman đã cài global.
+    if ! dpkg -l bluedevil 2>/dev/null | grep -q '^ii'; then
+      echo "CẢNH BÁO: bluedevil không cài được trên KDE — Bluetooth sẽ dùng blueman (GTK) làm fallback, có thể không tích hợp đẹp vào Plasma systray." >&2
+    fi
+
+    # plasma-nm cần plasma-workspace's kded module để tự hiện icon trong
+    # systray ngay từ session đầu — đảm bảo kded5/kded6 (tuỳ Plasma version)
+    # có mặt, thường đã là dependency của plasma-workspace nhưng khai rõ
+    # để không phụ thuộc ngầm vào Recommends.
+    apt-get install -y --no-install-recommends kded5 2>/dev/null || \
+    apt-get install -y --no-install-recommends kded6 2>/dev/null || true
     ;;
 
   lxqt)
@@ -628,18 +646,54 @@ case "$DE" in
     # - Screenshot: screengrab (thay vì spectacle của KDE)
     # - Window Manager & Config: openbox obconf-qt
     # - Core & System: lxqt-powermanagement lxqt-notificationd lxqt-runner lxqt-policykit lxqt-sudo lxqt-admin lxqt-about lxqt-globalkeys lxqt-qtplugin
+    # - Network: network-manager-gnome (cung cấp nm-applet, LXQt không có
+    #   applet mạng riêng của mình, đây là lựa chọn chuẩn cho LXQt/XFCE)
     apt-get install -y lxqt lxqt-core sddm lxqt-config lxqt-panel lxqt-session \
       pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt \
       qps screengrab openbox obconf-qt lxqt-powermanagement lxqt-notificationd \
       lxqt-runner lxqt-policykit lxqt-sudo lxqt-admin lxqt-about lxqt-globalkeys \
-      lxqt-qtplugin || \
+      lxqt-qtplugin network-manager-gnome || \
     apt-get install -y lxqt sddm lxqt-config lxqt-panel lxqt-session \
-      pcmanfm-qt qterminal featherpad lximage-qt openbox obconf-qt
+      pcmanfm-qt qterminal featherpad lximage-qt openbox obconf-qt \
+      network-manager-gnome
 
     # Loại bỏ triệt để các ứng dụng KDE nếu bị kéo theo qua Recommends của repo/mirror
     echo "Gỡ bỏ các ứng dụng KDE không mong muốn trong phiên bản LXQt (nếu có)..."
     apt-get purge -y konsole dolphin kate kwrite ark gwenview okular kcalc spectacle \
-      kde-plasma-desktop plasma-workspace plasma-desktop plasma-nm kde-config-sddm 2>/dev/null || true
+      kde-plasma-desktop plasma-workspace plasma-desktop plasma-nm kde-config-sddm bluedevil 2>/dev/null || true
+
+    # ===== nm-applet + blueman-applet: tự chạy cùng session LXQt =====
+    # network-manager-gnome cung cấp binary nm-applet nhưng KHÔNG tự thêm
+    # entry autostart cho panel LXQt (autostart .desktop của gói này thường
+    # chỉ định OnlyShowIn=GNOME;Unity; — không liệt kê LXQt). blueman tương
+    # tự, autostart mặc định của nó thường target XFCE/GNOME/MATE. Không có
+    # 2 file .desktop này, applet không tự hiện lên dù binary đã cài đủ.
+    mkdir -p /etc/xdg/autostart
+    cat <<'NMEOF' > /etc/xdg/autostart/hyggshi-nm-applet-lxqt.desktop
+[Desktop Entry]
+Type=Application
+Name=Network Manager Applet
+Comment=Manage Wi-Fi/network connections from the LXQt panel
+Exec=nm-applet
+Icon=nm-device-wireless
+OnlyShowIn=LXQt;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+NMEOF
+    cat <<'BLUEEOF' > /etc/xdg/autostart/hyggshi-blueman-applet-lxqt.desktop
+[Desktop Entry]
+Type=Application
+Name=Blueman Applet
+Comment=Manage Bluetooth devices from the LXQt panel
+Exec=blueman-applet
+Icon=blueman
+OnlyShowIn=LXQt;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+BLUEEOF
+    chmod 644 /etc/xdg/autostart/hyggshi-nm-applet-lxqt.desktop \
+               /etc/xdg/autostart/hyggshi-blueman-applet-lxqt.desktop
+    echo "OK: đã ghi autostart nm-applet + blueman-applet cho LXQt panel."
 
     # Thiết lập default application MIME associations chuẩn cho các app LXQt
     mkdir -p /etc/xdg
@@ -681,7 +735,7 @@ LXQTMIMEOF
         ;;
       *)       apt-get install -y papirus-icon-theme ;;
     esac
-    ;;
+    ;;h
 
   gnome)
     # gnome-session cần cho phiên GNOME thật (không chỉ gnome-shell trần);
@@ -840,7 +894,8 @@ EOF
   *)
     # mặc định: xfce
     apt-get install -y task-xfce-desktop lightdm lightdm-gtk-greeter \
-      xfce4-whiskermenu-plugin git libgtk-3-bin x11-xserver-utils
+      xfce4-whiskermenu-plugin git libgtk-3-bin x11-xserver-utils \
+      network-manager-gnome
 
     # icon theme theo lựa chọn
     case "$ICON_THEME" in
