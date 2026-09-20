@@ -20,6 +20,19 @@
 #undef CursorShape
 #endif
 
+// Các kết hợp modifier phổ biến để không bao giờ bị miss phím khi NumLock/CapsLock bật
+static const unsigned int kModifiers[] = {
+    0,
+    Mod2Mask,                          // NumLock
+    LockMask,                          // CapsLock
+    Mod2Mask | LockMask,               // NumLock + CapsLock
+    Mod3Mask,                          // ScrollLock
+    Mod3Mask | Mod2Mask,
+    Mod3Mask | LockMask,
+    Mod3Mask | Mod2Mask | LockMask,
+    AnyModifier                        // Fallback chung
+};
+
 // ---------------------------------------------------------------------------
 KeyGrabber::KeyGrabber(QObject *parent)
     : QObject(parent)
@@ -27,8 +40,7 @@ KeyGrabber::KeyGrabber(QObject *parent)
     XInitThreads();
     m_display = XOpenDisplay(nullptr);
     if (!m_display) {
-        qWarning() << "[HyggshiSound] KeyGrabber: XOpenDisplay thất bại."
-                   << "Daemon sẽ chạy nhưng không bắt được phím tắt.";
+        qWarning() << "[HyggshiSound] KeyGrabber: XOpenDisplay thất bại. Không kết nối được X11.";
         return;
     }
 
@@ -38,9 +50,9 @@ KeyGrabber::KeyGrabber(QObject *parent)
         m_notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
         connect(m_notifier, &QSocketNotifier::activated,
                 this, [this]() { onX11Event(); });
-        qDebug() << "[HyggshiSound] KeyGrabber: đang bắt phím XF86Audio* trên X11 fd" << fd;
+        qDebug() << "[HyggshiSound] KeyGrabber: Đang bắt phím XF86Audio* nhạy cao trên X11 fd" << fd;
     } else {
-        qWarning() << "[HyggshiSound] KeyGrabber: XGrabKey thất bại — phím tắt sẽ không hoạt động.";
+        qWarning() << "[HyggshiSound] KeyGrabber: XGrabKey thất bại — phím tắt có thể bị ứng dụng khác chiếm.";
         XCloseDisplay(m_display);
         m_display = nullptr;
     }
@@ -57,34 +69,42 @@ KeyGrabber::~KeyGrabber()
 // ---------------------------------------------------------------------------
 bool KeyGrabber::grabKeys()
 {
+    if (!m_display) return false;
     Window root = DefaultRootWindow(m_display);
 
-    // Map keysym → keycode (phụ thuộc layout bàn phím hiện tại)
-    m_keyRaise = XKeysymToKeycode(m_display, XF86XK_AudioRaiseVolume);
-    m_keyLower = XKeysymToKeycode(m_display, XF86XK_AudioLowerVolume);
-    m_keyMute  = XKeysymToKeycode(m_display, XF86XK_AudioMute);
+    // Lấy keycode tương ứng layout hiện tại
+    m_keyRaise   = XKeysymToKeycode(m_display, XF86XK_AudioRaiseVolume);
+    m_keyLower   = XKeysymToKeycode(m_display, XF86XK_AudioLowerVolume);
+    m_keyMute    = XKeysymToKeycode(m_display, XF86XK_AudioMute);
+    m_keyMicMute = XKeysymToKeycode(m_display, XF86XK_AudioMicMute);
 
-    int grabbed = 0;
-    // Bắt với AnyModifier để không bị block bởi CapsLock/NumLock
-    // (đây là pattern chuẩn cho media key global grab)
-    for (unsigned int key : {m_keyRaise, m_keyLower, m_keyMute}) {
+    int grabbedCount = 0;
+    const unsigned int keys[] = {m_keyRaise, m_keyLower, m_keyMute, m_keyMicMute};
+
+    for (unsigned int key : keys) {
         if (key == 0) continue;
-        XGrabKey(m_display, static_cast<int>(key), AnyModifier, root,
-                 False, GrabModeAsync, GrabModeAsync);
-        ++grabbed;
+        for (unsigned int mod : kModifiers) {
+            XGrabKey(m_display, static_cast<int>(key), mod, root,
+                     False, GrabModeAsync, GrabModeAsync);
+        }
+        ++grabbedCount;
     }
 
     XFlush(m_display);
-    return grabbed > 0;
+    return grabbedCount > 0;
 }
 
 void KeyGrabber::ungrabKeys()
 {
     if (!m_display) return;
     Window root = DefaultRootWindow(m_display);
-    for (unsigned int key : {m_keyRaise, m_keyLower, m_keyMute}) {
+
+    const unsigned int keys[] = {m_keyRaise, m_keyLower, m_keyMute, m_keyMicMute};
+    for (unsigned int key : keys) {
         if (key == 0) continue;
-        XUngrabKey(m_display, static_cast<int>(key), AnyModifier, root);
+        for (unsigned int mod : kModifiers) {
+            XUngrabKey(m_display, static_cast<int>(key), mod, root);
+        }
     }
     XFlush(m_display);
 }
@@ -92,9 +112,17 @@ void KeyGrabber::ungrabKeys()
 // ---------------------------------------------------------------------------
 void KeyGrabber::onX11Event()
 {
-    while (XPending(m_display)) {
+    while (m_display && XPending(m_display)) {
         XEvent event;
         XNextEvent(m_display, &event);
+
+        // Tự động nhận diện khi người dùng đổi layout bàn phím (ví dụ bộ gõ tiếng Việt)
+        if (event.type == MappingNotify) {
+            XRefreshKeyboardMapping(&event.xmapping);
+            ungrabKeys();
+            grabKeys();
+            continue;
+        }
 
         if (event.type != KeyPress) continue;
 
@@ -106,6 +134,8 @@ void KeyGrabber::onX11Event()
             emit volumeDown();
         } else if (code == m_keyMute && m_keyMute != 0) {
             emit muteToggle();
+        } else if (code == m_keyMicMute && m_keyMicMute != 0) {
+            emit micMuteToggle();
         }
     }
 }

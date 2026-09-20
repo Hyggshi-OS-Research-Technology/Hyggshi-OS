@@ -1,19 +1,23 @@
 #pragma once
+#include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QTimer>
 
 // ---------------------------------------------------------------------------
-// AudioController — điều khiển âm lượng hệ thống với auto-detect backend.
+// AudioController — điều khiển âm lượng hệ thống với độ phản hồi cực cao (0ms UI latency).
 //
-// Thứ tự ưu tiên:
-//   1. PipeWire  — dùng `wpctl`
-//   2. PulseAudio — dùng `pactl`
-//   3. ALSA      — dùng `amixer`
-//
-// Backend được phát hiện một lần lúc khởi tạo và giữ nguyên suốt vòng đời
-// của đối tượng.
+// Cơ chế tối ưu độ nhạy:
+//   1. Optimistic State Update: Cập nhật ngay bộ nhớ đệm và phát tín hiệu cho UI
+//      trong 0ms, không đợi tiến trình backend chạy xong.
+//   2. Direct Execution: Chạy trực tiếp binary (wpctl, pactl, amixer) không qua /bin/sh.
+//   3. Single-pass Parsing: Truy vấn cả volume và mute trong 1 lần đọc duy nhất.
+//   4. Debounced Hardware Sync: Đồng bộ ngầm với phần cứng để tránh lệch trạng thái.
 // ---------------------------------------------------------------------------
 
-class AudioController {
+class AudioController : public QObject {
+    Q_OBJECT
+
 public:
     enum class Backend {
         PipeWire,
@@ -22,49 +26,38 @@ public:
         Unknown
     };
 
-    AudioController();
+    explicit AudioController(QObject *parent = nullptr);
 
-    // Tăng âm lượng lên stepPercent% (mặc định 5)
+    // Thay đổi âm lượng
     void volumeUp(int stepPercent = 5);
-
-    // Giảm âm lượng xuống stepPercent%
     void volumeDown(int stepPercent = 5);
-
-    // Bật/tắt mute (toggle)
     void toggleMute();
 
-    // Trả về âm lượng hiện tại [0..100], -1 nếu không query được
-    int currentVolume() const;
-
-    // Trả về trạng thái mute
-    bool isMuted() const;
+    // Getter trạng thái hiện tại
+    int currentVolume() const { return m_volume; }
+    bool isMuted() const { return m_muted; }
 
     Backend backend() const { return m_backend; }
     QString backendName() const;
 
+signals:
+    void stateChanged(int volume, bool muted);
+
+public slots:
+    // Đồng bộ lại với phần cứng (chạy ngầm)
+    void syncHardwareState();
+
 private:
     Backend m_backend{Backend::Unknown};
+    int     m_volume{50};
+    bool    m_muted{false};
+    QTimer *m_syncTimer{nullptr};
 
-    Backend detectBackend() const;
-    void runCmd(const QString &cmd) const;
-    QString queryCmd(const QString &cmd) const;
+    Backend detectBackend();
+    void runDirect(const QString &program, const QStringList &arguments);
+    QString queryDirect(const QString &program, const QStringList &arguments) const;
 
-    // Helpers per-backend
-    void pwVolumeUp(int step) const;
-    void pwVolumeDown(int step) const;
-    void pwToggleMute() const;
-    int  pwVolume() const;
-    bool pwMuted() const;
-
-    void paVolumeUp(int step) const;
-    void paVolumeDown(int step) const;
-    void paToggleMute() const;
-    int  paVolume() const;
-    bool paMuted() const;
-
-    void alsaVolumeUp(int step) const;
-    void alsaVolumeDown(int step) const;
-    void alsaToggleMute() const;
-    int  alsaVolume() const;
-    bool alsaMuted() const;
+    void applyBackendVolume(int targetVolume);
+    void applyBackendMute(bool targetMute);
+    void readHardwareVolumeAndMute(int &vol, bool &mute) const;
 };

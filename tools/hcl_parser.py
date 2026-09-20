@@ -106,10 +106,16 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # resolve_installers(), export INSTALLER_{idx} env, desktop.sh đọc JSON và
 # chạy lệnh trong chroot — KHÔNG tạo file .sh riêng, KHÔNG hardcode vào
 # workflow YAML.
+# PATCH 13: thêm add-extension-gnome / add-tweak-gnome — dùng trong
+# [call-gnome-extensions] và [call-gnome-tweak] (các entry kỹ thuật
+# giống installer() nhưng chỉ chạy khi DE=gnome). Không check tồn tại path
+# ("run" là lệnh shell, không phải path file trong repo), validate duy nhất
+# là có kwarg "run" — cùng cơ chế với installer()/appremove()/fileremove().
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
     "command", "make", "call", "installkernel", "apply", "flathubinstall",
     "appremove", "fileremove", "copy", "installer",
+    "add-extension-gnome", "add-tweak-gnome",
 }
 
 SIZE_RE = re.compile(
@@ -712,7 +718,9 @@ class Resolver:
         # - exclude_de = "kde" / exclude_de = "kde, gnome"
         # - for_de = "xfce, gnome, cinnamon, lxqt"
         # - desktop = "..." (nếu bắt đầu bằng "!" như "!kde" -> exclude_de = "kde")
-        if name in ("appremove", "fileremove", "installer", "command"):
+        # PATCH 13: mở rộng sang add-extension-gnome / add-tweak-gnome
+        if name in ("appremove", "fileremove", "installer", "command",
+                    "add-extension-gnome", "add-tweak-gnome"):
             exclude_de = kwargs.get("exclude_de") or kwargs.get("except_de") or kwargs.get("not_de")
             for_de = kwargs.get("for_de") or kwargs.get("only_de")
             desktop_kw = kwargs.get("desktop")
@@ -800,6 +808,16 @@ class Resolver:
             out["gnome_apps"] = classify("gnome-apps", gnome_apps_raw).value
         else:
             out["gnome_apps"] = None
+
+        # PATCH 13: đọc gnome-extensions và gnome-tweak từ [my-version-os-base]
+        # — cùng pattern với gnome-apps: resolve_gnome_extensions()/
+        # resolve_gnome_tweaks() sẽ kiểm tra giá trị này và active_de
+        # trước khi chạy bất kỳ lệnh nào trong [call-gnome-extensions]/[call-gnome-tweak].
+        gnome_ext_raw = kv.get("gnome-extensions")
+        out["gnome_extensions"] = classify("gnome-extensions", gnome_ext_raw).value if gnome_ext_raw is not None else None
+
+        gnome_tweak_raw = kv.get("gnome-tweak")
+        out["gnome_tweak"] = classify("gnome-tweak", gnome_tweak_raw).value if gnome_tweak_raw is not None else None
 
         name_tpl = classify("name", kv["name"]).value
         name = name_tpl
@@ -930,6 +948,74 @@ class Resolver:
                     if app_id and app_id not in seen:
                         seen.add(app_id)
                         out.append(app_id)
+        return out
+
+    def _is_gnome_section_active(
+        self, sec_name_lower: str, flag_key: str, active_de: str | None
+    ) -> bool:
+        """
+        PATCH 13: kiểm tra xem 1 section GNOME-only (call-gnome-extensions,
+        call-gnome-tweak) có được phép chạy hay không:
+          1. active_de phải là "gnome"
+          2. khóa flag tương ứng trong [my-version-os-base] không phải False.
+        sec_name_lower: tên section đã lower (vd "call-gnome-extensions").
+        flag_key: tên key trong [my-version-os-base] (vd "gnome-extensions").
+        """
+        is_gnome = (active_de or "").strip().lower() == "gnome"
+        if not is_gnome:
+            return False
+        flag_val = None
+        if "my-version-os-base" in self.sections:
+            kv = self._kv("my-version-os-base")
+            if flag_key in kv:
+                flag_val = classify(flag_key, kv[flag_key]).value
+        return flag_val is not False
+
+    def resolve_gnome_extensions(self, active_de: str | None = None) -> list:
+        """
+        PATCH 13: gom các entry add-extension-gnome(run=...) trong
+        [call-gnome-extensions] — chỉ chạy khi DE=gnome.
+        Mỗi entry lưu lại key + lệnh "run" để desktop.sh thực thi trong chroot.
+        """
+        out = []
+        for sec_name in self.order:
+            if sec_name.lower() == "call-gnome-extensions":
+                if not self._is_gnome_section_active(
+                    sec_name.lower(), "gnome-extensions", active_de
+                ):
+                    continue
+            else:
+                continue  # chỉ xuất từ đúng section này
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "add-extension-gnome":
+                    resolved = self.resolve_function(pv.value)
+                    run_cmd = resolved.get("run")
+                    if run_cmd:
+                        out.append({"key": key, "run": run_cmd})
+        return out
+
+    def resolve_gnome_tweaks(self, active_de: str | None = None) -> list:
+        """
+        PATCH 13: gom các entry add-tweak-gnome(run=...) trong
+        [call-gnome-tweak] — chỉ chạy khi DE=gnome.
+        """
+        out = []
+        for sec_name in self.order:
+            if sec_name.lower() == "call-gnome-tweak":
+                if not self._is_gnome_section_active(
+                    sec_name.lower(), "gnome-tweak", active_de
+                ):
+                    continue
+            else:
+                continue  # chỉ xuất từ đúng section này
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "add-tweak-gnome":
+                    resolved = self.resolve_function(pv.value)
+                    run_cmd = resolved.get("run")
+                    if run_cmd:
+                        out.append({"key": key, "run": run_cmd})
         return out
 
     def _is_de_excluded(
@@ -1148,6 +1234,9 @@ class Resolver:
         result["removals"] = self.resolve_removals(active_de=active_de)
         result["installers"] = self.resolve_installers(active_de=active_de)
         result["file_copies"] = self.resolve_file_copies()
+        # PATCH 13: gom GNOME extensions và tweaks — chỉ xuất khi DE=gnome
+        result["gnome_extensions"] = self.resolve_gnome_extensions(active_de=active_de)
+        result["gnome_tweaks"] = self.resolve_gnome_tweaks(active_de=active_de)
         if "customization" in self.sections:
             result["customization"] = {
                 k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
@@ -1334,6 +1423,26 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     is_gnome_active = (de == "gnome")
     gnome_apps_enabled = is_gnome_active and (gnome_apps_call is not False and gnome_apps_call is not None)
     put("GNOME_APPS_ENABLED", str(gnome_apps_enabled).lower())
+
+    # PATCH 13: export GNOME extensions
+    gnome_ext_call = bp.get("gnome_extensions")
+    gnome_ext_enabled = is_gnome_active and (gnome_ext_call is not False and gnome_ext_call is not None)
+    put("GNOME_EXTENSIONS_ENABLED", str(gnome_ext_enabled).lower())
+    gnome_extensions = resolved.get("gnome_extensions", []) if gnome_ext_enabled else []
+    put("GNOME_EXT_COUNT", len(gnome_extensions))
+    for idx, e in enumerate(gnome_extensions, start=1):
+        put(f"GNOME_EXT_{idx}_KEY", e.get("key"))
+        put(f"GNOME_EXT_{idx}_RUN", e.get("run"))
+
+    # PATCH 13: export GNOME tweaks
+    gnome_tweak_call = bp.get("gnome_tweak")
+    gnome_tweak_enabled = is_gnome_active and (gnome_tweak_call is not False and gnome_tweak_call is not None)
+    put("GNOME_TWEAK_ENABLED", str(gnome_tweak_enabled).lower())
+    gnome_tweaks = resolved.get("gnome_tweaks", []) if gnome_tweak_enabled else []
+    put("GNOME_TWEAK_COUNT", len(gnome_tweaks))
+    for idx, t in enumerate(gnome_tweaks, start=1):
+        put(f"GNOME_TWEAK_{idx}_KEY", t.get("key"))
+        put(f"GNOME_TWEAK_{idx}_RUN", t.get("run"))
 
     flathub_apps = resolved.get("flathub_apps", [])
     if de != "gnome":

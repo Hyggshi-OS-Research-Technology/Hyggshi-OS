@@ -39,16 +39,15 @@ static bool acquireLock()
 int main(int argc, char *argv[])
 {
     // Kiểm tra chế độ test / preview trước khi acquireLock()
-    bool isPreview = false;
+    bool isPreview  = false;
+    bool isSimulate = false;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--preview") == 0) {
-            isPreview = true;
-            break;
-        }
+        if (strcmp(argv[i], "--preview")  == 0) { isPreview  = true; break; }
+        if (strcmp(argv[i], "--simulate") == 0) { isSimulate = true; break; }
     }
 
     // Single-instance guard (chỉ áp dụng khi chạy daemon thật)
-    if (!isPreview && !acquireLock()) {
+    if (!isPreview && !isSimulate && !acquireLock()) {
         qDebug() << "[HyggshiSound] Daemon đã đang chạy — thoát.";
         return 0;
     }
@@ -108,6 +107,44 @@ int main(int argc, char *argv[])
         return app.exec();
     }
 
+    // -----------------------------------------------------------------------
+    // Chế độ --simulate: mô phỏng tăng/giảm âm lượng và mute để xem OSD
+    // -----------------------------------------------------------------------
+    if (isSimulate) {
+        auto *osd = new OsdWindow;
+
+        // Kịch bản mô phỏng: (volume, muted, delay_ms_from_start)
+        struct Step { int vol; bool muted; int delay; };
+        const QList<Step> steps = {
+            // Đang ở 30% → tăng từng bước
+            {30, false,    0},
+            {40, false,  700},
+            {50, false, 1400},
+            {65, false, 2100},
+            {80, false, 2800},
+            {95, false, 3500},
+            // Giữ ở 95% → bấm mute
+            {95, true,  4800},
+            // Unmute, quay về 60%
+            {60, false, 6200},
+            // Giảm âm lượng
+            {45, false, 6900},
+            {25, false, 7600},
+            {10, false, 8300},
+        };
+
+        for (const auto &s : steps) {
+            QTimer::singleShot(s.delay, osd, [osd, s]() {
+                osd->showVolume(s.vol, s.muted);
+            });
+        }
+
+        // Tự thoát sau khi chuỗi hoàn tất + 2.5s buffer để OSD fade out
+        QTimer::singleShot(11000, &app, &QApplication::quit);
+        qDebug() << "[HyggshiSound] Simulate mode — sẽ tự thoát sau 11 giây.";
+        return app.exec();
+    }
+
     // Khởi tạo các thành phần daemon
     AudioController audio;
     KeyGrabber      grabber;
@@ -119,29 +156,24 @@ int main(int argc, char *argv[])
         // Vẫn chạy để không crash — OSD vẫn có thể test thủ công
     }
 
-    // Kết nối tín hiệu phím → hành động âm lượng → hiện OSD
-    QObject::connect(&grabber, &KeyGrabber::volumeUp, [&]() {
-        audio.volumeUp();
-        const int vol = audio.currentVolume();
-        const bool muted = audio.isMuted();
-        qDebug() << "[HyggshiSound] Volume Up →" << vol << "%" << (muted ? "[MUTED]" : "");
-        osd.showVolume(qMax(0, vol), muted);
+    // Kết nối phản hồi tức thì (0ms latency): AudioController phát stateChanged -> OSD hiện ngay
+    QObject::connect(&audio, &AudioController::stateChanged,
+                     &osd, &OsdWindow::showVolume);
+
+    QObject::connect(&grabber, &KeyGrabber::volumeUp, [&audio]() {
+        audio.volumeUp(5);
     });
 
-    QObject::connect(&grabber, &KeyGrabber::volumeDown, [&]() {
-        audio.volumeDown();
-        const int vol = audio.currentVolume();
-        const bool muted = audio.isMuted();
-        qDebug() << "[HyggshiSound] Volume Down →" << vol << "%" << (muted ? "[MUTED]" : "");
-        osd.showVolume(qMax(0, vol), muted);
+    QObject::connect(&grabber, &KeyGrabber::volumeDown, [&audio]() {
+        audio.volumeDown(5);
     });
 
-    QObject::connect(&grabber, &KeyGrabber::muteToggle, [&]() {
+    QObject::connect(&grabber, &KeyGrabber::muteToggle, [&audio]() {
         audio.toggleMute();
-        const bool muted = audio.isMuted();
-        const int vol = audio.currentVolume();
-        qDebug() << "[HyggshiSound] Mute Toggle → muted=" << muted;
-        osd.showVolume(qMax(0, vol), muted);
+    });
+
+    QObject::connect(&grabber, &KeyGrabber::micMuteToggle, [&audio]() {
+        audio.toggleMute();
     });
 
     qDebug() << "[HyggshiSound] Daemon đang chạy."
