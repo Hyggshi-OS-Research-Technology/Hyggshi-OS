@@ -125,7 +125,7 @@ SIZE_RE = re.compile(
     re.IGNORECASE,
 )
 VERSION_RE = re.compile(r"^\d+(\.\d+){1,3}$")
-FUNC_CALL_RE = re.compile(r"^(\w+)\((.*)\)$", re.DOTALL)
+FUNC_CALL_RE = re.compile(r"^([\w][\w-]*)\((.*)\)$", re.DOTALL)
 
 
 class HclError(Exception):
@@ -254,7 +254,7 @@ def read_sections(path: str) -> list:
         # từng fname, reset mỗi section) để mỗi lời gọi có 1 key duy nhất
         # trong entries — bản thân key không có ý nghĩa gì, chỉ để tương
         # thích với cấu trúc (key, val, group) mà mọi chỗ khác đang dùng.
-        bm = re.match(r"^([A-Za-z_]\w*)\(", stripped)
+        bm = re.match(r"^([A-Za-z_][\w-]*)\(", stripped)
         if bm:
             fname = bm.group(1)
             val = stripped
@@ -712,6 +712,13 @@ class Resolver:
                     "error",
                     f"installer(...) thiếu 'run' — bắt buộc để biết lệnh "
                     f"cài nào sẽ chạy."))
+
+        if name in ("add-extension-gnome", "add-tweak-gnome"):
+            if not kwargs.get("run"):
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"{name}(...) thiếu 'run' — bắt buộc để biết lệnh nào sẽ chạy "
+                    f"trong chroot khi DE=gnome."))
 
         # PATCH 11: Hỗ trợ điều kiện Desktop Environment (DE) cho
         # appremove, fileremove, installer, command:
