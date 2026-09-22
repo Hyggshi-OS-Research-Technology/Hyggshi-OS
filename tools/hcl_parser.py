@@ -254,6 +254,12 @@ def read_sections(path: str) -> list:
         # từng fname, reset mỗi section) để mỗi lời gọi có 1 key duy nhất
         # trong entries — bản thân key không có ý nghĩa gì, chỉ để tương
         # thích với cấu trúc (key, val, group) mà mọi chỗ khác đang dùng.
+        #
+        # NOTE PATCH 14: cơ chế bare-call này là chung cho MỌI section, nên
+        # [call-KDE-apps] (các dòng `flathubinstall(org.kde.xxx)` không có
+        # "key =") tự động được đọc đúng mà không cần sửa gì ở đây — chỉ
+        # cần khai đúng tên function trong FUNCTION_NAMES (đã có sẵn từ
+        # PATCH 5) và xử lý gating theo DE ở resolve_flathub_apps().
         bm = re.match(r"^([A-Za-z_][\w-]*)\(", stripped)
         if bm:
             fname = bm.group(1)
@@ -574,11 +580,11 @@ class Resolver:
             # (xem log: "filecopy(...) — file/thư mục không tồn tại").
             #
             # flathubinstall(...) cũng KHÔNG nằm trong nhóm check-tồn-tại:
-            # arg của nó là Flatpak Application ID (vd "org.gnome.Loupe"),
-            # không phải đường dẫn file/thư mục nào trong repo hay trên
-            # rootfs, nên os.path.exists() không có ý nghĩa gì ở đây — nếu
-            # lỡ thêm vào nhóm check, mọi dòng flathubinstall(...) sẽ luôn
-            # báo lỗi "không tồn tại" oan uổng.
+            # arg của nó là Flatpak Application ID (vd "org.gnome.Loupe",
+            # "org.kde.kamoso"), không phải đường dẫn file/thư mục nào
+            # trong repo hay trên rootfs, nên os.path.exists() không có ý
+            # nghĩa gì ở đây — nếu lỡ thêm vào nhóm check, mọi dòng
+            # flathubinstall(...) sẽ luôn báo lỗi "không tồn tại" oan uổng.
             if name in ("fileinstall", "filecustom", "filetheme", "make") and arg:
                 if arg.startswith("http://") or arg.startswith("https://"):
                     result["is_url"] = True
@@ -823,6 +829,20 @@ class Resolver:
         else:
             out["gnome_apps"] = None
 
+        # PATCH 14: đọc kde-apps từ [my-version-os-base] — cùng pattern với
+        # gnome-apps ngay ở trên. Giá trị thường là REFERENCE_OR_ENUM trỏ
+        # tới tên section (vd `kde-apps = call-KDE-apps`), nên
+        # classify(...).value ở đây có thể là chuỗi tên section thay vì
+        # True/False thuần. resolve_flathub_apps() chỉ cần biết giá trị này
+        # có PHẢI False hay không (giống cách gnome_apps_val is False được
+        # dùng để tắt tính năng) — không quan tâm nó là True hay 1 chuỗi
+        # tên section, nên không cần resolve_value() đầy đủ ở đây.
+        kde_apps_raw = kv.get("kde-apps")
+        if kde_apps_raw is not None:
+            out["kde_apps"] = classify("kde-apps", kde_apps_raw).value
+        else:
+            out["kde_apps"] = None
+
         # PATCH 13: đọc gnome-extensions và gnome-tweak từ [my-version-os-base]
         # — cùng pattern với gnome-apps: resolve_gnome_extensions()/
         # resolve_gnome_tweaks() sẽ kiểm tra giá trị này và active_de
@@ -936,24 +956,45 @@ class Resolver:
                     })
         return out
 
+    # PATCH 14: gating theo DE cho các section flathubinstall(...) chỉ-active-
+    # -khi-đúng-DE, dùng chung bởi resolve_flathub_apps(). Mỗi entry:
+    #   section_name_lower -> (required_de, flag_key_trong_my-version-os-base)
+    # [Call-gnome-apps]   chỉ chạy khi DE=gnome  và gnome-apps không = False
+    # [call-KDE-apps]     chỉ chạy khi DE=kde    và kde-apps   không = False
+    _FLATHUB_DE_SECTIONS = {
+        "call-gnome-apps": ("gnome", "gnome-apps"),
+        "call-kde-apps": ("kde", "kde-apps"),
+    }
+
     def resolve_flathub_apps(self, active_de: str | None = None) -> list:
         """
         PATCH 5: gom các lời gọi flathubinstall(<app-id>).
         Nếu section là [Call-gnome-apps], chỉ kích hoạt khi desktop environment
         đang active là GNOME (active_de == "gnome") và gnome-apps trong
         [my-version-os-base] không bị tắt (không phải False).
+
+        PATCH 14: thêm [call-KDE-apps] (vd flathubinstall(org.kde.kamoso),
+        flathubinstall(org.kde.ark), ...) — cùng cơ chế y hệt [Call-gnome-apps],
+        chỉ khác section/DE/flag key. Thay vì hardcode thêm 1 khối if-else
+        thứ hai (dễ lệch logic với khối gnome nếu sau này sửa 1 bên quên
+        sửa bên kia), gating được gom chung vào bảng tra cứu
+        _FLATHUB_DE_SECTIONS ở trên: thêm 1 DE mới sau này (vd MATE) chỉ cần
+        thêm 1 dòng vào bảng đó, không cần sửa hàm này.
         """
         seen = set()
         out = []
         for sec_name in self.order:
-            if sec_name.lower() == "call-gnome-apps":
-                is_gnome = (active_de or "").strip().lower() == "gnome"
-                gnome_apps_val = None
+            sec_lower = sec_name.lower()
+            gate = self._FLATHUB_DE_SECTIONS.get(sec_lower)
+            if gate is not None:
+                required_de, flag_key = gate
+                is_active = (active_de or "").strip().lower() == required_de
+                flag_val = None
                 if "my-version-os-base" in self.sections:
                     kv = self._kv("my-version-os-base")
-                    if "gnome-apps" in kv:
-                        gnome_apps_val = classify("gnome-apps", kv["gnome-apps"]).value
-                if not is_gnome or gnome_apps_val is False:
+                    if flag_key in kv:
+                        flag_val = classify(flag_key, kv[flag_key]).value
+                if not is_active or flag_val is False:
                     continue
             for key, raw, _group in self._entries(sec_name):
                 pv = classify(key, raw)
@@ -1438,6 +1479,16 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     gnome_apps_enabled = is_gnome_active and (gnome_apps_call is not False and gnome_apps_call is not None)
     put("GNOME_APPS_ENABLED", str(gnome_apps_enabled).lower())
 
+    # PATCH 14: export cờ KDE_APPS_ENABLED — cùng pattern với
+    # GNOME_APPS_ENABLED ở trên. Đây là cờ để scripts/*.sh (nếu cần) biết
+    # có nên chạy nhóm cài app KDE hay không; danh sách app id thật sự nằm
+    # trong HCL_FLATHUB_APPS bên dưới (đã được resolve_flathub_apps() gate
+    # đúng theo DE=kde + kde-apps không = False).
+    kde_apps_call = bp.get("kde_apps")
+    is_kde_active = (de == "kde")
+    kde_apps_enabled = is_kde_active and (kde_apps_call is not False and kde_apps_call is not None)
+    put("KDE_APPS_ENABLED", str(kde_apps_enabled).lower())
+
     # PATCH 13: export GNOME extensions
     gnome_ext_call = bp.get("gnome_extensions")
     gnome_ext_enabled = is_gnome_active and (gnome_ext_call is not False and gnome_ext_call is not None)
@@ -1459,11 +1510,18 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         put(f"GNOME_TWEAK_{idx}_RUN", t.get("run"))
 
     flathub_apps = resolved.get("flathub_apps", [])
+    # PATCH 14: filter phòng thủ theo namespace app id (giống filter
+    # org.gnome.* khi de != "gnome" ở dưới) — bảo vệ ngay cả khi ai đó lỡ
+    # khai flathubinstall(org.kde.xxx) NGOÀI [call-KDE-apps] (không qua
+    # gating ở resolve_flathub_apps()), app KDE vẫn không lọt vào build của
+    # DE khác.
     if de != "gnome":
         flathub_apps = [
             app for app in flathub_apps
             if not app.startswith("org.gnome.") and app != "com.mattjakeman.ExtensionManager"
         ]
+    if de != "kde":
+        flathub_apps = [app for app in flathub_apps if not app.startswith("org.kde.")]
     put("FLATHUB_APPS", " ".join(flathub_apps))
 
     # PATCH 6: export danh sách lệnh appremove()/fileremove() (gom ở
