@@ -310,7 +310,14 @@ def classify(key: str, raw: str) -> ParsedValue:
         return ParsedValue("SIZE", raw, {"mode": "custom", "mb": mb})
 
     if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
-        return ParsedValue("STRING", raw, raw[1:-1])
+        # HCL strings use \" when a shell command needs an embedded double
+        # quote (for example the GVariant passed to `gsettings set`).  Keeping
+        # the backslash changes the command's argument into a literal quote,
+        # so decode that escape while leaving unrelated backslashes (paths,
+        # regexes, etc.) untouched.
+        body = raw[1:-1]
+        body = body.replace(r'\"', '"')
+        return ParsedValue("STRING", raw, body)
 
     if raw.lower() in ("true", "false"):
         return ParsedValue("BOOLEAN", raw, raw.lower() == "true")

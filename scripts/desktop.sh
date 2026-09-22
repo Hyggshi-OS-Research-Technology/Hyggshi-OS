@@ -1464,6 +1464,129 @@ else
   echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua installer() từ config.ini." >&2
 fi
 
+# ===========================================================================
+# GNOME Extensions + Tweaks from config.ini
+# ===========================================================================
+# `desktop.sh` runs as root *inside a build chroot*.  A build chroot has no
+# GNOME user session or session D-Bus, so these commands cannot be applied
+# there:
+#
+#   gsettings set ...
+#   gnome-extensions enable ...
+#   gext install ...
+#
+# Previously the HCL parser exported `gnome_extensions` and `gnome_tweaks`,
+# but nothing consumed them at all.  Merely running their `run=` values here
+# would still fail for the same D-Bus reason.  Install APT-backed extensions
+# now, then defer session-specific commands to a GNOME autostart program.  It
+# runs once for every GNOME user (including the user created by Calamares),
+# where gsettings and gnome-extensions have their real per-user D-Bus.
+if [ "$DE" = "gnome" ] && [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
+  echo "===== Cài GNOME extension packages theo config.ini ====="
+  while IFS= read -r extension_install_cmd; do
+    [ -z "$extension_install_cmd" ] && continue
+    # These are deliberately only the package-install prefix of a `run=` line;
+    # do not execute the following `gnome-extensions enable` in this chroot.
+    extension_install_cmd="${extension_install_cmd#sudo }"
+    echo "[HCL GNOME extension package] $extension_install_cmd"
+    bash -c "$extension_install_cmd" || echo "⚠️  Không cài được GNOME extension package: $extension_install_cmd" >&2
+  done < <(python3 -c "
+import json, re
+try:
+    data = json.load(open('/tmp/hcl-resolved.json'))
+except Exception:
+    raise SystemExit
+for entry in data.get('gnome_extensions', []):
+    command = str(entry.get('run', '')).strip()
+    head = command.split('&&', 1)[0].strip()
+    if re.search(r'(^|\\s)(?:sudo\\s+)?(?:apt|apt-get)\\s+.*\\binstall\\b', head):
+        print(head)
+" 2>/dev/null)
+
+  GNOME_FIRST_LOGIN_DIR="/usr/local/share/hyggshi"
+  GNOME_FIRST_LOGIN_COMMANDS="$GNOME_FIRST_LOGIN_DIR/gnome-first-login-commands"
+  mkdir -p "$GNOME_FIRST_LOGIN_DIR" /etc/xdg/autostart
+
+  # Keep the commands in a root-owned data file rather than interpolating
+  # config.ini into a shell heredoc.  This preserves quotes in gsettings
+  # values and prevents an accidental build-time shell expansion.
+  python3 -c "
+import json, re
+try:
+    data = json.load(open('/tmp/hcl-resolved.json'))
+except Exception:
+    raise SystemExit
+commands = []
+for group in ('gnome_extensions', 'gnome_tweaks'):
+    for entry in data.get(group, []):
+        command = str(entry.get('run', '')).strip()
+        if not command:
+            continue
+        head, separator, tail = command.partition('&&')
+        # APT is root/build-time work.  Everything after it needs the real
+        # GNOME session.  Commands without an APT prefix (e.g. pipx + gext)
+        # are deferred intact.
+        if separator and re.search(r'(^|\\s)(?:sudo\\s+)?(?:apt|apt-get)\\s+.*\\binstall\\b', head):
+            command = tail.strip()
+        if command:
+            commands.append(command)
+with open('$GNOME_FIRST_LOGIN_COMMANDS', 'w', encoding='utf-8') as out:
+    out.write('\\n'.join(commands))
+    if commands:
+        out.write('\\n')
+" 2>/dev/null
+  chmod 0644 "$GNOME_FIRST_LOGIN_COMMANDS"
+
+  cat > /usr/local/bin/hyggshi-apply-gnome-config <<'GNOMECONFIGEOF'
+#!/bin/sh
+# Run after GNOME has created the user's session D-Bus.  This cannot run in
+# the ISO build chroot: gsettings and gnome-extensions are per-user settings.
+set -u
+
+case "${XDG_CURRENT_DESKTOP:-}:${DESKTOP_SESSION:-}" in
+  *GNOME*|*gnome*) ;;
+  *) exit 0 ;;
+esac
+
+commands=/usr/local/share/hyggshi/gnome-first-login-commands
+marker="${XDG_CONFIG_HOME:-$HOME/.config}/hyggshi/gnome-config-applied"
+[ -s "$commands" ] || exit 0
+[ -e "$marker" ] && exit 0
+
+mkdir -p "$(dirname "$marker")" "${XDG_CACHE_HOME:-$HOME/.cache}"
+log="${XDG_CACHE_HOME:-$HOME/.cache}/hyggshi-gnome-config.log"
+failed=0
+while IFS= read -r command || [ -n "$command" ]; do
+  [ -z "$command" ] && continue
+  echo "[Hyggshi GNOME] $command" >> "$log"
+  # Login PATH can omit ~/.local/bin; pipx installs gext there.
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! sh -c "$command" >> "$log" 2>&1; then
+    echo "[Hyggshi GNOME] failed: $command" >> "$log"
+    failed=1
+  fi
+done < "$commands"
+
+# Retry on the next login if an extension download was temporarily offline.
+[ "$failed" -eq 0 ] && : > "$marker"
+exit 0
+GNOMECONFIGEOF
+  chmod 0755 /usr/local/bin/hyggshi-apply-gnome-config
+
+  cat > /etc/xdg/autostart/hyggshi-apply-gnome-config.desktop <<'GNOMEAUTOSTARTEOF'
+[Desktop Entry]
+Type=Application
+Name=Apply Hyggshi GNOME configuration
+Exec=/usr/local/bin/hyggshi-apply-gnome-config
+OnlyShowIn=GNOME;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications
+NoDisplay=true
+GNOMEAUTOSTARTEOF
+  chmod 0644 /etc/xdg/autostart/hyggshi-apply-gnome-config.desktop
+  echo "OK: GNOME extensions/tweaks sẽ được áp dụng trong phiên GNOME đầu tiên của mỗi user."
+fi
+
 echo "===== Dọn package/hình ảnh thừa theo config.ini (appremove/fileremove) ====="
 # [package] khối "Remove package and image" (systemsettings-KDE =
 # appremove(...), image-background = fileremove(...)) được hcl_parser.py
