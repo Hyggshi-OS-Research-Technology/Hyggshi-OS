@@ -111,11 +111,25 @@ SIZE_KEYS = {"swap"}  # các key được parse theo grammar SIZE thay vì BOOLE
 # giống installer() nhưng chỉ chạy khi DE=gnome). Không check tồn tại path
 # ("run" là lệnh shell, không phải path file trong repo), validate duy nhất
 # là có kwarg "run" — cùng cơ chế với installer()/appremove()/fileremove().
+#
+# PATCH 15: thêm install-web — dùng để tải 1 file (.deb/.AppImage/...) từ
+# internet rồi cài nó trong chroot lúc build, vd:
+#     nexcode-install-web = install-web(
+#         run = "wget https://.../nexcode-ide-4.0.2-amd64.deb"
+#         run = "sudo apt install -y ./nexcode-ide-4.0.2-amd64.deb"
+#     )
+# Khác installer() (chỉ 1 lệnh "run" cài package có sẵn trong apt repo),
+# install-web() cho phép khai NHIỀU dòng "run" CÙNG TÊN trong 1 lời gọi để
+# chạy tuần tự (tải rồi cài) — xem PATCH 15 ở nhánh kwargs-parsing của
+# classify() để biết cách nhiều dòng "run" trùng tên được gom thành list
+# thay vì bị ghi đè, và PATCH 15 ở resolve_function()/resolve_install_web()
+# để biết cách list này được chuẩn hoá & export. Không check tồn tại path
+# ("run" là lệnh shell) — cùng lý do installer()/appremove() không check.
 FUNCTION_NAMES = {
     "fileinstall", "filecustom", "filetheme", "filecopy", "fileaddtext",
     "command", "make", "call", "installkernel", "apply", "flathubinstall",
     "appremove", "fileremove", "copy", "installer",
-    "add-extension-gnome", "add-tweak-gnome",
+    "add-extension-gnome", "add-tweak-gnome", "install-web",
 }
 
 SIZE_RE = re.compile(
@@ -375,13 +389,36 @@ def classify(key: str, raw: str) -> ParsedValue:
             or ("=" in fargs and fname == "command")
         )
         if is_kwargs_call:
-            kwargs = {}
+            kwargs: dict = {}
             for line in fargs.splitlines():
                 line = line.strip().rstrip(",")
                 if not line or "=" not in line:
                     continue
                 k, _, v = line.partition("=")
-                kwargs[k.strip()] = classify(k.strip(), v.strip())
+                k = k.strip()
+                pv = classify(k, v.strip())
+                if k in kwargs:
+                    # PATCH 15: hỗ trợ key lặp lại NHIỀU LẦN trong 1 lời gọi
+                    # function — vd install-web(run=... run=...) cần 2 lệnh
+                    # shell chạy tuần tự (wget tải .deb, apt install cài
+                    # .deb). BUG trước đó: kwargs[k] = classify(...) ghi đè
+                    # trực tiếp, nên dòng "run" ĐẦU (wget) bị dòng "run" SAU
+                    # (apt install) đè mất — chỉ còn 1 lệnh chạy, lệnh tải
+                    # biến mất hoàn toàn dù cú pháp file không sai gì.
+                    # Fix: nếu key đã tồn tại, gom các giá trị thành 1 list
+                    # theo đúng thứ tự khai báo thay vì ghi đè. Mọi function
+                    # hiện có (chỉ khai 1 kwarg cùng tên đúng 1 lần) không bị
+                    # ảnh hưởng — nhánh này chỉ chạy từ lần lặp thứ 2 của
+                    # CÙNG 1 tên kwarg trở đi.
+                    existing = kwargs[k]
+                    if isinstance(existing.value, list):
+                        existing.value.append(pv.value)
+                    else:
+                        kwargs[k] = ParsedValue(
+                            "STRING", existing.raw, [existing.value, pv.value]
+                        )
+                else:
+                    kwargs[k] = pv
             return ParsedValue("FUNCTION", raw, {"name": fname, "kwargs": {
                 k: v.value for k, v in kwargs.items()
             }})
@@ -733,14 +770,37 @@ class Resolver:
                     f"{name}(...) thiếu 'run' — bắt buộc để biết lệnh nào sẽ chạy "
                     f"trong chroot khi DE=gnome."))
 
+        if name == "install-web":
+            # PATCH 15: install-web(run=..., run=..., ...) — cho phép NHIỀU
+            # dòng "run" cùng tên trong 1 lời gọi, chạy THEO ĐÚNG THỨ TỰ
+            # khai báo (xem PATCH 15 ở nhánh kwargs-parsing của classify(),
+            # nơi các dòng "run" trùng tên được gom thành list thay vì bị
+            # ghi đè). Trường hợp điển hình: tải file .deb bằng wget rồi cài
+            # file .deb đó bằng apt install. Khác installer()/appremove()
+            # (luôn đúng 1 lệnh, "run" là string), ở đây "run" luôn được
+            # CHUẨN HOÁ thành list — kể cả khi chỉ khai 1 dòng "run" duy
+            # nhất (không lặp lại) — để resolve_install_web()/to_env_lines()
+            # không phải tự kiểm tra str-hay-list mỗi lần dùng.
+            run_val = kwargs.get("run")
+            if not run_val:
+                self.diags.append(Diagnostic(
+                    "error",
+                    "install-web(...) thiếu 'run' — bắt buộc để biết lệnh "
+                    "tải/cài nào sẽ chạy (thường 2 lệnh: wget tải file, apt "
+                    "install cài file vừa tải)."))
+                result["run"] = []
+            else:
+                result["run"] = run_val if isinstance(run_val, list) else [run_val]
+
         # PATCH 11: Hỗ trợ điều kiện Desktop Environment (DE) cho
         # appremove, fileremove, installer, command:
         # - exclude_de = "kde" / exclude_de = "kde, gnome"
         # - for_de = "xfce, gnome, cinnamon, lxqt"
         # - desktop = "..." (nếu bắt đầu bằng "!" như "!kde" -> exclude_de = "kde")
         # PATCH 13: mở rộng sang add-extension-gnome / add-tweak-gnome
+        # PATCH 15: mở rộng sang install-web (vd chỉ chạy trên 1 DE cụ thể)
         if name in ("appremove", "fileremove", "installer", "command",
-                    "add-extension-gnome", "add-tweak-gnome"):
+                    "add-extension-gnome", "add-tweak-gnome", "install-web"):
             exclude_de = kwargs.get("exclude_de") or kwargs.get("except_de") or kwargs.get("not_de")
             for_de = kwargs.get("for_de") or kwargs.get("only_de")
             desktop_kw = kwargs.get("desktop")
@@ -1073,6 +1133,50 @@ class Resolver:
                         out.append({"key": key, "run": run_cmd})
         return out
 
+    def resolve_install_web(self, active_de: str | None = None) -> list:
+        """
+        PATCH 15: gom hết các entry `<key> = install-web(run=..., run=...)`
+        — dùng khi cần tải 1 file (.deb/.AppImage/...) từ internet rồi cài
+        nó trong chroot lúc build (vd NexCode IDE: wget file .deb từ GitHub
+        Releases, sau đó apt install file .deb vừa tải). Khác installer()
+        (chỉ 1 lệnh "run" cài package có sẵn trong repo apt), install-web()
+        luôn trả về NHIỀU lệnh theo đúng thứ tự khai báo (xem PATCH 15 ở
+        resolve_function() — "run" đã được chuẩn hoá thành list ở đó).
+
+        Quét toàn bộ section (không hardcode tên section) — giống
+        resolve_installers()/resolve_removals() — để hỗ trợ install-web() ở
+        bất kỳ section nào trong tương lai. Lọc theo active_de nếu có
+        exclude_de/for_de, dùng chung _is_de_excluded() — nối các lệnh
+        "run" thành 1 chuỗi bằng "; " chỉ để phục vụ check an toàn
+        systemsettings-KDE bên trong _is_de_excluded(), KHÔNG dùng chuỗi
+        này để export (export vẫn giữ đúng list "runs" riêng từng lệnh).
+        """
+        out = []
+        for sec_name in self.order:
+            for key, raw, _group in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "install-web":
+                    resolved = self.resolve_function(pv.value)
+                    runs = resolved.get("run") or []
+                    ex_de = resolved.get("exclude_de")
+                    f_de = resolved.get("for_de")
+                    run_join = "; ".join(runs)
+                    if self._is_de_excluded(active_de, ex_de, f_de, key=key, run_cmd=run_join):
+                        continue
+                    if runs:
+                        entry = {
+                            "section": sec_name,
+                            "key": key,
+                            "type": "install-web",
+                            "runs": runs,
+                        }
+                        if ex_de:
+                            entry["exclude_de"] = ex_de
+                        if f_de:
+                            entry["for_de"] = f_de
+                        out.append(entry)
+        return out
+
     def _is_de_excluded(
         self,
         active_de: str | None,
@@ -1292,6 +1396,8 @@ class Resolver:
         # PATCH 13: gom GNOME extensions và tweaks — chỉ xuất khi DE=gnome
         result["gnome_extensions"] = self.resolve_gnome_extensions(active_de=active_de)
         result["gnome_tweaks"] = self.resolve_gnome_tweaks(active_de=active_de)
+        # PATCH 15: gom install-web() — tải + cài file từ internet
+        result["install_web"] = self.resolve_install_web(active_de=active_de)
         if "customization" in self.sections:
             result["customization"] = {
                 k: self.resolve_value(k, v) for k, v, _ in self._entries("customization")
@@ -1548,6 +1654,22 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     for idx, r in enumerate(installers, start=1):
         put(f"INSTALLER_{idx}_KEY", r.get("key"))
         put(f"INSTALLER_{idx}_RUN", r.get("run"))
+
+    # PATCH 15: export install-web(run=..., run=...) (gom ở
+    # resolve_install_web()). Khác INSTALLER_{idx}_RUN (luôn đúng 1 lệnh),
+    # mỗi entry install-web có thể có NHIỀU lệnh "run" chạy tuần tự, nên
+    # cần thêm 1 lớp lặp con: RUN_COUNT cho biết có bao nhiêu lệnh, rồi
+    # RUN_1/RUN_2/... theo đúng thứ tự khai báo (vd RUN_1 = wget tải .deb,
+    # RUN_2 = apt install cài .deb) — desktop.sh chạy lần lượt RUN_1..RUN_N
+    # cho mỗi entry INSTALL_WEB_{idx}.
+    install_web = resolved.get("install_web", [])
+    put("INSTALL_WEB_COUNT", len(install_web))
+    for idx, iw in enumerate(install_web, start=1):
+        put(f"INSTALL_WEB_{idx}_KEY", iw.get("key"))
+        runs = iw.get("runs") or []
+        put(f"INSTALL_WEB_{idx}_RUN_COUNT", len(runs))
+        for j, run_cmd in enumerate(runs, start=1):
+            put(f"INSTALL_WEB_{idx}_RUN_{j}", run_cmd)
 
     # PATCH 7: export các entry filecustom(...) trong [customization]
     # (Calamares settings/branding/modules, logo Plymouth, ảnh nền desktop,
