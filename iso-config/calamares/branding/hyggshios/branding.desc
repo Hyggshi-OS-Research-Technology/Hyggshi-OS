@@ -9,10 +9,10 @@ windowPlacement: center
 strings:
     productName:         Hyggshi OS
     shortProductName:    Hyggshi OS
-    version:             1.4.0
-    shortVersion:        1.4.0
-    versionedName:       Hyggshi OS 1.4.0 Verdant Valley
-    shortVersionedName:  Hyggshi OS 1.4.0
+    version:             1.4.1
+    shortVersion:        1.4.1
+    versionedName:       Hyggshi OS 1.4.1 Verdant Valley
+    shortVersionedName:  Hyggshi OS 1.4.1
     bootloaderEntryName: Hyggshi OS
     productUrl:          https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS
     supportUrl:          https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues

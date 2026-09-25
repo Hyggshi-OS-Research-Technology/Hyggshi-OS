@@ -155,14 +155,20 @@ if declare -f hyggshi_secureboot_packages >/dev/null 2>&1; then
   done
 fi
 
-echo "===== Cài Calamares (installer) — optional, không làm fail cả build ====="
+echo "===== Cài Calamares (installer) và QML slideshow dependencies ====="
 # calamares-settings-debian cung cấp cấu hình module cài đặt (partition, unpackfs,
-# bootloader...) cho mọi distro Debian-based. Thử cài cả hai; nếu settings không
-# có thì vẫn giữ calamares core; nếu cả hai đều không có thì ISO boot live được
-# nhưng không có graphical installer (không fatal).
+# bootloader...). calamares-data + các gói qml6/qml cung cấp QML runtime cho show.qml.
+apt-get install -y calamares calamares-settings-debian calamares-data || \
 apt-get install -y calamares calamares-settings-debian || \
 apt-get install -y calamares || \
 echo "CẢNH BÁO: không cài được calamares/calamares-settings-debian — ISO sẽ không có graphical installer hoặc installer chưa được cấu hình."
+
+# Cài thêm các QML module cho slideshow Calamares (cả Qt6 cho Debian 13/Ubuntu và Qt5 cho Debian 12)
+for qml_pkg in calamares-data qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
+               qml6-module-qtquick-layouts qml6-module-qtcore qml-module-qtquick2 \
+               qml-module-qtquick-window2 qml-module-qtquick-controls qml-module-qtquick-controls2; do
+  apt-get install -y --no-install-recommends "$qml_pkg" 2>/dev/null || true
+done
 
 if command -v calamares >/dev/null 2>&1; then
     echo "OK: đã cài calamares tại $(command -v calamares)"
@@ -1420,7 +1426,12 @@ if [ -n "$EXTRA_PACKAGES" ]; then
     esac
   done
   if [ ${#EXTRA_PACKAGE_LIST[@]} -gt 0 ]; then
-    apt-get install -y "${EXTRA_PACKAGE_LIST[@]}" || true
+    if ! apt-get install -y "${EXTRA_PACKAGE_LIST[@]}"; then
+      echo "Cài đặt hàng loạt package bổ sung thất bại, thử cài từng package riêng lẻ..."
+      for pkg in "${EXTRA_PACKAGE_LIST[@]}"; do
+        apt-get install -y "$pkg" 2>/dev/null || echo "Bỏ qua package không khả dụng: $pkg"
+      done
+    fi
   fi
 fi
 
