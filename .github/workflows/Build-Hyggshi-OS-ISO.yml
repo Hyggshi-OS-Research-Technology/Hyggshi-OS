@@ -215,7 +215,8 @@ jobs:
   build-iso:
     name: "Build ISO (${{ matrix.desktop }})"
     needs: matrix-prep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     strategy:
       fail-fast: false
