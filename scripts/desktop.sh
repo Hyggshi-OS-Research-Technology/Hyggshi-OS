@@ -771,8 +771,9 @@ LXQTMIMEOF
   gnome)
     # gnome-session cần cho phiên GNOME thật (không chỉ gnome-shell trần);
     # gdm3 là display manager mặc định của GNOME (autologin cấu hình riêng bên dưới).
+    # gnome-control-center cung cấp Cài đặt hệ thống (Settings) của GNOME.
     apt-get install -y gnome-session gnome-shell gdm3 gnome-terminal \
-      nautilus gnome-tweaks
+      nautilus gnome-tweaks gnome-control-center
     ;;
 
   mate)
@@ -1677,6 +1678,16 @@ for r in d.get('removals', []):
 " 2>/dev/null)
 else
   echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua bước dọn package/hình ảnh theo config.ini (appremove/fileremove sẽ không có tác dụng gì trên ISO này)." >&2
+fi
+
+# Đảm bảo LibreOffice không bị sót lại nếu có bất kỳ metapackage/recommends nào kéo theo
+# (đặc biệt khi cài EXTRA_PACKAGES sau bước purge đầu tiên ở dòng 1175)
+if [ "$INCLUDE_OFFICE" != "true" ]; then
+  if dpkg -l 'libreoffice*' 2>/dev/null | grep -q '^ii'; then
+    echo "INCLUDE_OFFICE!=true — kiểm tra và gỡ bỏ LibreOffice bị kéo theo sau EXTRA_PACKAGES..."
+    apt-get purge -y 'libreoffice*' 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+  fi
 fi
 
 echo "===== Copy file theo config.ini (filecopy source=/target=) ====="
