@@ -195,7 +195,7 @@ env:
 jobs:
   matrix-prep:
     name: "Chuẩn bị Desktop Matrix"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
