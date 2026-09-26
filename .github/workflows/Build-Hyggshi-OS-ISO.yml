@@ -623,11 +623,54 @@ jobs:
           sudo cp -r app-for-hyggshi/. "${CHROOT_DIR}/tmp/app-for-hyggshi/"
           sudo cp scripts/install-ecosystem-for-hyggshi.sh "${CHROOT_DIR}/tmp/install-ecosystem-for-hyggshi.sh"
           sudo chmod +x "${CHROOT_DIR}/tmp/install-ecosystem-for-hyggshi.sh"
-          sudo chroot "${CHROOT_DIR}" env \
-            DEBUG_MODE="$DEBUG_MODE" \
-            APP_DIR="/tmp/app-for-hyggshi" \
-            HCL_APP_INSTALLS="${HCL_APP_INSTALLS:-}" \
-            /tmp/install-ecosystem-for-hyggshi.sh 2>&1 | tee ecosystem-debug.log
+
+          # Truyền INSTALL_WEB_COUNT + tất cả INSTALL_WEB_{idx}_* vào chroot.
+          # Số entry là động (do hcl_parser.py export), không thể hardcode.
+          # Hỗ trợ cả biến có prefix HCL_ và không có prefix.
+          # Dùng /tmp/chroot-iw-env.sh (sourced bởi script wrapper).
+          IW_ENV_FILE="${CHROOT_DIR}/tmp/chroot-iw-env.sh"
+          sudo bash -c "echo '#!/bin/sh' > '$IW_ENV_FILE'"
+          IW_COUNT="${HCL_INSTALL_WEB_COUNT:-${INSTALL_WEB_COUNT:-0}}"
+          sudo bash -c "echo 'export INSTALL_WEB_COUNT=\"${IW_COUNT:-0}\"' >> '$IW_ENV_FILE'"
+          sudo bash -c "echo 'export HCL_INSTALL_WEB_COUNT=\"${IW_COUNT:-0}\"' >> '$IW_ENV_FILE'"
+          sudo bash -c "echo 'export GITHUB_ACTIONS=\"true\"' >> '$IW_ENV_FILE'"
+          if [ "$IW_COUNT" -gt 0 ] 2>/dev/null; then
+            for iw_idx in $(seq 1 "$IW_COUNT"); do
+              iw_k_hcl="HCL_INSTALL_WEB_${iw_idx}_KEY"
+              iw_k_plain="INSTALL_WEB_${iw_idx}_KEY"
+              iw_key_val="${!iw_k_hcl:-${!iw_k_plain:-}}"
+              sudo bash -c "printf 'export INSTALL_WEB_%s_KEY=%q\n' '$iw_idx' '$iw_key_val' >> '$IW_ENV_FILE'"
+              sudo bash -c "printf 'export HCL_INSTALL_WEB_%s_KEY=%q\n' '$iw_idx' '$iw_key_val' >> '$IW_ENV_FILE'"
+
+              iw_rc_hcl="HCL_INSTALL_WEB_${iw_idx}_RUN_COUNT"
+              iw_rc_plain="INSTALL_WEB_${iw_idx}_RUN_COUNT"
+              iw_run_count="${!iw_rc_hcl:-${!iw_rc_plain:-0}}"
+              sudo bash -c "printf 'export INSTALL_WEB_%s_RUN_COUNT=%q\n' '$iw_idx' '$iw_run_count' >> '$IW_ENV_FILE'"
+              sudo bash -c "printf 'export HCL_INSTALL_WEB_%s_RUN_COUNT=%q\n' '$iw_idx' '$iw_run_count' >> '$IW_ENV_FILE'"
+
+              if [ "$iw_run_count" -gt 0 ] 2>/dev/null; then
+                for iw_j in $(seq 1 "$iw_run_count"); do
+                  iw_r_hcl="HCL_INSTALL_WEB_${iw_idx}_RUN_${iw_j}"
+                  iw_r_plain="INSTALL_WEB_${iw_idx}_RUN_${iw_j}"
+                  iw_run_val="${!iw_r_hcl:-${!iw_r_plain:-}}"
+                  sudo bash -c "printf 'export INSTALL_WEB_%s_RUN_%s=%q\n' '$iw_idx' '$iw_j' '$iw_run_val' >> '$IW_ENV_FILE'"
+                  sudo bash -c "printf 'export HCL_INSTALL_WEB_%s_RUN_%s=%q\n' '$iw_idx' '$iw_j' '$iw_run_val' >> '$IW_ENV_FILE'"
+                done
+              fi
+            done
+          fi
+          sudo chmod +x "$IW_ENV_FILE"
+
+          sudo chroot "${CHROOT_DIR}" /bin/bash -c "
+            . /tmp/chroot-iw-env.sh
+            export GITHUB_ACTIONS='true'
+            export CI='true'
+            export DEBUG_MODE='$DEBUG_MODE'
+            export APP_DIR='/tmp/app-for-hyggshi'
+            export HCL_APP_INSTALLS='${HCL_APP_INSTALLS:-}'
+            exec /tmp/install-ecosystem-for-hyggshi.sh
+          " 2>&1 | tee ecosystem-debug.log
+
 
       # === 4.5) WELCOME: build trực tiếp source đã commit trong
       # app-for-hyggshi/hyggshi-welcome/. KHÔNG chạy make-welcome.sh vì

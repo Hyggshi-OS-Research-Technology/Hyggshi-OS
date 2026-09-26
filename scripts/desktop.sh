@@ -164,9 +164,16 @@ apt-get install -y calamares || \
 echo "CẢNH BÁO: không cài được calamares/calamares-settings-debian — ISO sẽ không có graphical installer hoặc installer chưa được cấu hình."
 
 # Cài thêm các QML module cho slideshow Calamares (cả Qt6 cho Debian 13/Ubuntu và Qt5 cho Debian 12)
-for qml_pkg in calamares-data qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
-               qml6-module-qtquick-layouts qml6-module-qtcore qml-module-qtquick2 \
-               qml-module-qtquick-window2 qml-module-qtquick-controls qml-module-qtquick-controls2; do
+# calamares.slideshow 1.0 được cung cấp bởi calamares-data (Qt5) hoặc calamares (Qt6 builtin);
+# qml6-module-qtquick* cần thiết để QML engine load được import QtQuick 2.5 trong show.qml.
+for qml_pkg in calamares-data \
+               qml6-module-qtquick qml6-module-qtquick-window \
+               qml6-module-qtquick-controls qml6-module-qtquick-controls2 \
+               qml6-module-qtquick-layouts qml6-module-qtcore \
+               qml6-module-qtqml-workerscript \
+               qml-module-qtquick2 qml-module-qtquick-window2 \
+               qml-module-qtquick-controls qml-module-qtquick-controls2 \
+               libqt6qmlworkerscript6 libqt6quick6; do
   apt-get install -y --no-install-recommends "$qml_pkg" 2>/dev/null || true
 done
 
@@ -188,6 +195,24 @@ if [ -d /tmp/calamares ]; then
   cp -a /tmp/calamares/. /etc/calamares/
   chmod -R a+rX /etc/calamares
   echo "OK: /etc/calamares đã được ghi đè hoàn toàn từ source Hyggshi."
+
+  # === FIX show.qml: đảm bảo branding được tìm thấy ở CẢ HAI đường tìm kiếm ===
+  # Calamares 3.x tìm branding ở /etc/calamares/branding/ (ưu tiên) VÀ
+  # /usr/share/calamares/branding/. Nếu calamares-settings-debian đã cài
+  # cấu hình riêng ở /usr/share/calamares/branding/, Calamares build Qt6 mới
+  # (Debian trixie) đôi khi vẫn resolve path từ /usr/share/ trước khi đọc
+  # /etc/calamares/ — đặc biệt đối với QML import "calamares.slideshow 1.0"
+  # (path plugin được đăng ký tương đối với thư mục branding gốc). Symlink
+  # đảm bảo show.qml và slide*.png luôn tìm thấy ở cả hai nơi.
+  BRANDING_SRC="/etc/calamares/branding/hyggshios"
+  BRANDING_SHARE="/usr/share/calamares/branding/hyggshios"
+  if [ -d "$BRANDING_SRC" ]; then
+    mkdir -p "$(dirname "$BRANDING_SHARE")"
+    # Xóa bản cũ (có thể do calamares-settings-debian để lại) rồi link sang /etc/
+    rm -rf "$BRANDING_SHARE"
+    ln -sf "$BRANDING_SRC" "$BRANDING_SHARE"
+    echo "OK: symlink $BRANDING_SHARE -> $BRANDING_SRC (show.qml slideshow fix)."
+  fi
 else
   echo "CẢNH BÁO: không có /tmp/calamares — giữ cấu hình Calamares do package cung cấp." >&2
 fi

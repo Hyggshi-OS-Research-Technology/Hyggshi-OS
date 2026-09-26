@@ -39,9 +39,9 @@ echo "===== Cài đặt hệ sinh thái Hyggshi OS ====="
 echo "Repo root : $REPO_ROOT"
 echo "App dir   : $APP_DIR"
 
-# ----- 0. Đảm bảo có các công cụ cần thiết (unzip, curl, file) -----
+# ----- 0. Đảm bảo có các công cụ cần thiết (unzip, curl, file, wget, ca-certificates) -----
 MISSING_TOOLS=()
-for tool in unzip curl file; do
+for tool in unzip curl file wget ca-certificates; do
   if ! command -v "$tool" > /dev/null 2>&1; then
     MISSING_TOOLS+=("$tool")
   fi
@@ -51,6 +51,15 @@ if [ "${#MISSING_TOOLS[@]}" -gt 0 ]; then
   echo "Đang cài đặt các công cụ còn thiếu: ${MISSING_TOOLS[*]}..."
   $SUDO apt-get update -qq || true
   $SUDO apt-get install -y "${MISSING_TOOLS[@]}" || true
+fi
+
+# Đảm bảo có lệnh sudo trong chroot (nếu chưa có thì tạo shim trỏ thẳng tới command)
+if ! command -v sudo > /dev/null 2>&1; then
+  cat <<'EOF' | $SUDO tee /usr/local/bin/sudo >/dev/null
+#!/bin/sh
+exec "$@"
+EOF
+  $SUDO chmod 755 /usr/local/bin/sudo
 fi
 
 DEB_FILES=()
@@ -180,6 +189,88 @@ if [ -n "${HCL_APP_INSTALLS:-}" ]; then
       fi
     fi
   done
+fi
+
+# ----- 3.2. Thực hiện các lệnh install-web() từ config.ini (INSTALL_WEB_*) -----
+# install-web(run=..., run=...) cho phép cài gói từ internet bằng các lệnh
+# tuỳ chỉnh chạy theo thứ tự khai báo (vd: wget tải .deb xong apt install).
+# Theo yêu cầu: CHỈ chạy trên GitHub Actions (CI), KHÔNG chạy trên file sh local.
+INSTALL_WEB_COUNT="${INSTALL_WEB_COUNT:-${HCL_INSTALL_WEB_COUNT:-0}}"
+IS_GITHUB_CI=0
+if [ "$GITHUB_ACTIONS" = "true" ] || [ "$CI" = "true" ] || [ -f /tmp/chroot-iw-env.sh ]; then
+  IS_GITHUB_CI=1
+fi
+
+if [ "$INSTALL_WEB_COUNT" -gt 0 ] 2>/dev/null; then
+  if [ "$IS_GITHUB_CI" -ne 1 ]; then
+    echo "ℹ️  Bỏ qua $INSTALL_WEB_COUNT entry install-web() vì đang chạy file sh local (chỉ chạy trên GitHub Actions)."
+  else
+    echo "===== Thực hiện $INSTALL_WEB_COUNT install-web() entry từ config.ini (GitHub Actions) ====="
+    IW_WORK_DIR="$WORK_DIR/web-install"
+    mkdir -p "$IW_WORK_DIR"
+
+    idx=1
+    while [ "$idx" -le "$INSTALL_WEB_COUNT" ]; do
+      IW_KEY_VAR="INSTALL_WEB_${idx}_KEY"
+      IW_KEY="${!IW_KEY_VAR:-}"
+      [ -z "$IW_KEY" ] && { IW_KEY_HCL="HCL_INSTALL_WEB_${idx}_KEY"; IW_KEY="${!IW_KEY_HCL:-entry_${idx}}"; }
+
+      IW_RUN_COUNT_VAR="INSTALL_WEB_${idx}_RUN_COUNT"
+      IW_RUN_COUNT="${!IW_RUN_COUNT_VAR:-}"
+      [ -z "$IW_RUN_COUNT" ] && { IW_RC_HCL="HCL_INSTALL_WEB_${idx}_RUN_COUNT"; IW_RUN_COUNT="${!IW_RC_HCL:-0}"; }
+
+      echo "--- install-web[$idx]: $IW_KEY ($IW_RUN_COUNT lệnh) ---"
+      # Đổi vào thư mục tải tạm để 'wget file.deb' lưu vào đây rồi
+      # 'apt install -y ./file.deb' tìm thấy đúng file.
+      cd "$IW_WORK_DIR"
+
+      # Chuẩn bị trước cho nexcode-ide (tránh lỗi chmod 4755 chrome-sandbox trong postinst)
+      # và unshare wrapper (tránh Operation not permitted trong container chroot)
+      if [[ "$IW_KEY" =~ nexcode ]]; then
+        $SUDO mkdir -p "/opt/NexCode IDE"
+        [ ! -e "/opt/NexCode IDE/chrome-sandbox" ] && $SUDO touch "/opt/NexCode IDE/chrome-sandbox"
+      fi
+
+      if [ -x /usr/bin/unshare ] && [ ! -f /usr/local/bin/unshare ]; then
+        cat <<'EOF' | $SUDO tee /usr/local/bin/unshare >/dev/null
+#!/bin/sh
+/usr/bin/unshare "$@" 2>/dev/null
+EOF
+        $SUDO chmod 755 /usr/local/bin/unshare
+        NEED_UNSHARE_WRAPPER=1
+      fi
+
+      j=1
+      while [ "$j" -le "$IW_RUN_COUNT" ]; do
+        IW_RUN_VAR="INSTALL_WEB_${idx}_RUN_${j}"
+        IW_CMD="${!IW_RUN_VAR:-}"
+        [ -z "$IW_CMD" ] && { IW_R_HCL="HCL_INSTALL_WEB_${idx}_RUN_${j}"; IW_CMD="${!IW_R_HCL:-}"; }
+
+        if [ -n "$IW_CMD" ]; then
+          echo "  ▶ Chạy lệnh $j/$IW_RUN_COUNT: $IW_CMD"
+          # Loại bỏ prefix 'sudo' nếu có (trong chroot đã là root, không có sudo)
+          CLEAN_CMD="$(echo "$IW_CMD" | sed -E 's/^[[:space:]]*sudo[[:space:]]+//')"
+          eval "$CLEAN_CMD" || {
+            echo "  ⚠️  Lệnh chưa hoàn tất, thử khắc phục dependency bằng apt-get install -f -y: $CLEAN_CMD"
+            $SUDO apt-get install -f -y || true
+          }
+        fi
+        j=$((j + 1))
+      done
+
+      # Nếu có file .deb được tải xuống trong lượt này, thêm vào danh sách
+      # DEB_FILES để được xử lý nhất quán (lọc arch, cài, cleanup nexcode...).
+      # Lưu ý: GIỮ file trong $IW_WORK_DIR (nằm trong $WORK_DIR, tự xoá khi exit)
+      # để DEB_FILES còn tồn tại cho các bước sau.
+      while IFS= read -r -d '' DEB_FOUND; do
+        add_deb "$DEB_FOUND"
+      done < <(find "$IW_WORK_DIR" -type f -iname "*.deb" -print0 2>/dev/null)
+
+      idx=$((idx + 1))
+    done
+
+    cd /  # Trở về gốc sau khi chạy xong
+  fi
 fi
 
 # ----- 3.5. Lọc bỏ .deb SAI kiến trúc so với chroot đang cài (vd .deb

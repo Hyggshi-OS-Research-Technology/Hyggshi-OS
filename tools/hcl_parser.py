@@ -1664,12 +1664,16 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     # cho mỗi entry INSTALL_WEB_{idx}.
     install_web = resolved.get("install_web", [])
     put("INSTALL_WEB_COUNT", len(install_web))
+    lines.append(f"INSTALL_WEB_COUNT={len(install_web)}")
     for idx, iw in enumerate(install_web, start=1):
         put(f"INSTALL_WEB_{idx}_KEY", iw.get("key"))
+        lines.append(f"INSTALL_WEB_{idx}_KEY={iw.get('key')}")
         runs = iw.get("runs") or []
         put(f"INSTALL_WEB_{idx}_RUN_COUNT", len(runs))
+        lines.append(f"INSTALL_WEB_{idx}_RUN_COUNT={len(runs)}")
         for j, run_cmd in enumerate(runs, start=1):
             put(f"INSTALL_WEB_{idx}_RUN_{j}", run_cmd)
+            lines.append(f"INSTALL_WEB_{idx}_RUN_{j}={run_cmd}")
 
     # PATCH 7: export các entry filecustom(...) trong [customization]
     # (Calamares settings/branding/modules, logo Plymouth, ảnh nền desktop,
