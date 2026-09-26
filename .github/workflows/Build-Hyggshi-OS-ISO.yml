@@ -179,7 +179,7 @@ env:
   # "Resolve feature_flags..." ở đầu job build-iso, nơi chúng được ghi vào
   # $GITHUB_ENV.
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
-  DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+  DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'true' }}
   # Không gộp vào feature_flags (CSV) vì đây là toggle build-time riêng cho
   # NexWM, không phải feature bật/tắt trong desktop.sh. Mặc định false —
   # bước "[build-nexwm.sh]" bên dưới chỉ chạy khi input này = true.

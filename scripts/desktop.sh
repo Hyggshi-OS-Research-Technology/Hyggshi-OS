@@ -17,6 +17,9 @@ source /tmp/kernel-tuning.sh
 # shellcheck source=/dev/null
 source /tmp/arch.sh
 : "${ARCH:=amd64}"
+# AUTOLOGIN: giá trị từ parser (PATCH 16 hcl_parser.py đọc [Auto-login]) hoặc
+# từ workflow env. Fallback true để giữ live ISO autologin mặc định nếu parser
+# chưa export (version cũ không có [Auto-login] trong config.ini).
 : "${AUTOLOGIN:=true}"
 : "${AUTOSCALE_DISPLAY:=true}"
 
@@ -790,9 +793,15 @@ LXQTMIMEOF
     # của tasksel, cũng kéo đủ cinnamon-desktop-environment) -> cinnamon-core
     # (chỉ desktop lõi, không kèm app phụ trợ — phương án cuối để build không
     # fail hoàn toàn nếu 2 lựa chọn trên đều không có trong repo/mirror).
+    # Cinnamon dùng slick-greeter (greeter chính thức của Linux Mint /
+    # Ubuntu Cinnamon, giao diện khác hẳn lightdm-gtk-greeter của XFCE/MATE).
+    # Fallback về lightdm-gtk-greeter nếu slick-greeter không có trên mirror.
+    apt-get install -y cinnamon-desktop-environment lightdm slick-greeter || \
     apt-get install -y cinnamon-desktop-environment lightdm lightdm-gtk-greeter || \
+    apt-get install -y task-cinnamon-desktop lightdm slick-greeter || \
     apt-get install -y task-cinnamon-desktop lightdm lightdm-gtk-greeter || \
     { echo "CẢNH BÁO: cinnamon-desktop-environment/task-cinnamon-desktop không cài được — fallback cinnamon-core (thiếu một số app phụ trợ so với bản full)." >&2; \
+      apt-get install -y cinnamon-core lightdm slick-greeter 2>/dev/null || \
       apt-get install -y cinnamon-core lightdm lightdm-gtk-greeter; }
 
     echo "===== Theme Cinnamon: GTK/Shell Orchis, Icons Tela, Cursor Bibata ====="
@@ -1690,6 +1699,24 @@ if [ "$INCLUDE_OFFICE" != "true" ]; then
   fi
 fi
 
+# Guard riêng cho KDE: gỡ các app rác từ kde-standard / task-kde-desktop Recommends
+# (akregator, kmail, dragonplayer, juk, konqueror, kaddressbook, korganizer, sweeper...)
+# Các app này KHÔNG có trong danh sách config.ini nhưng bị kéo vào qua Recommends.
+if [ "$DE" = "kde" ]; then
+  KDE_BLOAT="akregator kmail ktnef kaddressbook korganizer dragonplayer juk konqueror sweeper kdeconnect kdeconnect-plasma"
+  KDE_BLOAT_FOUND=""
+  for pkg in $KDE_BLOAT; do
+    if dpkg -l "$pkg" 2>/dev/null | grep -q '^ii'; then
+      KDE_BLOAT_FOUND="$KDE_BLOAT_FOUND $pkg"
+    fi
+  done
+  if [ -n "$KDE_BLOAT_FOUND" ]; then
+    echo "KDE DE — gỡ các app rác bị kéo theo qua Recommends:$KDE_BLOAT_FOUND"
+    apt-get purge -y $KDE_BLOAT_FOUND 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+  fi
+fi
+
 echo "===== Copy file theo config.ini (filecopy source=/target=) ====="
 # [Desktop-Environment] khối "Apply image background" ("xfce4-desktop-config
 # = filecopy(source=..., target=...)") được hcl_parser.py resolve sẵn vào
@@ -1788,6 +1815,54 @@ else
   rm -f /etc/sudoers.d/90-hyggshi-live-nopasswd
 fi
 
+echo "===== Đặt đúng Display Manager mặc định cho từng DE ====="
+# ROOT CAUSE bug "LXQt/Cinnamon ra màn hình login của XFCE":
+# Debian/Ubuntu giữ DM cũ trong /etc/X11/default-display-manager nếu không
+# ghi đè rõ ràng. Khi lightdm đã tồn tại (từ EXTRA_PACKAGES hoặc Recommends),
+# nó sẽ được dùng cho cả LXQt/KDE thay vì sddm — khiến màn login trông như XFCE.
+# Fix: luôn ghi /etc/X11/default-display-manager đúng theo DE, bất kể thứ tự cài.
+case "$DE" in
+  kde|lxqt)
+    if [ -f /usr/bin/sddm ]; then
+      echo "/usr/bin/sddm" > /etc/X11/default-display-manager
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable lightdm 2>/dev/null || true
+        systemctl enable sddm 2>/dev/null || true
+      fi
+      echo "OK: đặt sddm làm DM mặc định cho DE=$DE"
+    else
+      echo "CANH BAO: sddm khong tim thay cho DE=$DE" >&2
+    fi
+    ;;
+  gnome)
+    if [ -f /usr/sbin/gdm3 ] || [ -f /usr/bin/gdm3 ]; then
+      echo "/usr/sbin/gdm3" > /etc/X11/default-display-manager
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable lightdm 2>/dev/null || true
+        systemctl disable sddm 2>/dev/null || true
+        systemctl enable gdm3 2>/dev/null || true
+      fi
+      echo "OK: đặt gdm3 làm DM mặc định cho DE=gnome"
+    else
+      echo "CANH BAO: gdm3 khong tim thay cho DE=gnome" >&2
+    fi
+    ;;
+  *)
+    # XFCE, MATE, Cinnamon dùng LightDM
+    if [ -f /usr/sbin/lightdm ]; then
+      echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable sddm 2>/dev/null || true
+        systemctl disable gdm3 2>/dev/null || true
+        systemctl enable lightdm 2>/dev/null || true
+      fi
+      echo "OK: đặt lightdm làm DM mặc định cho DE=$DE"
+    else
+      echo "CANH BAO: lightdm khong tim thay cho DE=$DE" >&2
+    fi
+    ;;
+esac
+
 echo "===== Autologin cho live session (AUTOLOGIN=$AUTOLOGIN) ====="
 # QUAN TRỌNG: nếu không bật autologin, live ISO sẽ dừng ở màn hình đăng
 # nhập LightDM/SDDM. Không ai chạm tới thì KHÔNG session desktop nào được
@@ -1840,14 +1915,29 @@ autologin-user-timeout=0
 autologin-session=mate
 EOF
 elif [ "$DE" = "cinnamon" ]; then
+  # Cinnamon dùng slick-greeter (cài bên trên). Nếu slick-greeter đã cài,
+  # cấu hình lightdm dùng nó làm greeter-session, tránh màn đăng nhập
+  # trông giống XFCE (lightdm-gtk-greeter). Nếu chưa có slick-greeter
+  # (fallback cài lightdm-gtk-greeter) thì không set greeter-session.
   mkdir -p /etc/lightdm/lightdm.conf.d
-  cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+  if dpkg -l slick-greeter 2>/dev/null | grep -q '^ii'; then
+    cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=cinnamon
+greeter-session=slick-greeter
+EOF
+  else
+    cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
 [Seat:*]
 autologin-user=$OS_USERNAME
 autologin-user-timeout=0
 autologin-session=cinnamon
 EOF
+  fi
 else
+  # Mặc định: XFCE + lightdm-gtk-greeter
   mkdir -p /etc/lightdm/lightdm.conf.d
   cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
 [Seat:*]

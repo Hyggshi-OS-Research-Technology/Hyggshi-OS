@@ -1177,6 +1177,31 @@ class Resolver:
                         out.append(entry)
         return out
 
+    def resolve_auto_login(self) -> dict:
+        """
+        PATCH 16: đọc section [Auto-login] — per-DE autologin flag.
+        Trả về dict { "gnome": True, "lxqt": True, ... } với key = tên DE
+        viết thường (chuẩn hoá), value = bool.
+        Nếu không có section [Auto-login] trong config.ini, trả về {} (caller
+        sẽ fallback về default=true để không phá behavior cũ).
+        """
+        section_name = None
+        for s in self.order:
+            if s.lower().replace("-", "").replace("_", "") == "autologin":
+                section_name = s
+                break
+        if section_name is None:
+            return {}
+        result = {}
+        for key, raw, _group in self._entries(section_name):
+            pv = classify(key, raw)
+            de_key = key.strip().lower()
+            if pv.type == "BOOLEAN":
+                result[de_key] = bool(pv.value)
+            elif pv.type == "STRING":
+                result[de_key] = str(pv.value).strip().lower() in ("true", "1", "yes")
+        return result
+
     def _is_de_excluded(
         self,
         active_de: str | None,
@@ -1393,6 +1418,8 @@ class Resolver:
         result["removals"] = self.resolve_removals(active_de=active_de)
         result["installers"] = self.resolve_installers(active_de=active_de)
         result["file_copies"] = self.resolve_file_copies()
+        # PATCH 16: autologin per-DE từ [Auto-login]
+        result["auto_login"] = self.resolve_auto_login()
         # PATCH 13: gom GNOME extensions và tweaks — chỉ xuất khi DE=gnome
         result["gnome_extensions"] = self.resolve_gnome_extensions(active_de=active_de)
         result["gnome_tweaks"] = self.resolve_gnome_tweaks(active_de=active_de)
@@ -1757,6 +1784,22 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     )
     put("PLYMOUTH_SCRIPT", plymouth.get("file", ""))
     put("PLYMOUTH_ACTION", plymouth.get("action", ""))
+
+    # PATCH 16: export AUTOLOGIN dựa theo [Auto-login] section
+    # Đọc flag per-DE từ resolved["auto_login"] (resolve_auto_login()). Nếu
+    # section không tồn tại hoặc DE không được khai báo, fallback về "true"
+    # để giữ behavior cũ (live ISO autologin mặc định).
+    auto_login_map = resolved.get("auto_login") or {}
+    de_effective_for_al = (de_override or "").strip().lower()
+    if not de_effective_for_al:
+        bp_tmp = resolved.get("base_profile") or {}
+        kp_tmp = bp_tmp.get("kernel_profile") or {}
+        de_effective_for_al = str(kp_tmp.get("desktop") or "").strip().lower()
+    if auto_login_map:
+        autologin_val = auto_login_map.get(de_effective_for_al, True)
+    else:
+        autologin_val = True  # fallback: không có [Auto-login] -> default true
+    lines.append(f"AUTOLOGIN={'true' if autologin_val else 'false'}")
 
     base_val     = str(bp.get("base") or "").lower()
     # BUG ĐÃ SỬA: dòng này trước đây tự đọc lại kp_val.get("desktop") (giá
