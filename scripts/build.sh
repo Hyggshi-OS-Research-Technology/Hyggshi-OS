@@ -28,7 +28,26 @@ sudo apt-get install -y \
   grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools \
   initramfs-tools live-boot live-boot-doc sbsigntool binutils
 
-mkdir -p live-build/chroot
+CHROOT_DIR="live-build/chroot"
+DE_MARKER="$CHROOT_DIR/.hyggshi-last-de"
+
+# BUG: build.sh chỉ mkdir -p chroot, KHÔNG BAO GIỜ xoá chroot cũ. Nếu build
+# trước đó dùng DE=kde (hoặc bất kỳ DE nào khác) và lần này đổi sang
+# DE=lxqt, toàn bộ package/xsession/sddm-config của DE cũ vẫn còn nguyên
+# trong chroot — desktop.sh chỉ CỘNG THÊM lxqt vào, phần purge KDE trong
+# nhánh lxqt của desktop.sh có thể fail âm thầm (|| true) nếu còn gói khác
+# phụ thuộc — kết quả: SDDM hiện cả 2 session "Plasma" và "LXQt" dù chỉ
+# chọn LXQt. Fix: lưu DE của lần build trước vào 1 marker file trong
+# chroot; nếu DE lần này khác, xoá sạch chroot để build lại từ đầu cho
+# đúng 1 DE. Build lại cùng 1 DE (không đổi) thì giữ nguyên chroot cũ như
+# trước (không mất tốc độ cache debootstrap).
+if [ -d "$CHROOT_DIR" ] && [ -f "$DE_MARKER" ] && [ "$(cat "$DE_MARKER" 2>/dev/null)" != "$DE" ]; then
+  echo "===== DE đổi từ '$(cat "$DE_MARKER" 2>/dev/null)' sang '$DE' — xoá chroot cũ để tránh cài chồng 2 desktop environment =====" >&2
+  sudo rm -rf "$CHROOT_DIR"
+fi
+
+mkdir -p "$CHROOT_DIR"
+echo "$DE" | sudo tee "$DE_MARKER" >/dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
