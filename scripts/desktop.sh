@@ -691,11 +691,6 @@ case "$DE" in
       pcmanfm-qt qterminal featherpad lximage-qt openbox obconf-qt \
       network-manager-gnome
 
-    # Loại bỏ triệt để các ứng dụng KDE nếu bị kéo theo qua Recommends của repo/mirror
-    echo "Gỡ bỏ các ứng dụng KDE không mong muốn trong phiên bản LXQt (nếu có)..."
-    apt-get purge -y konsole dolphin kate kwrite ark gwenview okular kcalc spectacle \
-      kde-plasma-desktop plasma-workspace plasma-desktop plasma-nm kde-config-sddm bluedevil 2>/dev/null || true
-
     # ===== nm-applet + blueman-applet: tự chạy cùng session LXQt =====
     # network-manager-gnome cung cấp binary nm-applet nhưng KHÔNG tự thêm
     # entry autostart cho panel LXQt (autostart .desktop của gói này thường
@@ -1687,6 +1682,53 @@ for r in d.get('removals', []):
 " 2>/dev/null)
 else
   echo "⚠️  /tmp/hcl-resolved.json không tồn tại hoặc thiếu python3 — bỏ qua bước dọn package/hình ảnh theo config.ini (appremove/fileremove sẽ không có tác dụng gì trên ISO này)." >&2
+fi
+
+if [ "$DE" = "lxqt" ]; then
+  echo "===== Gỡ KDE còn sót sau khi cài toàn bộ package cho LXQt ====="
+  LXQT_KDE_CANDIDATES=(
+    kde-plasma-desktop kde-standard kde-full task-kde-desktop
+    plasma-desktop plasma-desktop-data plasma-workspace plasma-workspace-wayland
+    plasma-session plasma-session-x11 plasma-session-wayland plasma-nm plasma-pa
+    kde-config-sddm systemsettings bluedevil konsole dolphin kate kwrite ark
+    gwenview okular kcalc spectacle plasma-discover plasma-systemmonitor
+  )
+  LXQT_KDE_PACKAGES=()
+  for pkg in "${LXQT_KDE_CANDIDATES[@]}"; do
+    if dpkg-query -W -f='${db:Status-Abbrev}' "$pkg" 2>/dev/null | grep -q '^ii'; then
+      LXQT_KDE_PACKAGES+=("$pkg")
+    fi
+  done
+
+  mapfile -t LXQT_PLASMA_SESSIONS < <(
+    find /usr/share/xsessions /usr/share/wayland-sessions \
+      -maxdepth 1 -type f -iname '*plasma*.desktop' -print 2>/dev/null
+  )
+  for session_file in "${LXQT_PLASMA_SESSIONS[@]}"; do
+    while IFS= read -r owner; do
+      [ -n "$owner" ] || continue
+      if [[ ! " ${LXQT_KDE_PACKAGES[*]} " == *" $owner "* ]]; then
+        LXQT_KDE_PACKAGES+=("$owner")
+      fi
+    done < <(dpkg-query -S "$session_file" 2>/dev/null | sed 's/: .*//')
+  done
+
+  if [ ${#LXQT_KDE_PACKAGES[@]} -gt 0 ]; then
+    printf 'Sẽ purge các gói KDE: %s\n' "${LXQT_KDE_PACKAGES[*]}"
+    apt-get purge -y "${LXQT_KDE_PACKAGES[@]}"
+    apt-get autoremove --purge -y
+  fi
+
+  mapfile -t LXQT_PLASMA_SESSIONS < <(
+    find /usr/share/xsessions /usr/share/wayland-sessions \
+      -maxdepth 1 -type f -iname '*plasma*.desktop' -print 2>/dev/null
+  )
+  if [ ${#LXQT_PLASMA_SESSIONS[@]} -gt 0 ]; then
+    printf 'LỖI: còn session Plasma trong ISO LXQt:\n' >&2
+    printf '  %s\n' "${LXQT_PLASMA_SESSIONS[@]}" >&2
+    exit 1
+  fi
+  echo "OK: không còn session Plasma trong ISO LXQt."
 fi
 
 # Đảm bảo LibreOffice không bị sót lại nếu có bất kỳ metapackage/recommends nào kéo theo
