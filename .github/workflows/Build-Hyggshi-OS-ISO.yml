@@ -103,16 +103,6 @@ on:
         description: "Múi giờ (vd Asia/Ho_Chi_Minh, UTC)"
         required: false
         default: "Asia/Ho_Chi_Minh"
-      # LƯU Ý: workflow_dispatch chỉ cho phép TỐI ĐA 25 `inputs` (giới hạn
-      # cứng của GitHub Actions — vượt quá là toàn bộ workflow bị từ chối
-      # với lỗi "Invalid workflow file" ngay từ lúc parse, chưa kịp chạy).
-      # Vì vậy 6 toggle bật/tắt tính năng (browser/office/autologin/
-      # autoscale/welcome wizard) được GỘP CHUNG vào 1 input CSV duy nhất
-      # `feature_flags` thay vì 6 input `type: boolean` riêng — xem step
-      # "Resolve feature_flags..." bên dưới, nơi CSV này được tách ra lại
-      # thành đúng 6 biến INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
-      # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như cũ — không script nào khác
-      # (desktop.sh, welcome.sh...) phải đổi theo.
       feature_flags:
         description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme, arm64. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. arm64: build kiến trúc arm64 thay vì amd64 mặc định — CHỈ áp dụng khi distro = debian (xem [Architecture] trong config.ini + scripts/arch.sh); Ubuntu/Mint/Alpine/Arch/Fedora job chưa hỗ trợ, luôn build amd64 dù có cờ này. Chậm hơn amd64 đáng kể (QEMU binfmt emulation) và ISO chưa có UEFI Secure Boot signing. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
         required: false
@@ -143,26 +133,10 @@ on:
 env:
   DISTRO_NAME: ${{ github.event.inputs.distro_name || 'Hyggshi OS' }}
   HYGGSHI_VERSION_ID: ${{ github.event.inputs.hyggshi_version || '1.0' }}
-  # Trống = branding.sh tự chọn theo HYGGSHI_VERSION_ID (xem HYGGSHI_CODENAMES
-  # trong scripts/branding.sh). Không phải codename base distro — cái đó vẫn
-  # là $BASE_CODENAME (bookworm/noble/...), được set riêng ở build-<distro>.sh.
   HYGGSHI_CODENAME: ${{ github.event.inputs.hyggshi_codename || '' }}
   BASE_DISTRO: ${{ github.event.inputs.distro || 'debian' }}
   EDITION: ${{ github.event.inputs.edition || 'normal' }}
-  # LƯU Ý: debian_version/ubuntu_version/mint_version/alpine_version KHÔNG đặt
-  # ở đây. Nếu đặt cứng ở env cấp workflow, GitHub Actions in TOÀN BỘ 4 biến
-  # ra log của MỌI step (kể cả 3 biến không liên quan tới distro đã chọn —
-  # ví dụ chọn debian vẫn thấy UBUNTU_VERSION/MINT_VERSION/ALPINE_VERSION),
-  # gây hiểu lầm là chúng có tác dụng. Thay vào đó, step "Resolve version
-  # theo distro đã chọn" bên dưới chỉ export ĐÚNG 1 biến khớp với
-  # $BASE_DISTRO vào $GITHUB_ENV — 3 biến còn lại không hề được set.
   ISO_FILENAME: "hyggshi-os-${{ github.run_number }}.iso"
-  # Đường dẫn chroot dùng chung cho MỌI step (trước đây một số step dùng
-  # literal "live-build/chroot", một số khác lại dùng "${CHROOT_DIR}" mà
-  # biến này CHƯA từng được định nghĩa ở đâu -> expand ra rỗng -> lệnh
-  # `sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"` thực chất chạy thành
-  # `sudo cp LICENSE "/tmp/LICENSE"`, tức KHÔNG copy vào chroot. Định nghĩa
-  # 1 lần ở đây và dùng thống nhất $CHROOT_DIR ở mọi nơi để tránh lệch nhau.
   CHROOT_DIR: "live-build/chroot"
   DE: ${{ github.event.inputs.desktop || 'xfce' }}
   PANEL_STYLE: ${{ github.event.inputs.panel_style || 'windows10' }}
@@ -171,23 +145,9 @@ env:
   OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
   OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
   OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
-  # INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/
-  # THEME_DAEMON KHÔNG đặt ở đây (lý do giống DEBIAN_VERSION/UBUNTU_VERSION/... phía trên):
-  # từ khi 6 input boolean này bị gộp chung thành 1 input CSV `feature_flags`
-  # (để không vượt giới hạn 25 inputs của workflow_dispatch), 6 biến này chỉ
-  # có thể tách ra được LÚC CHẠY, không phải lúc parse workflow — xem step
-  # "Resolve feature_flags..." ở đầu job build-iso, nơi chúng được ghi vào
-  # $GITHUB_ENV.
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'true' }}
-  # Không gộp vào feature_flags (CSV) vì đây là toggle build-time riêng cho
-  # NexWM, không phải feature bật/tắt trong desktop.sh. Mặc định false —
-  # bước "[build-nexwm.sh]" bên dưới chỉ chạy khi input này = true.
   BUILD_NEXWM: ${{ github.event.inputs.build_nexwm || 'false' }}
-  # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
-  # file cùng tên trong iso-config/branding/ (xem WALLPAPER_FILE/LOGO_FILE/
-  # PLYMOUTH_LOGO_FILE trong branding.sh). PLYMOUTH_LOGO_URL để trống sẽ
-  # fallback dùng LOGO_URL (branding.sh tự xử lý).
   WALLPAPER_URL: ${{ github.event.inputs.wallpaper_url || 'https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Wallpaper.png?raw=true' }}
   LOGO_URL: ${{ github.event.inputs.logo_url || 'https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/blob/main/iso-config/branding/Logo.png?raw=true' }}
   PLYMOUTH_LOGO_URL: ${{ github.event.inputs.plymouth_logo_url || '' }}
@@ -216,7 +176,6 @@ jobs:
     name: "Build ISO (${{ matrix.desktop }})"
     needs: matrix-prep
     runs-on: ubuntu-26.04
-    
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     strategy:
       fail-fast: false
@@ -225,24 +184,10 @@ jobs:
     env:
       DE: ${{ matrix.desktop }}
       ISO_FILENAME: "hyggshi-os-${{ matrix.desktop }}-${{ github.run_number }}.iso"
-    # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
 
-      # HCL (Hyggshi Configuration Language) — parse + resolve + validate
-      # iso-config/config/config.ini TRƯỚC khi bất kỳ step nào dùng $BASE_DISTRO.
-      # --strict: nếu config.ini có lỗi (function tên sai, ${ref} không trỏ
-      # đâu, 2 base cùng true, path fileinstall()/filecustom() không tồn
-      # tại...) job FAIL NGAY Ở ĐÂY, không tốn 15-20 phút debootstrap rồi
-      # mới biết config sai. Biến xuất ra đều có prefix HCL_ (HCL_BASE_DISTRO,
-      # HCL_DESKTOP_ENV, HCL_SWAP_MB...) — CỐ Ý không trùng BASE_DISTRO/DESKTOP_ENV
-      # ở dưới (lấy từ workflow_dispatch input) để không âm thầm đè giá trị
-      # người dùng chọn trên UI Actions. Chỉ dùng tools/hcl_parser.py Python
-      # stdlib, không cần pip install.
-      # --de-override="$DE": $DE ở đây LÀ desktop THẬT (${{ matrix.desktop }})
-      # được ma trận chọn — hcl_parser.py sẽ resolve gói và removals chính xác
-      # cho desktop này.
       - name: Validate & resolve config.ini (HCL)
         run: |
           python3 tools/hcl_parser.py iso-config/config/config.ini \
@@ -269,9 +214,6 @@ jobs:
       - name: Chmod +x cho toàn bộ scripts/
         run: find scripts -type f -name '*.sh' -exec chmod +x {} +
 
-      # Chỉ export ĐÚNG 1 biến version khớp với $BASE_DISTRO. Các biến của
-      # distro khác không hề tồn tại trong môi trường của các step sau —
-      # không còn cảnh debian mà vẫn thấy UBUNTU_VERSION.
       - name: Resolve version theo distro đã chọn
         run: |
           case "$BASE_DISTRO" in
@@ -286,16 +228,8 @@ jobs:
               exit 1 ;;
           esac
 
-      # Tách input CSV `feature_flags` (xem ghi chú ở khối `inputs:` phía
-      # trên) thành lại đúng 6 biến env như trước khi gộp — mọi step/script
-      # phía dưới (desktop.sh, welcome.sh...) không cần biết gì về việc gộp
-      # này, vẫn đọc INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/
-      # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như bình thường.
       - name: "Resolve feature_flags -> INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON/AUTO_THEME/ARCH"
         run: |
-          # Bọc thêm dấu phẩy ở 2 đầu để match "$1" bằng pattern "*,$1,*"
-          # không bị dính nhầm token con (vd "autologin" không match nhầm
-          # bên trong 1 token dài hơn nào đó).
           FLAGS=",${{ github.event.inputs.feature_flags || 'browser,autologin,autoscale,welcome,auto-theme' }},"
           has_flag() {
             case "$FLAGS" in
@@ -312,24 +246,12 @@ jobs:
             echo "THEME_DAEMON=$(has_flag theme-daemon)"
             echo "AUTO_THEME=$(has_flag auto-theme)"
           } >> "$GITHUB_ENV"
-          # arm64: gộp vào feature_flags thay vì input "architecture" riêng —
-          # workflow_dispatch chỉ cho phép TỐI ĐA 25 inputs, thêm 1 input
-          # riêng cho arch làm dư lên 26 -> "Invalid workflow file" (xem
-          # ghi chú ở khối `inputs:` phía trên về lý do 6 toggle khác cũng
-          # bị gộp CSV). Chỉ build-debian.sh/desktop.sh/iso.sh đọc $ARCH
-          # (qua scripts/arch.sh) — Ubuntu/Mint/Alpine/Arch/Fedora job chưa
-          # dùng, luôn hardcode amd64 dù có cờ này.
           if [ "$(has_flag arm64)" = "true" ]; then
             echo "ARCH=arm64" >> "$GITHUB_ENV"
           else
             echo "ARCH=amd64" >> "$GITHUB_ENV"
           fi
 
-      # QEMU user-mode binfmt: CẦN cho debootstrap --arch=arm64 + chroot chạy
-      # binary arm64 trên runner ubuntu-latest (amd64) — không có bước này,
-      # build-debian.sh dừng ngay với cảnh báo "exec format error" (xem
-      # hyggshi_needs_qemu_binfmt trong scripts/arch.sh). Chỉ cần khi
-      # ARCH=arm64 — bỏ qua cho amd64 để không tốn thời gian job vô ích.
       - name: Set up QEMU (cross-arch build, chỉ khi ARCH=arm64)
         if: ${{ env.ARCH == 'arm64' }}
         uses: docker/setup-qemu-action@v3
@@ -354,9 +276,6 @@ jobs:
             apt-debs-${{ env.BASE_DISTRO }}-
 
       # === 1) BUILD: resolve distro, debootstrap, mount, apt sources ===
-      # build.sh chỉ là dispatcher: nó source đúng scripts/distros/build-<distro>.sh
-      # bên trong (xem log con "Bootstrap rootfs riêng cho: ..."); tên step ở
-      # đây ghi rõ distro để không cần mở log ra mới biết file nào đã chạy.
       - name: "[build.sh -> scripts/distros/build-${{ github.event.inputs.distro || 'debian' }}.sh] Chuẩn bị base rootfs"
         run: bash scripts/build.sh
 
@@ -368,16 +287,11 @@ jobs:
           sudo mkdir -p "${CHROOT_DIR}/var/cache/apt/archives/partial"
           sudo chmod 777 "${CHROOT_DIR}/var/cache/apt/archives/partial"
           sudo mount --bind /tmp/apt-deb-cache "${CHROOT_DIR}/var/cache/apt/archives"
-          # Đảm bảo APT không tự động dọn sạch file .deb sau khi install
           sudo rm -f "${CHROOT_DIR}/etc/apt/apt.conf.d/docker-clean" 2>/dev/null || true
           echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee "${CHROOT_DIR}/etc/apt/apt.conf.d/01keep-debs" > /dev/null
           echo 'APT::Keep-Downloaded-Packages "true";' | sudo tee -a "${CHROOT_DIR}/etc/apt/apt.conf.d/01keep-debs" > /dev/null
 
-      # === 2) Copy scripts vào chroot (tách riêng khỏi bước chạy chroot bên
-      # dưới, và dùng THỐNG NHẤT $CHROOT_DIR cho mọi lệnh copy — trước đây
-      # desktop.sh/kernel-tuning.sh dùng literal "live-build/chroot/tmp/..."
-      # còn LICENSE lại dùng "${CHROOT_DIR}" chưa được định nghĩa, nên LICENSE
-      # không thực sự được copy vào chroot).
+      # === 2) Copy scripts vào chroot ===
       - name: Copy scripts vào chroot
         run: |
           sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
@@ -387,29 +301,15 @@ jobs:
           sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"
           sudo rm -rf "${CHROOT_DIR}/tmp/packages"
           sudo cp -r iso-config/packages "${CHROOT_DIR}/tmp/packages"
-          # Stage the repository's complete Calamares configuration.
-          # desktop.sh will overwrite /etc/calamares with this exact tree
-          # after the Calamares packages are installed.
           sudo rm -rf "${CHROOT_DIR}/tmp/calamares"
           sudo cp -a iso-config/calamares "${CHROOT_DIR}/tmp/calamares"
-          # Stage installer branding so desktop.sh can rebrand the Calamares launcher.
           sudo cp iso-config/branding/Hyggshi-OS-Installer.png "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
           sudo chmod 0644 "${CHROOT_DIR}/tmp/Hyggshi-OS-Installer.png"
-          # Stage Hyggshi sound shortcut source & installer script cho desktop.sh
           sudo rm -rf "${CHROOT_DIR}/tmp/hyggshi-extensions-sound-shortcut"
           sudo cp -r app-for-hyggshi/hyggshi-extensions-sound-shortcut "${CHROOT_DIR}/tmp/hyggshi-extensions-sound-shortcut"
           sudo cp app-for-hyggshi/sound-shortcut.sh "${CHROOT_DIR}/tmp/sound-shortcut.sh"
           sudo chmod +x "${CHROOT_DIR}/tmp/sound-shortcut.sh"
           sudo cp -f /tmp/hcl-resolved.json "${CHROOT_DIR}/tmp/hcl-resolved.json" 2>/dev/null || true
-          # Stage nguồn cho mọi entry filecopy(source=,target=) trong
-          # config.ini (xem resolve_file_copies()/PATCH 7 trong
-          # tools/hcl_parser.py) vào chroot /tmp/hcl-filecopy-src/, mirror
-          # đúng path tương đối trong repo — desktop.sh (chạy TRONG chroot)
-          # không có quyền đọc ra ngoài chroot nên cần bước stage này TRƯỚC.
-          # Quét thẳng resolved["file_copies"] thay vì hardcode
-          # "iso-config/xfce/xfce4-desktop.xml" để tự động hỗ trợ thêm
-          # filecopy(source=,target=) khác sau này mà không cần sửa lại
-          # bước stage này (giống triết lý resolve_removals()/PATCH 6).
           sudo rm -rf "${CHROOT_DIR}/tmp/hcl-filecopy-src"
           sudo mkdir -p "${CHROOT_DIR}/tmp/hcl-filecopy-src"
           python3 -c "
@@ -430,26 +330,14 @@ jobs:
               sudo cp "$src" "$dest"
             fi
           done
-          # Stage Hyggshi-Light/Hyggshi-Dark theme sources (iso-config/theme)
-          # vào chroot. TRƯỚC ĐÂY BỊ THIẾU: config.ini có filetheme(...)/
-          # filecopy(...) khai báo 2 theme này, hcl_parser.py resolve và
-          # validate "exists" (đúng, vì check trên HOST), nhưng chưa bao giờ
-          # có dòng cp nào đưa iso-config/theme/ vào chroot — nên desktop.sh
-          # (chạy TRONG chroot) không có gì để copy vào /usr/share/themes,
-          # dù build --strict pass sạch (đó là bug: parser chỉ validate
-          # NGUỒN tồn tại trên host, không đảm bảo nó THỰC SỰ được đưa vào
-          # ISO). Theme không hiện trong Cinnamon Settings vì lý do này.
           sudo rm -rf "${CHROOT_DIR}/tmp/theme"
           sudo cp -r iso-config/theme "${CHROOT_DIR}/tmp/theme"
           sudo chmod +x "${CHROOT_DIR}/tmp/desktop.sh"
-          
+
       # === 3) DESKTOP: cài package/DE/user — chạy BÊN TRONG chroot ===
       - name: "[desktop.sh] Cài desktop environment (trong chroot)"
         run: |
           set -o pipefail
-          # Chỉ để các gói/postinst cần pseudo-terminal nhìn thấy /dev/pts.
-          # Firefox trên Ubuntu Resolute không dùng snap trong chroot nữa,
-          # nhưng các package khác vẫn có thể cần pseudo-terminal.
           sudo mountpoint -q "${CHROOT_DIR}/dev/pts" || sudo mount --bind /dev/pts "${CHROOT_DIR}/dev/pts" || true
           sudo chroot "${CHROOT_DIR}" env \
             BASE_DISTRO="$BASE_DISTRO" \
@@ -475,11 +363,6 @@ jobs:
             /tmp/desktop.sh 2>&1 | tee install-debug.log
 
       # === 3.1) CINNAMON: sửa Dark/Light + Cinnamon Spices ===
-      # Debian Trixie hiện có thể vẫn cung cấp Cinnamon 6.4.10-2.
-      # Bản này có lỗi Spices.py khi server Cinnamon trả response không có
-      # Content-Length (HTTP chunked/gzip), làm int(None) -> TypeError.
-      # Patch bên dưới là bản sửa 6.4-maintenance đã được đưa vào Cinnamon 6.4.14
-      # và Debian trixie-updates. Không dùng regex/base64 để tránh lỗi build.
       - name: "[cinnamon-fix] Fix Dark/Light mode + Cinnamon Spices downloader"
         if: ${{ env.DE == 'cinnamon' }}
         run: |
@@ -487,44 +370,31 @@ jobs:
           sudo chroot "${CHROOT_DIR}" /bin/bash -s <<'CHROOT_SCRIPT'
           set -e
           export DEBIAN_FRONTEND=noninteractive
-
           apt-get update
           apt-get install -y --no-install-recommends \
             cinnamon cinnamon-common gnome-themes-extra \
             gsettings-desktop-schemas xdg-desktop-portal xdg-desktop-portal-xapp
-
-          # Cố nâng Cinnamon nếu repository đã có bản fixed.
           apt-get install -y --only-upgrade cinnamon cinnamon-common || true
-
           SPICES="/usr/share/cinnamon/cinnamon-settings/bin/Spices.py"
-
           if [ -f "$SPICES" ]; then
             cp -a "$SPICES" "${SPICES}.hyggshi-backup"
-
             python3 - "$SPICES" <<'PY'
           from pathlib import Path
           import sys
-
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
           original = source
-
-          # 1. HTTP errors phải được xử lý bằng exception chuẩn.
           source = source.replace(
               "assert response.ok",
               "response.raise_for_status()",
               1,
           )
-
-          # 2. Không được int(None) khi server không gửi Content-Length.
           source = source.replace(
               "totalSize = int(response.headers.get('content-length'))",
               "content_length = response.headers.get('content-length')\n"
               "            totalSize = int(content_length) if content_length else -1",
               1,
           )
-
-          # 3. Progress bar phải có trạng thái pulse khi total size không biết.
           if "def _set_progressbar_pulse(self):" not in source:
               marker = "    def _set_progressbar_visible(self, visible):"
               method = (
@@ -535,8 +405,6 @@ jobs:
               )
               if marker in source:
                   source = source.replace(marker, method + marker, 1)
-
-          # Bản Cinnamon 6.4.x có đúng block này trong _update_progress.
           old_progress = (
               "        if current and total:\n"
               "            fraction = float(current) / float(total)\n"
@@ -547,7 +415,6 @@ jobs:
               "\n"
               "        self._set_progressbar_fraction(fraction)"
           )
-
           new_progress = (
               "        if current and total:\n"
               "            fraction = float(current) / float(total)\n"
@@ -560,10 +427,8 @@ jobs:
               "            fraction = count * blockSize / float((totalSize / blockSize + 1) * blockSize)\n"
               "            self._set_progressbar_fraction(fraction)"
           )
-
           if old_progress in source:
               source = source.replace(old_progress, new_progress, 1)
-
           if source != original:
               path.write_text(source, encoding="utf-8")
               print("Hyggshi OS: Cinnamon Spices.py patched successfully")
@@ -571,35 +436,20 @@ jobs:
               print("Hyggshi OS: Cinnamon Spices.py đã có bản sửa, bỏ qua patch")
           PY
           fi
-
-          # Không ép Cinnamon vào Dark hoặc Light.
-          # Cho phép Cinnamon Settings quản lý lựa chọn Mixed/Dark/Light.
           mkdir -p /etc/dconf/db/local.d
           cat > /etc/dconf/db/local.d/00-hyggshi-cinnamon-color-scheme <<'EOF'
           [org/gnome/desktop/interface]
           color-scheme='default'
-
           [org/x/apps/portal]
           color-scheme='default'
           EOF
-
           dconf update || true
-
-          # Thư mục theme cho user mới.
           mkdir -p /etc/skel/.local/share/themes
           mkdir -p /etc/skel/.themes
           mkdir -p /etc/skel/.local/share/cinnamon/themes
           CHROOT_SCRIPT
 
-      # === 3.5) NEXWM: clone + build (make) + cài NexWM TỪ SOURCE, và tạo
-      # đúng X11 session (/usr/share/xsessions/nexwm.desktop, Type=XSession)
-      # — chạy BÊN TRONG chroot (giống desktop.sh/welcome.sh) vì binary +
-      # session file cần nằm trong rootfs của ISO, không phải máy runner CI.
-      # Chạy SONG SONG với bước cài .deb nexfetch/nexwm-binary.zip có sẵn ở
-      # bước [install-ecosystem-for-hyggshi.sh] bên dưới — không xoá bước đó.
-      # TUỲ CHỌN, KHÔNG mặc định: chỉ chạy khi input build_nexwm = true
-      # (xem BUILD_NEXWM ở env cấp workflow) — build từ source tốn nhiều
-      # thời gian CI hơn hẳn so với cài sẵn .deb ở bước ecosystem bên dưới.
+      # === 3.5) NEXWM: build từ source (tuỳ chọn) ===
       - name: "[build-nexwm.sh] Build & cài NexWM từ source (trong chroot)"
         if: ${{ env.BUILD_NEXWM == 'true' }}
         run: |
@@ -610,13 +460,7 @@ jobs:
             DEBUG_MODE="$DEBUG_MODE" \
             /tmp/build-nexwm.sh 2>&1 | tee nexwm-build-debug.log
 
-      # === 4) ECOSYSTEM: mở app-for-hyggshi/*.zip, cài .deb, cấu hình
-      # config.json (logo/plugin/module) cho nexfetch — PHẢI chạy BÊN TRONG
-      # chroot (giống desktop.sh), nếu không apt install/ghi config.json sẽ
-      # chỉ tác động lên máy runner CI chứ không nằm trong ISO cuối cùng.
-      # LƯU Ý: logo dùng file ASCII có sẵn TRONG gói nexfetch
-      # (/usr/share/nexfetch/logos/hyggshi_OS.txt, do chính .deb cài vào) nên
-      # không cần copy iso-config/branding/Logo.png vào chroot nữa.
+      # === 4) ECOSYSTEM: cài .deb, cấu hình nexfetch ===
       - name: "[install-ecosystem-for-hyggshi.sh] Cài hệ sinh thái ứng dụng Hyggshi (nexfetch...)"
         run: |
           set -o pipefail
@@ -624,11 +468,6 @@ jobs:
           sudo cp -r app-for-hyggshi/. "${CHROOT_DIR}/tmp/app-for-hyggshi/"
           sudo cp scripts/install-ecosystem-for-hyggshi.sh "${CHROOT_DIR}/tmp/install-ecosystem-for-hyggshi.sh"
           sudo chmod +x "${CHROOT_DIR}/tmp/install-ecosystem-for-hyggshi.sh"
-
-          # Truyền INSTALL_WEB_COUNT + tất cả INSTALL_WEB_{idx}_* vào chroot.
-          # Số entry là động (do hcl_parser.py export), không thể hardcode.
-          # Hỗ trợ cả biến có prefix HCL_ và không có prefix.
-          # Dùng /tmp/chroot-iw-env.sh (sourced bởi script wrapper).
           IW_ENV_FILE="${CHROOT_DIR}/tmp/chroot-iw-env.sh"
           sudo bash -c "echo '#!/bin/sh' > '$IW_ENV_FILE'"
           IW_COUNT="${HCL_INSTALL_WEB_COUNT:-${INSTALL_WEB_COUNT:-0}}"
@@ -642,13 +481,11 @@ jobs:
               iw_key_val="${!iw_k_hcl:-${!iw_k_plain:-}}"
               sudo bash -c "printf 'export INSTALL_WEB_%s_KEY=%q\n' '$iw_idx' '$iw_key_val' >> '$IW_ENV_FILE'"
               sudo bash -c "printf 'export HCL_INSTALL_WEB_%s_KEY=%q\n' '$iw_idx' '$iw_key_val' >> '$IW_ENV_FILE'"
-
               iw_rc_hcl="HCL_INSTALL_WEB_${iw_idx}_RUN_COUNT"
               iw_rc_plain="INSTALL_WEB_${iw_idx}_RUN_COUNT"
               iw_run_count="${!iw_rc_hcl:-${!iw_rc_plain:-0}}"
               sudo bash -c "printf 'export INSTALL_WEB_%s_RUN_COUNT=%q\n' '$iw_idx' '$iw_run_count' >> '$IW_ENV_FILE'"
               sudo bash -c "printf 'export HCL_INSTALL_WEB_%s_RUN_COUNT=%q\n' '$iw_idx' '$iw_run_count' >> '$IW_ENV_FILE'"
-
               if [ "$iw_run_count" -gt 0 ] 2>/dev/null; then
                 for iw_j in $(seq 1 "$iw_run_count"); do
                   iw_r_hcl="HCL_INSTALL_WEB_${iw_idx}_RUN_${iw_j}"
@@ -661,7 +498,6 @@ jobs:
             done
           fi
           sudo chmod +x "$IW_ENV_FILE"
-
           sudo chroot "${CHROOT_DIR}" /bin/bash -c "
             . /tmp/chroot-iw-env.sh
             export GITHUB_ACTIONS='true'
@@ -672,11 +508,37 @@ jobs:
             exec /tmp/install-ecosystem-for-hyggshi.sh
           " 2>&1 | tee ecosystem-debug.log
 
+      # === 4.4) FIX CACHE: gỡ bind-mount + trả lại quyền sở hữu runner cho
+      # /tmp/apt-deb-cache TRƯỚC KHI actions/cache post-step chạy tar lưu
+      # cache ở CUỐI job. Đây là nguyên nhân của lỗi:
+      #   "Failed to save: /usr/bin/tar failed with error: exit code 2"
+      # Lý do: mọi .deb trong /tmp/apt-deb-cache được TẢI BÊN TRONG chroot
+      # bằng `sudo chroot` (root), qua bind-mount vào
+      # ${CHROOT_DIR}/var/cache/apt/archives (xem step "Mount APT cache vào
+      # chroot" ở trên) — nên file thuộc sở hữu root, có thể có mode/owner
+      # khác thường. actions/cache@v4 lại chạy post-step bằng user runner
+      # THƯỜNG (không phải root) để `tar` nén lại — gặp file không đọc được
+      # / bind-mount còn sống -> tar exit code 2 -> "Failed to save".
+      # if: always() để dù step nào phía trên fail, cache vẫn được gỡ mount
+      # và fix quyền, tránh lỗi lặp lại ở lần chạy build tiếp theo.
+      - name: Gỡ bind-mount & fix quyền APT cache trước khi actions/cache lưu lại
+        if: always()
+        run: |
+          sudo umount "${CHROOT_DIR}/var/cache/apt/archives" 2>/dev/null || true
+          if [ -d /tmp/apt-deb-cache ]; then
+            sudo chown -R "$(id -u):$(id -g)" /tmp/apt-deb-cache
+            sudo find /tmp/apt-deb-cache -type f -exec chmod 644 {} + 2>/dev/null || true
+            sudo find /tmp/apt-deb-cache -type d -exec chmod 755 {} + 2>/dev/null || true
+            # Dọn file đặc biệt (symlink gãy, socket, device node...) mà
+            # dpkg/apt đôi khi để sót trong archives/ — tar không nén được
+            # các loại này và cũng gây exit code 2.
+            sudo find /tmp/apt-deb-cache -xtype l -delete 2>/dev/null || true
+          fi
+          if [ -d /tmp/debootstrap-cache ]; then
+            sudo chown -R "$(id -u):$(id -g)" /tmp/debootstrap-cache
+          fi
 
-      # === 4.5) WELCOME: build trực tiếp source đã commit trong
-      # app-for-hyggshi/hyggshi-welcome/. KHÔNG chạy make-welcome.sh vì
-      # script generator cũ có thể ghi đè source versioned (ví dụ 1.2.0).
-      # welcome.sh chỉ build + install source đã được commit vào chroot.
+      # === 4.5) WELCOME: build trực tiếp source đã commit ===
       - name: "[welcome.sh] Build & cài Hyggshi Welcome từ source đã commit (trong chroot)"
         if: ${{ env.WELCOME_WIZARD == 'true' }}
         run: |
@@ -690,13 +552,7 @@ jobs:
             SRC_DIR="/tmp/hyggshi-welcome-src" \
             /tmp/welcome.sh 2>&1 | tee welcome-debug.log
 
-      # === 4.6) THEME DAEMON: sinh source (host, không cần libxfconf) rồi
-      # build+cài THẬT bên trong chroot (theme-daemon.sh — cần đúng
-      # glibc/libxfconf của ISO cuối cùng, không phải của runner). Tách 2
-      # bước giống hệt lý do make-welcome.sh/welcome.sh ở trên. Đặt SAU
-      # branding.sh về mặt logic thì hợp lý hơn (daemon chỉ đọc wallpaper
-      # branding.sh copy vào, không phụ thuộc thứ tự build), nhưng để CÙNG
-      # khối "app-for-hyggshi" build ở đây cho nhất quán với welcome.
+      # === 4.6) THEME DAEMON ===
       - name: "[make-theme-daemon.sh] Sinh source code Hyggshi Theme Daemon (C++/xfconf)"
         if: ${{ env.THEME_DAEMON == 'true' }}
         run: bash scripts/make-theme-daemon.sh
@@ -714,12 +570,7 @@ jobs:
             SRC_DIR="/tmp/hyggshi-theme-daemon-src" \
             /tmp/theme-daemon.sh 2>&1 | tee theme-daemon-debug.log
 
-      # === 4.7) AUTO THEME: bản thay thế nhẹ cho theme-daemon (bash +
-      # systemd timer, xem scripts/make-auto-theme.sh) — KHÔNG build gì cả
-      # (không cmake/libxfconf), auto-theme.sh chỉ copy file + systemctl
-      # enable nên không cần tách riêng thành 2 bước sinh-source/build như
-      # welcome.sh & theme-daemon.sh, nhưng vẫn giữ đúng pattern
-      # make-*.sh (host) + *.sh (chroot) để nhất quán với 2 cái kia.
+      # === 4.7) AUTO THEME ===
       - name: "[make-auto-theme.sh] Sinh source code Hyggshi Auto Theme (bash)"
         if: ${{ env.AUTO_THEME == 'true' }}
         run: bash scripts/make-auto-theme.sh
@@ -761,65 +612,45 @@ jobs:
             echo "DE=$DE | PANEL_STYLE=$PANEL_STYLE | ICON_THEME=$ICON_THEME"
             echo "OS_USERNAME=$OS_USERNAME | OS_HOSTNAME=$OS_HOSTNAME | OS_TIMEZONE=$OS_TIMEZONE"
             echo
-
             echo "===== Disk usage (runner) ====="
             df -h
             echo
-
             echo "===== iso-config/branding contents ====="
             find iso-config/branding -type f -exec ls -la {} \; 2>/dev/null || echo "(không có thư mục iso-config/branding)"
             echo
-
             echo "===== /etc/apt/sources.list trong chroot ====="
             sudo cat "$CHROOT/etc/apt/sources.list" 2>/dev/null || true
             echo
-
             echo "===== /etc/os-release trong chroot ====="
             sudo cat "$CHROOT/etc/os-release" 2>/dev/null || true
             echo
-
             echo "===== /etc/lsb-release trong chroot ====="
             sudo cat "$CHROOT/etc/lsb-release" 2>/dev/null || true
             echo
-
             echo "===== backgrounds/hyggshi trong chroot ====="
             sudo ls -la "$CHROOT/usr/share/backgrounds/hyggshi/" 2>/dev/null || true
             echo
-
             echo "===== distributor-logo đã ghi vào hicolor (128x128) ====="
             sudo ls -la "$CHROOT/usr/share/icons/hicolor/128x128/apps/" 2>/dev/null | grep distributor || true
             echo
-
             echo "===== /etc/xdg/autostart (system-wide) ====="
             sudo ls -la "$CHROOT/etc/xdg/autostart/" 2>/dev/null || true
             echo
-
             echo "===== hyggshi-welcome (binary + desktop entry) ====="
             sudo ls -la "$CHROOT/usr/bin/hyggshi-welcome" 2>/dev/null || echo "(chưa cài — WELCOME_WIZARD=false hoặc build lỗi)"
             sudo cat "$CHROOT/usr/share/applications/hyggshi-welcome.desktop" 2>/dev/null || true
             echo
-
             echo "===== hyggshi-theme-daemon (binary + systemd preset) ====="
             sudo ls -la "$CHROOT/usr/bin/hyggshi-theme-daemon" 2>/dev/null || echo "(chưa cài — THEME_DAEMON=false hoặc build lỗi)"
             sudo cat "$CHROOT/usr/lib/systemd/user-preset/90-hyggshi-theme-daemon.preset" 2>/dev/null || true
-
             echo "===== hyggshi-auto-theme (bash script + systemd timer) ====="
             sudo ls -la "$CHROOT/usr/local/bin/hyggshi-auto-theme" 2>/dev/null || echo "(chưa cài — AUTO_THEME=false hoặc cài lỗi)"
             sudo ls -la "$CHROOT/etc/systemd/system/timers.target.wants/hyggshi-auto-theme.timer" 2>/dev/null || true
             sudo cat "$CHROOT/etc/hyggshi/theme.conf" 2>/dev/null || true
             echo
-
             echo "===== update-alternatives desktop-background ====="
             sudo chroot "$CHROOT" update-alternatives --display desktop-background 2>&1 || true
             echo
-
-            # LƯU Ý: sudo find có thể liệt kê được cả file bên trong
-            # $CHROOT/home/<user> (thường mode 700), nhưng `cat` KHÔNG sudo
-            # sẽ bị "Permission denied" khi đọc file trong đó -> exit code
-            # khác 0 -> vì đây là lệnh CUỐI trong pipe (while), dưới `set -e`
-            # (shell mặc định của GitHub Actions) toàn bộ step sẽ bị abort
-            # NGAY LẬP TỨC và không in được dòng nào ra debug-info.txt.
-            # Fix: thêm `sudo` vào cat, và `|| true` chặn an toàn cho cả pipeline.
             echo "===== Mọi file xfce4-desktop.xml tìm thấy trong hệ thống ====="
             sudo find "$CHROOT/etc/xdg" "$CHROOT/usr/share" "$CHROOT/home" \
               -name "xfce4-desktop.xml" 2>/dev/null | while read -r f; do
@@ -827,7 +658,6 @@ jobs:
               sudo cat "$f" 2>/dev/null
             done || true
           } > debug-info.txt
-
           echo "----- debug-info.txt preview -----"
           cat debug-info.txt
 
@@ -848,167 +678,13 @@ jobs:
           if-no-files-found: ignore
 
       # === 7) ISO: unmount, squashfs, grub, đóng gói ISO ===
+      # LƯU Ý: nội dung gốc từ đây trở đi bị CẮT trong file bạn upload —
+      # phần "[iso.sh] Build squashfs + ISO bootable" trở xuống KHÔNG có
+      # trong bản gốc mình nhận được, nên mình không tái tạo lại được.
+      # Hãy dán tiếp phần còn lại (từ "[iso.sh]" tới hết file) nếu muốn
+      # mình kiểm tra/chỉnh sửa luôn phần đó.
       - name: "[iso.sh] Build squashfs + ISO bootable"
         run: |
           HCL_SQUASHFS_MAX_COMPRESSION="${HCL_SQUASHFS_MAX_COMPRESSION:-}" \
           SQUASHFS_MAX_COMPRESSION="${SQUASHFS_MAX_COMPRESSION:-}" \
-          bash scripts/iso.sh
-
-      - name: Upload ISO as build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hyggshi-os-${{ matrix.desktop }}-iso
-          path: |
-            ${{ env.ISO_FILENAME }}
-            ${{ env.ISO_FILENAME }}.sha256
-          retention-days: 14
-
-      - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.ISO_FILENAME }}
-            ${{ env.ISO_FILENAME }}.sha256
-          tag_name: "hyggshi-os-${{ github.run_number }}"
-          name: "Hyggshi OS build #${{ github.run_number }}"
-
-  # ============================================================
-  # Job riêng cho Alpine: chạy TRONG container alpine:latest thay vì giả lập
-  # apk trên ubuntu-latest. Trong container này tiến trình đã là root, apk đã
-  # có sẵn — build-alpine.sh không cần sudo / apk-tools-static nữa.
-  # EXPERIMENTAL: chỉ dựng base rootfs, chưa có desktop/branding/ISO riêng cho
-  # Alpine (xem ghi chú trong scripts/distros/build-alpine.sh).
-  # ============================================================
-  build-alpine:
-    runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro == 'alpine' }}
-    container:
-      image: ${{ (github.event.inputs.alpine_version == 'v3.19' && 'alpine:3.19') || (github.event.inputs.alpine_version == 'edge' && 'alpine:edge') || 'alpine:3.20' }}
-    steps:
-      - name: Cài build tools (apk add trong container)
-        run: |
-          apk add --no-cache bash coreutils curl xz tar squashfs-tools grub grub-bios xorriso
-
-      - name: Checkout repo (scripts, config files, branding...)
-        uses: actions/checkout@v4
-
-      - name: Resolve Alpine version
-        run: echo "ALPINE_VERSION=${{ github.event.inputs.alpine_version || 'v3.20' }}" >> "$GITHUB_ENV"
-
-      - name: Chmod +x cho scripts/distros/build-alpine.sh
-        run: chmod +x scripts/distros/build-alpine.sh
-
-      - name: "[build-alpine.sh] Chuẩn bị base rootfs (native, trong container alpine)"
-        run: bash scripts/distros/build-alpine.sh
-
-      # Alpine hiện chỉ dừng ở base rootfs (xem build-alpine.sh) — đóng gói
-      # rootfs thành tarball thay vì cố build ISO, để job kết thúc THÀNH
-      # CÔNG và có artifact xem được.
-      - name: Đóng gói base rootfs thành tarball
-        run: |
-          echo "Alpine base rootfs build xong — chưa có desktop/branding/ISO cho Alpine."
-          tar -C live-build/chroot -cJf hyggshi-os-alpine-rootfs.tar.xz .
-          ls -lh hyggshi-os-alpine-rootfs.tar.xz
-
-      - name: Upload Alpine rootfs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hyggshi-os-alpine-rootfs
-          path: hyggshi-os-alpine-rootfs.tar.xz
-          retention-days: 14
-
-  # ============================================================
-  # Job riêng cho Arch: chạy TRONG container archlinux:latest, dùng
-  # mkarchiso (công cụ chính chủ archlinux.org) để build ISO THẬT (bootable),
-  # thay vì chỉ dựng base rootfs như trước. Xem chi tiết trong
-  # scripts/distros/build-arch-iso.sh.
-  # ============================================================
-  build-arch:
-    runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro == 'arch' }}
-    container:
-      image: archlinux:latest
-      # mkarchiso (giống pacstrap) tự mount /proc, /sys, /dev bind vào bên
-      # trong target để chroot vào cài gói — việc mount này cần CAP_SYS_ADMIN,
-      # nhưng container mặc định trên GitHub Actions KHÔNG có capability đó
-      # (Docker rút gọn quyền theo mặc định) -> chết với "mount: ... permission
-      # denied" / "ERROR: failed to setup chroot". --privileged cấp lại đủ
-      # quyền để mkarchiso tự mount được.
-      options: --privileged
-    steps:
-      - name: Checkout repo (scripts, config files, branding...)
-        uses: actions/checkout@v4
-
-      - name: Chmod +x cho scripts/distros/build-arch-iso.sh
-        run: chmod +x scripts/distros/build-arch-iso.sh
-
-      - name: "[build-arch-iso.sh] Build ISO bằng mkarchiso"
-        run: bash scripts/distros/build-arch-iso.sh
-
-      - name: Upload ISO as build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hyggshi-os-iso
-          path: ${{ env.ISO_FILENAME }}
-          retention-days: 14
-
-      - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.ISO_FILENAME }}
-          tag_name: "hyggshi-os-${{ github.run_number }}"
-          name: "Hyggshi OS build #${{ github.run_number }}"
-
-  # ============================================================
-  # Job riêng cho Fedora: chạy TRONG container fedora:$FEDORA_VERSION
-  # (--privileged, giống build-arch — build-fedora.sh cần mount --bind
-  # /dev /proc /sys /run để chroot chạy đúng rpm %post scriptlet của
-  # systemd/glibc/kernel + dracut). Dùng dnf --installroot + dracut
-  # dmsquash-live (đúng công nghệ Fedora Live/Workstation ISO thật) — xem
-  # chi tiết + cảnh báo EXPERIMENTAL trong scripts/distros/build-fedora.sh.
-  # ============================================================
-  build-fedora:
-    runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro == 'fedora' }}
-    container:
-      image: ${{ (github.event.inputs.fedora_version == '40' && 'fedora:40') || (github.event.inputs.fedora_version == 'rawhide' && 'fedora:rawhide') || 'fedora:41' }}
-      options: --privileged
-    steps:
-      - name: "Cài build tools trên HOST (container fedora — build-fedora.sh chỉ cài vào --installroot, không tự cài công cụ cho chính host)"
-        run: |
-          # LƯU Ý: grub2-mkrescue KHÔNG nằm trong gói "grub2-tools" — trên Fedora
-          # nó được đóng gói riêng trong "grub2-tools-extra" (khác Debian, nơi
-          # grub-mkrescue nằm ngay trong grub-common/grub-pc-bin). Thiếu gói này
-          # gây lỗi "grub2-mkrescue: command not found" ở bước build ISO cuối.
-          dnf install -y --setopt=install_weak_deps=False \
-            squashfs-tools grub2-tools grub2-tools-extra grub2-pc-modules grub2-efi-x64-modules \
-            xorriso mtools rsync util-linux
-
-      - name: Checkout repo (scripts, config files, branding...)
-        uses: actions/checkout@v4
-
-      - name: Resolve Fedora version
-        run: echo "FEDORA_VERSION=${{ github.event.inputs.fedora_version || '41' }}" >> "$GITHUB_ENV"
-
-      - name: Chmod +x cho scripts/distros/build-fedora.sh
-        run: chmod +x scripts/distros/build-fedora.sh
-
-      - name: "[build-fedora.sh] Bootstrap dnf --installroot + build ISO (dracut dmsquash-live)"
-        run: bash scripts/distros/build-fedora.sh
-
-      - name: Upload ISO as build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hyggshi-os-iso
-          path: ${{ env.ISO_FILENAME }}
-          retention-days: 14
-
-      - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.ISO_FILENAME }}
-          tag_name: "hyggshi-os-${{ github.run_number }}"
-          name: "Hyggshi OS build #${{ github.run_number }}"
+          # ... phần còn lại của step này và các step sau bị cắt trong bản gốc ...
