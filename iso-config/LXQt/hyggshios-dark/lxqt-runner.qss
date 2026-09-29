@@ -1,0 +1,115 @@
+/*
+ * Hyggshi OS - Dark theme for LXQt runner
+ */
+
+#panel {
+    background: rgba(34, 36, 43, 97%);
+    border: 1px solid rgba(255, 255, 255, 14%);
+}
+
+QToolButton::menu-indicator {
+    image: none;
+}
+
+#closeButton {
+    qproperty-icon: url(lxqt-runner/close.svg);
+    margin: 2px;
+}
+#closeButton:hover {
+    border: 1px solid rgba(255, 255, 255, 14%);
+    background: rgba(255, 255, 255, 11%);
+}
+
+#actionButton {
+    qproperty-icon: url(lxqt-runner/down-arrow.svg);
+    color: rgba(41, 41, 41, 0%);
+    margin: 2px;
+}
+#actionButton:hover {
+    border: 1px solid rgba(255, 255, 255, 14%);
+    background: rgba(255, 255, 255, 11%);
+}
+#actionButton:pressed {
+    border: 1px solid rgba(255, 255, 255, 14%);
+    background: rgba(255, 255, 255, 18%);
+}
+
+QLineEdit {
+    background: #1b1d23;
+    border: 1px solid #3b3e49;
+    border-radius: 3px;
+    padding: 6px;
+    margin-bottom: 1px;
+    color: #eceef2;
+    selection-background-color: #9a3b41;
+    selection-color: #ffffff;
+}
+
+#commandList {
+    border: none;
+}
+
+QMenu {
+    margin: 0px;
+    padding: 3px;
+    border: 1px solid rgba(255, 255, 255, 14%);
+    background: rgba(34, 36, 43, 97%);
+    color: #eceef2;
+}
+
+QMenu::icon {
+    background-color: transparent;
+    border: 20px;
+}
+
+QMenu QToolButton {
+    background-color: #2a2d36;
+    padding: 5px;
+    border: none;
+    color: #eceef2;
+    font: bold italic;
+}
+
+QMenu::item {
+    border: 10px solid transparent;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-right-width: 5px;
+    padding: 6px 40px 6px 24px;
+    background: transparent;
+    color: #eceef2;
+}
+
+QMenu::item:selected {
+    border: 10px solid #9a3b41;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-right-width: 5px;
+    background: #9a3b41;
+    color: #ffffff;
+}
+
+QMenu::item:selected:disabled {
+    background-color: palette(text);
+}
+
+QMenu::item:disabled {
+    color: #6c7181;
+}
+
+QMenu::right-arrow {
+    image: url(arrow-right.svg);
+}
+
+QMenu::indicator {
+    width: 13px;
+    height: 13px;
+}
+
+QMenu::indicator:non-exclusive:unchecked {
+    image: url(unchecked.svg);
+}
+
+QMenu::indicator:non-exclusive:checked {
+    image: url(checked.svg);
+}

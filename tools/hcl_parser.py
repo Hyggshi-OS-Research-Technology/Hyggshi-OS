@@ -396,7 +396,9 @@ def classify(key: str, raw: str) -> ParsedValue:
                     continue
                 k, _, v = line.partition("=")
                 k = k.strip()
-                pv = classify(k, v.strip())
+                # strip inline comment ở giá trị kwarg (vd `kernel-version = "6.18.48 lts" ; bình luận`)
+                v_clean = _strip_inline_comment(v.strip())
+                pv = classify(k, v_clean)
                 if k in kwargs:
                     # PATCH 15: hỗ trợ key lặp lại NHIỀU LẦN trong 1 lời gọi
                     # function — vd install-web(run=... run=...) cần 2 lệnh
@@ -471,16 +473,21 @@ class Resolver:
         # lặp cùng 1 section 2 lần.
         merged: dict[str, RawSection] = {}
         order: list[str] = []
+        self.diags: list[Diagnostic] = []
         for s in sections:
             if s.name in merged:
-                merged[s.name].entries.extend(s.entries)
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"Duplicate section '[{s.name}]' phát hiện trong config. "
+                    f"Merge section trùng tên không được hỗ trợ để tránh lỗi cấu hình. "
+                    f"Hãy sử dụng các section con riêng biệt (ví dụ [package.<tên_nhóm>])."
+                ))
             else:
                 merged[s.name] = RawSection(name=s.name, entries=list(s.entries))
                 order.append(s.name)
         self.sections = merged
         self.order = order
         self.root = root
-        self.diags: list[Diagnostic] = []
 
     def _entries(self, section_name: str):
         sec = self.sections.get(section_name)
@@ -741,6 +748,8 @@ class Resolver:
                 result["resolved_target"] = (
                     os.path.join(str(target), final_name) if target else None
                 )
+            if "run" in kwargs:
+                result["run"] = kwargs.get("run")
         if name in ("appremove", "fileremove"):
             # appremove(run=...) / fileremove(run=...) — "run" là lệnh shell
             # sẽ thực thi lúc build (gỡ package hoặc xoá file/thư mục), không
@@ -973,11 +982,77 @@ class Resolver:
         }
 
     def resolve_package_groups(self) -> dict:
+        """
+        Gom tất cả các section `package.*` (hoặc [package]) thành các nhóm package:
+        [package.<tên_nhóm>] -> groups["<tên_nhóm>"] = { key: value, ... }
+        Hỗ trợ:
+        - Cấu trúc mới chuẩn: [package.<tên_nhóm>] (vd: [package.compiler], [package.xfce]...)
+        - Fallback tương thích: [package] với comment headers hoặc ungrouped.
+        """
         groups: dict[str, dict] = {}
-        for key, raw, group in self._entries("package"):
-            g = group or "(ungrouped)"
-            groups.setdefault(g, {})[key] = self.resolve_value(key, raw)
+        has_subgroups = any(s.lower().startswith("package.") for s in self.order)
+
+        for sec_name in self.order:
+            sec_lower = sec_name.lower().strip()
+            if sec_lower.startswith("package."):
+                subgroup = sec_name[len("package."):].strip()
+                groups[subgroup] = {
+                    k: self.resolve_value(k, raw)
+                    for k, raw, _ in self._entries(sec_name)
+                }
+            elif sec_lower == "package":
+                if not has_subgroups:
+                    for key, raw, group in self._entries("package"):
+                        g = group or "(ungrouped)"
+                        groups.setdefault(g, {})[key] = self.resolve_value(key, raw)
+                else:
+                    for key, raw, _ in self._entries("package"):
+                        if key != "package-debian-test":
+                            groups.setdefault("(ungrouped)", {})[key] = self.resolve_value(key, raw)
+
         return groups
+
+    def resolve_kernel_install(self) -> dict | None:
+        """
+        Gom và resolve lệnh cài đặt kernel (installkernel).
+        Kiểm tra toggle trong [my-version-os-base] (kernel-install / kernel-isntall).
+        Quét tìm lời gọi installkernel(...) trong mọi section (vd [package.kernel]).
+        """
+        base_kv = self._kv("my-version-os-base")
+        kernel_enabled = True
+        for k_flag in ("kernel-install", "kernel-isntall"):
+            if k_flag in base_kv:
+                val = classify(k_flag, base_kv[k_flag]).value
+                if val is False:
+                    kernel_enabled = False
+                    break
+
+        if not kernel_enabled:
+            return None
+
+        for sec_name in self.order:
+            for key, raw, _ in self._entries(sec_name):
+                pv = classify(key, raw)
+                if pv.type == "FUNCTION" and pv.value.get("name") == "installkernel":
+                    resolved_fn = self.resolve_function(pv.value)
+                    # kernel-version có thể là string với nháy kép ("6.18.48 lts").
+                    # resolve_function chỉ trả raw kwarg string nên cần classify để bỏ nháy.
+                    raw_kv_raw = resolved_fn.get("kernel-version", "")
+                    try:
+                        ver_clean = str(classify("kernel-version", str(raw_kv_raw)).value).strip()
+                    except Exception:
+                        ver_clean = str(raw_kv_raw).strip().strip('"')
+                    parts = ver_clean.split()
+                    ver_num = parts[0] if parts else ""
+                    ver_lower = ver_clean.lower()
+                    is_lts = "lts" in ver_lower and "no lts" not in ver_lower
+                    resolved_fn["kernel-version"] = ver_clean
+                    resolved_fn["key"] = key
+                    resolved_fn["section"] = sec_name
+                    resolved_fn["version_num"] = ver_num
+                    resolved_fn["is_lts"] = is_lts
+                    return resolved_fn
+        return None
 
     def resolve_easter_egg(self) -> dict:
         kv = self._kv_scan("make-Easter-Egg", "make-Easter-Egg-url")
@@ -1387,6 +1462,7 @@ class Resolver:
                     "target": resolved.get("target"),
                     "resolved_target": resolved.get("resolved_target"),
                     "is_dir": resolved.get("is_dir", False),
+                    "run": resolved.get("run"),
                 })
         return out
 
@@ -1412,6 +1488,7 @@ class Resolver:
         active_de = (de_override or de_from_env_section or kp.get("desktop") or "").strip().lower()
 
         result["package_groups"] = self.resolve_package_groups()
+        result["kernel_install"] = self.resolve_kernel_install()
         result["apt_repository"] = self.resolve_apt_repository()
         result["desktop_apply"] = self.resolve_desktop_apply()
         result["flathub_apps"] = self.resolve_flathub_apps(active_de=active_de)
@@ -1519,14 +1596,20 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     # phải tên gói apt) lọt vào apt-get install cùng các gói cinnamon-*
     # thật. Đổi sang so khớp CHÍNH XÁC (exact match, sau khi chuẩn hoá)
     # với đúng 7 tên group DE thật trong config.ini — không còn match mờ.
+    # DE_GROUP_EXACT: map group name (comment header hoặc tên section con package.*)
+    # sang de_id chuẩn — hỗ trợ cả cấu trúc cũ (comment group) lẫn mới (package.*)
     DE_GROUP_EXACT = {
+        # Tên section con [package.xfce] -> group name "xfce"
         "xfce": "xfce",
         "cinnamon": "cinnamon",
+        "kde": "kde",
         "kde plasma": "kde",
         "lxqt": "lxqt",
         "gnome": "gnome",
         "mate": "mate",
         "cli": "cli",
+        # Các group con khác KHÔNG phải DE (package.compiler, .qt6, .x11, etc.)
+        # không nằm ở đây -> is_de_group = False -> gói vào all_packages bình thường
     }
 
     app_installs = []
@@ -1753,11 +1836,22 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         put(f"FILECOPY_{idx}_TARGET", fc.get("target"))
         put(f"FILECOPY_{idx}_RESOLVED_TARGET", fc.get("resolved_target"))
 
+    if kernel_install is None:
+        kernel_install = resolved.get("kernel_install")
+
     put("KERNEL_INSTALL_ENABLED", str(kernel_install is not None).lower())
     if kernel_install is not None:
-        put("KERNEL_INSTALL_VERSION", kernel_install.get("kernel-version", ""))
+        raw_kver = str(kernel_install.get("kernel-version", ""))
+        ver_num = kernel_install.get("version_num") or (raw_kver.split()[0] if raw_kver.split() else "")
+        is_lts = kernel_install.get("is_lts", ("lts" in raw_kver.lower() and "no lts" not in raw_kver.lower()))
+        put("KERNEL_INSTALL_VERSION", raw_kver)
+        put("KERNEL_INSTALL_VERSION_NUM", ver_num)
+        put("KERNEL_INSTALL_IS_LTS", str(bool(is_lts)).lower())
         put("KERNEL_INSTALL_TARGET", kernel_install.get("target", ""))
         put("KERNEL_INSTALL_COMPILERS", str(bool(kernel_install.get("compilers"))).lower())
+        lines.append(f"KERNEL_VERSION={ver_num}")
+        lines.append(f"KERNEL_IS_LTS={str(bool(is_lts)).lower()}")
+        lines.append(f"KERNEL_COMPILERS={str(bool(kernel_install.get('compilers'))).lower()}")
 
     apt = resolved.get("apt_repository")
     if apt:

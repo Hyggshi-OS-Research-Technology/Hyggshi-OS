@@ -1,0 +1,28 @@
+/* Hyggshi OS - Light theme for LXQt notifications */
+Notification {
+    color: #2c2e35;
+    border: 1px solid rgba(0, 0, 0, 18%);
+    background: rgba(248, 246, 242, 98%);
+    margin: 0px;
+}
+
+QLabel {
+    color: #1f2127;
+}
+
+#closeButton {
+    border: none;
+    padding: 2px;
+    qproperty-icon: url(lxqt-notificationd/cancel.svg);
+}
+
+#closeButton:hover {
+    border: 1px solid rgba(0, 0, 0, 12%);
+    padding: 2px;
+    background: rgba(0, 0, 0, 8%);
+    qproperty-icon: url(lxqt-notificationd/cancel.svg);
+}
+
+#appLabel {
+    font-weight: bold;
+}

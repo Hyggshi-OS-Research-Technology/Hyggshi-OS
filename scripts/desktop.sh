@@ -1779,10 +1779,17 @@ if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
     [ -z "$fc_tgt" ] && continue
     staged="/tmp/hcl-filecopy-src/${fc_src#./}"
     dest="/${fc_tgt#/}"
+    dest="${dest//\{username\}/$OS_USERNAME}"
     if [ -d "$staged" ]; then
       mkdir -p "$dest"
       cp -a "$staged/." "$dest/"
       echo "OK: [HCL filecopy dir] $fc_key: $fc_src -> $dest"
+      if [[ "$fc_tgt" == *"{username}"* ]]; then
+        skel_rel="${fc_tgt#*/\{username\}/}"
+        skel_dest="/etc/skel/$skel_rel"
+        mkdir -p "$skel_dest"
+        cp -a "$staged/." "$skel_dest/" 2>/dev/null || true
+      fi
     elif [ -f "$staged" ]; then
       mkdir -p "$(dirname "$dest")"
       # Dùng tmpfile cùng thư mục rồi mv -f sang đích để ghi đè nguyên tử (atomic overwrite),
@@ -1791,6 +1798,12 @@ if [ -f /tmp/hcl-resolved.json ] && command -v python3 >/dev/null 2>&1; then
       tmp_dest="${dest}.hcl-tmp-$$"
       cp -f "$staged" "$tmp_dest"
       mv -f "$tmp_dest" "$dest"
+      if [[ "$fc_tgt" == *"{username}"* ]]; then
+        skel_rel="${fc_tgt#*/\{username\}/}"
+        skel_dest="/etc/skel/$skel_rel"
+        mkdir -p "$(dirname "$skel_dest")"
+        cp -f "$staged" "$skel_dest" 2>/dev/null || true
+      fi
       if [ -n "$fc_rename" ]; then
         echo "OK: [HCL copy+rename] $fc_key: $fc_src -> $dest (rename: $fc_rename)"
       else
@@ -1818,6 +1831,7 @@ fi
 
 # user mặc định cho live session
 useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
+[ -d "/home/$OS_USERNAME" ] && chown -R "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME" 2>/dev/null || true
 # BUG CŨ: khi DEBUG_MODE=true (set -x ở đầu file), lệnh chpasswd bên dưới
 # sẽ bị xtrace in thẳng "OS_USERNAME:OS_PASSWORD" ra install-debug.log —
 # log này được upload làm artifact (retention 14 ngày) -> lộ mật khẩu
