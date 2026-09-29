@@ -31,6 +31,7 @@ runner GitHub Actions không cần pip install.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -502,13 +503,30 @@ class Resolver:
         kv = self._kv(section_name)
         true_keys = []
         is_de_sec = section_name.strip().lower() == "desktop-environment"
+        is_base_sec = section_name.strip().lower() == "base"
+        is_arch_sec = section_name.strip().lower() == "architecture"
+
         for k, raw in kv.items():
             k_clean = k.strip().lower().replace("_", "-")
             if is_de_sec and k_clean in ("build-all-github-actions", "build-all-github-action", "build-all"):
                 continue
+            if is_base_sec and k_clean in ("build-all-base-github-actions", "build-all-base-github-action", "build-all-base"):
+                continue
             pv = classify(k, raw)
             if pv.type == "BOOLEAN" and pv.value is True:
                 true_keys.append(k)
+
+        # Hỗ trợ cờ build-all cho Base
+        if is_base_sec:
+            for k, raw in kv.items():
+                if k.strip().lower().replace("_", "-") in ("build-all-base-github-actions", "build-all-base-github-action", "build-all-base"):
+                    if classify(k, raw).value is True:
+                        if not true_keys:
+                            return "all"
+
+        err_code = "HCL102" if is_arch_sec else ("HCL101" if is_base_sec else "HCL103")
+        noun = "architecture" if is_arch_sec else ("base distro" if is_base_sec else "option")
+
         if len(true_keys) == 0:
             if is_de_sec:
                 # Nếu [Desktop-Environment] có Build-all-github-actions = true thì không cần 1 DE đơn lẻ nào = true
@@ -517,14 +535,26 @@ class Resolver:
                         if classify(k, raw).value is True:
                             return None
             self.diags.append(Diagnostic(
-                "error", f"[{section_name}] không có key nào = true (cần đúng 1)."))
+                "error", f"ERROR {err_code}: [{section_name}] requires exactly one {noun} = true. Found none."))
             return None
+
         if len(true_keys) > 1:
             self.diags.append(Diagnostic(
                 "error",
-                f"[{section_name}] có {len(true_keys)} key = true cùng lúc "
-                f"({', '.join(true_keys)}) — section này phải là ENUM (chỉ 1 true)."))
+                f"ERROR {err_code}: [{section_name}] requires exactly one {noun}. "
+                f"Found {len(true_keys)}: {', '.join(true_keys)}"))
         return true_keys[0]
+
+    def resolve_architecture(self) -> str:
+        """
+        Resolve [Architecture] section.
+        Đảm bảo chỉ đúng 1 kiến trúc (amd64, arm64) = true (ERROR HCL102).
+        Mặc định fallback là amd64 nếu section không tồn tại.
+        """
+        if "Architecture" in self.sections:
+            arch = self.resolve_enum_section("Architecture")
+            return (arch or "amd64").strip().lower()
+        return "amd64"
 
     def resolve_desktop_environment(self) -> dict:
         """
@@ -1466,6 +1496,55 @@ class Resolver:
                 })
         return out
 
+    def validate_known_schemas(self):
+        """
+        Kiểm tra schema các section cốt lõi.
+        Bắt lỗi typo (ERROR HCL001) và type mismatch (ERROR HCL201).
+        """
+        # 1. Schema cho [my-version-os-base]
+        if "my-version-os-base" in self.sections:
+            known_base_keys = {
+                "version": "Version",
+                "name": "name",
+                "codename": "codename",
+                "kernel": "kernel",
+                "base": "base",
+                "firmware": "firmware",
+                "gnome-apps": "gnome-apps",
+                "gnome-extensions": "gnome-extensions",
+                "gnome-tweak": "gnome-tweak",
+                "auto-login": "Auto-login",
+                "icons": "icons",
+                "kernel-install": "kernel-install",
+                "swap": "swap",
+                "config": "config",
+            }
+            kv = self._kv("my-version-os-base")
+            for k, raw in kv.items():
+                k_clean = k.strip().lower()
+                if k_clean not in known_base_keys:
+                    # Hỗ trợ tạm thời kernel-isntall nhưng cảnh báo / báo lỗi
+                    matches = difflib.get_close_matches(k_clean, list(known_base_keys.keys()), n=1, cutoff=0.6)
+                    hint = f"\n    Did you mean:\n        {known_base_keys[matches[0]]}" if matches else ""
+                    self.diags.append(Diagnostic(
+                        "error",
+                        f"ERROR HCL001:\nUnknown property '{k}' in [my-version-os-base].{hint}"
+                    ))
+
+        # 2. Type validation cho swap trong mọi section (tránh swap = "1GB" thay vì 1GB)
+        for sec_name in self.order:
+            for k, raw, _ in self._entries(sec_name):
+                if k.strip().lower() == "swap":
+                    raw_clean = raw.strip()
+                    if raw_clean.startswith('"') and raw_clean.endswith('"'):
+                        inner = raw_clean[1:-1].strip()
+                        if re.match(r"^\d+(\.\d+)?[GM]B$", inner, re.IGNORECASE) or inner.lower() == "false":
+                            self.diags.append(Diagnostic(
+                                "error",
+                                f"ERROR HCL201: Invalid type for property 'swap' in [{sec_name}]: {raw_clean!r} is a quoted string. "
+                                f"Swap size must not be quoted (e.g. swap = {inner}, not swap = {raw_clean})."
+                            ))
+
     def validate_every_entry(self):
         for sec_name in self.order:
             for key, raw, _group in self._entries(sec_name):
@@ -1474,6 +1553,7 @@ class Resolver:
                 except HclError as e:
                     self.diags.append(Diagnostic(
                         "error", f"[{sec_name}] {key} = {raw!r} — {e}"))
+        self.validate_known_schemas()
 
     def resolve_all(self, de_override: str | None = None) -> dict:
         result = {}
@@ -1481,6 +1561,8 @@ class Resolver:
         bp = result["base_profile"]
         kp = bp.get("kernel_profile") or {}
         
+        result["architecture"] = self.resolve_architecture()
+
         de_info = self.resolve_desktop_environment()
         result["desktop_environment"] = de_info
         
@@ -1535,6 +1617,9 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     put("HYGGSHI_VERSION", bp.get("version"))
     put("HYGGSHI_CODENAME", bp.get("codename"))
     put("BASE_DISTRO", str(bp.get("base") or "").lower())
+    arch_val = (resolved.get("architecture") or "amd64").strip().lower()
+    put("ARCH", arch_val)
+    lines.append(f"ARCH={arch_val}")
     put("DESKTOP_PROFILE", bp.get("kernel_profile_name"))
     kp = bp.get("kernel_profile") or {}
 
