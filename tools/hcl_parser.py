@@ -952,11 +952,31 @@ class Resolver:
         gnome_tweak_raw = kv.get("gnome-tweak")
         out["gnome_tweak"] = classify("gnome-tweak", gnome_tweak_raw).value if gnome_tweak_raw is not None else None
 
+        # Tự động gán kernel version từ installkernel vào base_profile
+        k_inst = self.resolve_kernel_install()
+        if k_inst:
+            k_ver = k_inst.get("kernel-version", "")
+            k_num = k_inst.get("version_num", "")
+            is_lts = k_inst.get("is_lts", False)
+            out["kernel_install"] = k_inst
+            out["kernel_version"] = k_ver
+            out["kernel_version_num"] = k_num
+            out["kernel_is_lts"] = is_lts
+            out["kernel_compilers"] = k_inst.get("compilers", False)
+        else:
+            out["kernel_install"] = None
+            out["kernel_version"] = None
+
         name_tpl = classify("name", kv["name"]).value
         name = name_tpl
         name = name.replace("${Version}", str(out["version"]))
         name = name.replace("${codename}", str(out["codename"]))
         name = name.replace("${Base}", str(base_choice))
+        if out.get("kernel_version"):
+            name = name.replace("${kernel-version}", str(out["kernel_version"]))
+            name = name.replace("${kernel_version}", str(out["kernel_version"]))
+            name = name.replace("${kernel-version-num}", str(out["kernel_version_num"]))
+            name = name.replace("${kernel_version_num}", str(out["kernel_version_num"]))
         out["name"] = name
         return out
 
@@ -1045,44 +1065,70 @@ class Resolver:
     def resolve_kernel_install(self) -> dict | None:
         """
         Gom và resolve lệnh cài đặt kernel (installkernel).
-        Kiểm tra toggle trong [my-version-os-base] (kernel-install / kernel-isntall).
-        Quét tìm lời gọi installkernel(...) trong mọi section (vd [package.kernel]).
+
+        Hỗ trợ 2 cách khai báo trong config.ini:
+
+        1. Inline trong [my-version-os-base]:
+               kernel-install = installkernel(
+                   kernel-version = "6.18.48 lts"
+                   compilers = true
+               )
+
+        2. Tách riêng ra section [package.kernel]:
+               kernel-install = true            ; trong [my-version-os-base]
+               [package.kernel]
+               kernel-install = installkernel(...)
+
+        Toggle false để tắt:
+               kernel-install = false
+
+        Backward compat: nhận cả typo `kernel-isntall`.
         """
         base_kv = self._kv("my-version-os-base")
-        kernel_enabled = True
+
+        # Kiểm tra toggle & cách dùng inline
         for k_flag in ("kernel-install", "kernel-isntall"):
-            if k_flag in base_kv:
-                val = classify(k_flag, base_kv[k_flag]).value
-                if val is False:
-                    kernel_enabled = False
-                    break
+            if k_flag not in base_kv:
+                continue
+            raw_val = base_kv[k_flag]
+            pv = classify(k_flag, raw_val)
+            if pv.type == "BOOLEAN":
+                if pv.value is False:
+                    return None   # tắt hẳn
+                # True → vẫn cần scan section bên dưới
+                break
+            if pv.type == "FUNCTION" and pv.value.get("name") == "installkernel":
+                # installkernel khai báo inline ngay trong [my-version-os-base]
+                resolved_fn = self.resolve_function(pv.value)
+                return self._parse_kernel_resolved(resolved_fn, key=k_flag, section="my-version-os-base")
 
-        if not kernel_enabled:
-            return None
-
+        # Quét toàn bộ section còn lại tìm installkernel(...)
         for sec_name in self.order:
             for key, raw, _ in self._entries(sec_name):
                 pv = classify(key, raw)
                 if pv.type == "FUNCTION" and pv.value.get("name") == "installkernel":
                     resolved_fn = self.resolve_function(pv.value)
-                    # kernel-version có thể là string với nháy kép ("6.18.48 lts").
-                    # resolve_function chỉ trả raw kwarg string nên cần classify để bỏ nháy.
-                    raw_kv_raw = resolved_fn.get("kernel-version", "")
-                    try:
-                        ver_clean = str(classify("kernel-version", str(raw_kv_raw)).value).strip()
-                    except Exception:
-                        ver_clean = str(raw_kv_raw).strip().strip('"')
-                    parts = ver_clean.split()
-                    ver_num = parts[0] if parts else ""
-                    ver_lower = ver_clean.lower()
-                    is_lts = "lts" in ver_lower and "no lts" not in ver_lower
-                    resolved_fn["kernel-version"] = ver_clean
-                    resolved_fn["key"] = key
-                    resolved_fn["section"] = sec_name
-                    resolved_fn["version_num"] = ver_num
-                    resolved_fn["is_lts"] = is_lts
-                    return resolved_fn
+                    return self._parse_kernel_resolved(resolved_fn, key=key, section=sec_name)
         return None
+
+    def _parse_kernel_resolved(self, resolved_fn: dict, key: str, section: str) -> dict:
+        """Bóc tách version_num và is_lts từ kết quả resolve_function của installkernel."""
+        raw_kv_raw = resolved_fn.get("kernel-version", "")
+        try:
+            ver_clean = str(classify("kernel-version", str(raw_kv_raw)).value).strip()
+        except Exception:
+            ver_clean = str(raw_kv_raw).strip().strip('"')
+        parts = ver_clean.split()
+        ver_num = parts[0] if parts else ""
+        ver_lower = ver_clean.lower()
+        is_lts = "lts" in ver_lower and "no lts" not in ver_lower
+        resolved_fn["kernel-version"] = ver_clean
+        resolved_fn["key"] = key
+        resolved_fn["section"] = section
+        resolved_fn["version_num"] = ver_num
+        resolved_fn["is_lts"] = is_lts
+        return resolved_fn
+
 
     def resolve_easter_egg(self) -> dict:
         kv = self._kv_scan("make-Easter-Egg", "make-Easter-Egg-url")
@@ -1496,6 +1542,61 @@ class Resolver:
                 })
         return out
 
+    # ------------------------------------------------------------------
+    # Schema validators
+    # ------------------------------------------------------------------
+
+    _KNOWN_BASES = {"debian", "ubuntu", "mint", "fedora", "alpine", "arch"}
+    _KNOWN_ARCHITECTURES = {"amd64", "arm64", "i386", "armhf", "riscv64"}
+
+    def _validate_enum_section(
+        self,
+        sec_key: str,
+        known_keys: set[str],
+        error_code: str,
+        section_label: str,
+    ):
+        """
+        Kiểm tra section kiểu enum (ĐÚNG 1 key = true).
+        - Bắt key không hợp lệ + did-you-mean.
+        - Bắt giá trị không phải boolean (HCL201).
+        - Bắt cả "Build-all-*" flag nếu có, bỏ qua khi validate exactly-one.
+        sec_key: so sánh case-insensitive với self.sections.
+        """
+        # Tìm section name thực tế (case-insensitive)
+        real_sec = next(
+            (s for s in self.sections if s.strip().lower() == sec_key.strip().lower()),
+            None,
+        )
+        if real_sec is None:
+            return
+        kv = self._kv(real_sec)
+        true_keys = []
+        for k, raw in kv.items():
+            k_clean = k.strip().lower()
+            # Bỏ qua flag Build-all-*
+            if k_clean.startswith("build-all"):
+                continue
+            # Bắt key lạ
+            if k_clean not in known_keys:
+                matches = difflib.get_close_matches(k_clean, list(known_keys), n=1, cutoff=0.6)
+                hint = f"\n    Did you mean: {matches[0]}" if matches else ""
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"{error_code}: Unknown key '{k}' in [{section_label}].{hint}"
+                ))
+                continue
+            # Bắt type sai — phải là BOOLEAN
+            pv = classify(k, raw)
+            if pv.type != "BOOLEAN":
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"ERROR HCL201: [{section_label}].{k} must be true or false, got: {raw!r}"
+                ))
+                continue
+            if pv.value is True:
+                true_keys.append(k)
+
     def validate_known_schemas(self):
         """
         Kiểm tra schema các section cốt lõi.
@@ -1515,7 +1616,8 @@ class Resolver:
                 "gnome-tweak": "gnome-tweak",
                 "auto-login": "Auto-login",
                 "icons": "icons",
-                "kernel-install": "kernel-install",
+                "kernel-install": "kernel-install",  # bool | installkernel(...)
+                "kernel-version": "kernel-version",
                 "swap": "swap",
                 "config": "config",
             }
@@ -1523,7 +1625,6 @@ class Resolver:
             for k, raw in kv.items():
                 k_clean = k.strip().lower()
                 if k_clean not in known_base_keys:
-                    # Hỗ trợ tạm thời kernel-isntall nhưng cảnh báo / báo lỗi
                     matches = difflib.get_close_matches(k_clean, list(known_base_keys.keys()), n=1, cutoff=0.6)
                     hint = f"\n    Did you mean:\n        {known_base_keys[matches[0]]}" if matches else ""
                     self.diags.append(Diagnostic(
@@ -1531,7 +1632,23 @@ class Resolver:
                         f"ERROR HCL001:\nUnknown property '{k}' in [my-version-os-base].{hint}"
                     ))
 
-        # 2. Type validation cho swap trong mọi section (tránh swap = "1GB" thay vì 1GB)
+        # 2. Schema cho [Base] — enum: đúng 1 distro = true
+        self._validate_enum_section(
+            "base",
+            self._KNOWN_BASES,
+            "ERROR HCL001",
+            "Base",
+        )
+
+        # 3. Schema cho [Architecture] — enum: đúng 1 arch = true
+        self._validate_enum_section(
+            "architecture",
+            self._KNOWN_ARCHITECTURES,
+            "ERROR HCL001",
+            "Architecture",
+        )
+
+        # 4. Type validation cho swap trong mọi section (tránh swap = "1GB" thay vì 1GB)
         for sec_name in self.order:
             for k, raw, _ in self._entries(sec_name):
                 if k.strip().lower() == "swap":
