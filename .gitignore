@@ -5,3 +5,19 @@ build/*.iso
 *.squashfs
 log/
 *.zip
+
+# Security: Private Keys and Certificates (DO NOT commit to Git!)
+*.key
+*.priv
+*.pem
+*.pfx
+*.p12
+*.esl
+*.auth
+PK.*
+KEK.*
+db.*
+dbx.*
+MOK.*
+secureboot/keys/
+/secureboot/

@@ -9,6 +9,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 [ -f "$SCRIPT_DIR/arch.sh" ] && source "$SCRIPT_DIR/arch.sh"
+[ -f "$SCRIPT_DIR/secureboot.sh" ] && source "$SCRIPT_DIR/secureboot.sh"
+
 
 echo "===== Unmount chroot filesystems ====="
 sudo umount -lf live-build/chroot/dev/pts 2>/dev/null || true
@@ -275,6 +277,11 @@ else
   echo "OK: fbx64.efi (Fallback Manager) bị loại bỏ khỏi live ESP — tránh reboot loop."
 
   echo "===== Kiểm tra Secure Boot signature thực sự (sbverify) ====="
+  # Tự động ký kernel bằng GitHub Actions Secrets nếu được cấp (custom build / unsigned kernel)
+  if declare -f hyggshi_sb_sign_with_secrets_if_available >/dev/null 2>&1; then
+    hyggshi_sb_sign_with_secrets_if_available "$VMLINUZ_FILE"
+  fi
+
   if command -v sbverify >/dev/null 2>&1; then
     if ! sbverify --list "$SHIM_BIN" >/dev/null 2>&1; then
       echo "LỖI FATAL: shim ($SHIM_BIN) không có chữ ký Secure Boot hợp lệ." >&2
@@ -282,6 +289,15 @@ else
     fi
     echo "OK: shim có signature hợp lệ:"
     sbverify --list "$SHIM_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+
+    # Xác thực chữ ký Microsoft UEFI CA (đảm bảo boot thẳng trên Dell, Lenovo, HP không cần vào BIOS enroll key)
+    if declare -f hyggshi_sb_is_microsoft_signed >/dev/null 2>&1; then
+      if hyggshi_sb_is_microsoft_signed "$SHIM_BIN"; then
+        echo "OK: shim ($SHIM_BIN) ĐƯỢC XÁC THỰC BỞI MICROSOFT CORPORATION UEFI CA (Tương thích Secure Boot mặc định)."
+      else
+        echo "CẢNH BÁO: shim ($SHIM_BIN) không chứa chuỗi chứng chỉ Microsoft CA — máy bật Secure Boot có thể từ chối boot." >&2
+      fi
+    fi
 
     if ! sbverify --list "$GRUB_SIGNED_BIN" >/dev/null 2>&1; then
       echo "LỖI FATAL: GRUB ($GRUB_SIGNED_BIN) không có chữ ký Secure Boot hợp lệ." >&2

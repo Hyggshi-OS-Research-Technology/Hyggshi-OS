@@ -153,10 +153,12 @@ if declare -f hyggshi_secureboot_packages >/dev/null 2>&1; then
     if apt-get install -y --no-install-recommends "$pkg"; then
       echo "OK: Đã cài gói Secure Boot: $pkg"
     else
-      echo "CẢNH BÁO: Không cài được gói Secure Boot '$pkg' — iso.sh sẽ tự tải deb dự phòng nếu cần." >&2
+      echo "CẢNH BÁO: Không cài được gói Secure Boot '$pkg' qua meta-name, thử fallback..." >&2
     fi
   done
 fi
+# Đảm bảo shim-signed và công cụ chữ ký sbsigntool luôn có mặt trong hệ thống
+apt-get install -y --no-install-recommends shim-signed sbsigntool efibootmgr 2>/dev/null || true
 
 echo "===== Cài Calamares (installer) và QML slideshow dependencies ====="
 # calamares-settings-debian cung cấp cấu hình module cài đặt (partition, unpackfs,
@@ -198,6 +200,19 @@ if [ -d /tmp/calamares ]; then
   cp -a /tmp/calamares/. /etc/calamares/
   chmod -R a+rX /etc/calamares
   echo "OK: /etc/calamares đã được ghi đè hoàn toàn từ source Hyggshi."
+
+  # Cài đặt post-install hook cho Calamares (fix Secure Boot trên Dell/Lenovo/HP và branding)
+  mkdir -p /usr/local/sbin
+  if [ -f /tmp/calamares/hyggshi-secureboot-postinstall.sh ]; then
+    cp -f /tmp/calamares/hyggshi-secureboot-postinstall.sh /usr/local/sbin/hyggshi-secureboot-postinstall.sh
+    chmod 0755 /usr/local/sbin/hyggshi-secureboot-postinstall.sh
+    echo "OK: đã cài /usr/local/sbin/hyggshi-secureboot-postinstall.sh"
+  fi
+  if [ -f /tmp/calamares/hyggshi-final-branding.sh ]; then
+    cp -f /tmp/calamares/hyggshi-final-branding.sh /usr/local/sbin/hyggshi-final-branding.sh
+    chmod 0755 /usr/local/sbin/hyggshi-final-branding.sh
+    echo "OK: đã cài /usr/local/sbin/hyggshi-final-branding.sh"
+  fi
 
   # === FIX show.qml: đảm bảo branding được tìm thấy ở CẢ HAI đường tìm kiếm ===
   # Calamares 3.x tìm branding ở /etc/calamares/branding/ (ưu tiên) VÀ

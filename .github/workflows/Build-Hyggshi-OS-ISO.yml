@@ -383,6 +383,7 @@ jobs:
           sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
           sudo cp scripts/kernel-tuning.sh "${CHROOT_DIR}/tmp/kernel-tuning.sh"
           sudo cp scripts/arch.sh "${CHROOT_DIR}/tmp/arch.sh"
+          sudo cp scripts/secureboot.sh "${CHROOT_DIR}/tmp/secureboot.sh"
           sudo cp scripts/fix-cinnamon-tela-persistence.sh "${CHROOT_DIR}/tmp/fix-cinnamon-tela-persistence.sh"
           sudo cp LICENSE "${CHROOT_DIR}/tmp/LICENSE"
           sudo rm -rf "${CHROOT_DIR}/tmp/packages"
@@ -849,6 +850,9 @@ jobs:
 
       # === 7) ISO: unmount, squashfs, grub, đóng gói ISO ===
       - name: "[iso.sh] Build squashfs + ISO bootable"
+        env:
+          SECURE_BOOT_KEY: ${{ secrets.SECURE_BOOT_KEY }}
+          SECURE_BOOT_CERT: ${{ secrets.SECURE_BOOT_CERT }}
         run: |
           HCL_SQUASHFS_MAX_COMPRESSION="${HCL_SQUASHFS_MAX_COMPRESSION:-}" \
           SQUASHFS_MAX_COMPRESSION="${SQUASHFS_MAX_COMPRESSION:-}" \
