@@ -856,13 +856,17 @@ jobs:
           retention-days: 14
 
       - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
-        if: ${{ secrets.SOURCEFORGE_SSH_KEY != '' }}
         env:
           SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
           SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
+          SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
           SF_KEY_PATH: /tmp/sf_key
         run: |
-          printf '%s' "${{ secrets.SOURCEFORGE_SSH_KEY }}" > "$SF_KEY_PATH"
+          if [ -z "${SOURCEFORGE_SSH_KEY}" ]; then
+            echo "SOURCEFORGE_SSH_KEY chưa được cấu hình. Bỏ qua bước upload lên SourceForge."
+            exit 0
+          fi
+          printf '%s' "${SOURCEFORGE_SSH_KEY}" > "$SF_KEY_PATH"
           chmod 600 "$SF_KEY_PATH"
           pip install paramiko --break-system-packages --quiet
           python3 tools/upload_to_sourceforge.py \
@@ -955,15 +959,19 @@ jobs:
           retention-days: 14
 
       - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
-        if: ${{ secrets.SOURCEFORGE_SSH_KEY != '' }}
         env:
           SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
           SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
+          SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
           SF_KEY_PATH: /tmp/sf_key
         run: |
-          printf '%s' "${{ secrets.SOURCEFORGE_SSH_KEY }}" > "$SF_KEY_PATH"
+          if [ -z "${SOURCEFORGE_SSH_KEY}" ]; then
+            echo "SOURCEFORGE_SSH_KEY chưa được cấu hình. Bỏ qua bước upload lên SourceForge."
+            exit 0
+          fi
+          printf '%s' "${SOURCEFORGE_SSH_KEY}" > "$SF_KEY_PATH"
           chmod 600 "$SF_KEY_PATH"
-          pip install paramiko --break-system-packages --quiet
+          pacman -Sy --noconfirm python python-pip python-paramiko 2>/dev/null || pip install paramiko --break-system-packages --quiet || true
           python3 tools/upload_to_sourceforge.py \
             --user  "$SOURCEFORGE_USERNAME" \
             --project "$SOURCEFORGE_PROJECT" \
@@ -1017,15 +1025,19 @@ jobs:
           retention-days: 14
 
       - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
-        if: ${{ secrets.SOURCEFORGE_SSH_KEY != '' }}
         env:
           SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
           SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
+          SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
           SF_KEY_PATH: /tmp/sf_key
         run: |
-          printf '%s' "${{ secrets.SOURCEFORGE_SSH_KEY }}" > "$SF_KEY_PATH"
+          if [ -z "${SOURCEFORGE_SSH_KEY}" ]; then
+            echo "SOURCEFORGE_SSH_KEY chưa được cấu hình. Bỏ qua bước upload lên SourceForge."
+            exit 0
+          fi
+          printf '%s' "${SOURCEFORGE_SSH_KEY}" > "$SF_KEY_PATH"
           chmod 600 "$SF_KEY_PATH"
-          pip install paramiko --break-system-packages --quiet
+          dnf install -y python3-paramiko 2>/dev/null || pip install paramiko --break-system-packages --quiet || true
           python3 tools/upload_to_sourceforge.py \
             --user  "$SOURCEFORGE_USERNAME" \
             --project "$SOURCEFORGE_PROJECT" \
