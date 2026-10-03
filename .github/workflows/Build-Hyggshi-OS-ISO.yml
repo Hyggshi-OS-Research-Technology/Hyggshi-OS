@@ -99,10 +99,7 @@ on:
         description: "Hostname máy"
         required: false
         default: "hyggshi-os"
-      timezone:
-        description: "Múi giờ (vd Asia/Ho_Chi_Minh, UTC)"
-        required: false
-        default: "Asia/Ho_Chi_Minh"
+
       # LƯU Ý: workflow_dispatch chỉ cho phép TỐI ĐA 25 `inputs` (giới hạn
       # cứng của GitHub Actions — vượt quá là toàn bộ workflow bị từ chối
       # với lỗi "Invalid workflow file" ngay từ lúc parse, chưa kịp chạy).
@@ -121,14 +118,6 @@ on:
         description: "Gói apt thêm, cách nhau bằng dấu cách (vd: vlc gimp htop)"
         required: false
         default: ""
-      build_nexwm:
-        description: "Build & cài NexWM từ source (chroot, scripts/build-nexwm.sh) — KHÔNG mặc định, chỉ bật khi cần"
-        type: boolean
-        default: false
-      release_iso:
-        description: "Attach ISO to a GitHub Release?"
-        type: boolean
-        default: false
       debug_mode:
         description: "Bật debug (log chi tiết + xuất debug-info.txt kèm ISO)"
         type: boolean
@@ -170,7 +159,7 @@ env:
   OS_USERNAME: ${{ github.event.inputs.username || 'hyggshi' }}
   OS_PASSWORD: ${{ github.event.inputs.user_password || 'hyggshi' }}
   OS_HOSTNAME: ${{ github.event.inputs.hostname || 'hyggshi-os' }}
-  OS_TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Ho_Chi_Minh' }}
+  OS_TIMEZONE: 'Asia/Ho_Chi_Minh'
   # INCLUDE_BROWSER/INCLUDE_OFFICE/AUTOLOGIN/AUTOSCALE_DISPLAY/WELCOME_WIZARD/
   # THEME_DAEMON KHÔNG đặt ở đây (lý do giống DEBIAN_VERSION/UBUNTU_VERSION/... phía trên):
   # từ khi 6 input boolean này bị gộp chung thành 1 input CSV `feature_flags`
@@ -181,9 +170,8 @@ env:
   EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages || '' }}
   DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'true' }}
   # Không gộp vào feature_flags (CSV) vì đây là toggle build-time riêng cho
-  # NexWM, không phải feature bật/tắt trong desktop.sh. Mặc định false —
-  # bước "[build-nexwm.sh]" bên dưới chỉ chạy khi input này = true.
-  BUILD_NEXWM: ${{ github.event.inputs.build_nexwm || 'false' }}
+  # NexWM, không phải feature bật/tắt trong desktop.sh.
+  BUILD_NEXWM: 'false'
   # Link ảnh dán trực tiếp qua input — branding.sh tự tải nếu không có sẵn
   # file cùng tên trong iso-config/branding/ (xem WALLPAPER_FILE/LOGO_FILE/
   # PLYMOUTH_LOGO_FILE trong branding.sh). PLYMOUTH_LOGO_URL để trống sẽ
@@ -867,15 +855,24 @@ jobs:
             ${{ env.ISO_FILENAME }}.sha256
           retention-days: 14
 
-      - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.ISO_FILENAME }}
-            ${{ env.ISO_FILENAME }}.sha256
-          tag_name: "hyggshi-os-${{ github.run_number }}"
-          name: "Hyggshi OS build #${{ github.run_number }}"
+      - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
+        if: ${{ secrets.SOURCEFORGE_SSH_KEY != '' }}
+        env:
+          SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
+          SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
+          SF_KEY_PATH: /tmp/sf_key
+        run: |
+          printf '%s' "${{ secrets.SOURCEFORGE_SSH_KEY }}" > "$SF_KEY_PATH"
+          chmod 600 "$SF_KEY_PATH"
+          pip install paramiko --break-system-packages --quiet
+          python3 tools/upload_to_sourceforge.py \
+            --user  "$SOURCEFORGE_USERNAME" \
+            --project "$SOURCEFORGE_PROJECT" \
+            --folder "Hyggshi OS build #${{ github.run_number }}" \
+            --file  "${{ env.ISO_FILENAME }}" \
+            --file  "${{ env.ISO_FILENAME }}.sha256" \
+            --key   "$SF_KEY_PATH"
+          rm -f "$SF_KEY_PATH"
 
   # ============================================================
   # Job riêng cho Alpine: chạy TRONG container alpine:latest thay vì giả lập
@@ -957,13 +954,23 @@ jobs:
           path: ${{ env.ISO_FILENAME }}
           retention-days: 14
 
-      - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.ISO_FILENAME }}
-          tag_name: "hyggshi-os-${{ github.run_number }}"
-          name: "Hyggshi OS build #${{ github.run_number }}"
+      - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
+        if: ${{ secrets.SOURCEFORGE_SSH_KEY != '' }}
+        env:
+          SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
+          SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
+          SF_KEY_PATH: /tmp/sf_key
+        run: |
+          printf '%s' "${{ secrets.SOURCEFORGE_SSH_KEY }}" > "$SF_KEY_PATH"
+          chmod 600 "$SF_KEY_PATH"
+          pip install paramiko --break-system-packages --quiet
+          python3 tools/upload_to_sourceforge.py \
+            --user  "$SOURCEFORGE_USERNAME" \
+            --project "$SOURCEFORGE_PROJECT" \
+            --folder "Hyggshi OS build #${{ github.run_number }}" \
+            --file  "${{ env.ISO_FILENAME }}" \
+            --key   "$SF_KEY_PATH"
+          rm -f "$SF_KEY_PATH"
 
   # ============================================================
   # Job riêng cho Fedora: chạy TRONG container fedora:$FEDORA_VERSION
@@ -1009,10 +1016,20 @@ jobs:
           path: ${{ env.ISO_FILENAME }}
           retention-days: 14
 
-      - name: Attach ISO to GitHub Release (optional)
-        if: ${{ github.event.inputs.release_iso == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.ISO_FILENAME }}
-          tag_name: "hyggshi-os-${{ github.run_number }}"
-          name: "Hyggshi OS build #${{ github.run_number }}"
+      - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
+        if: ${{ secrets.SOURCEFORGE_SSH_KEY != '' }}
+        env:
+          SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
+          SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
+          SF_KEY_PATH: /tmp/sf_key
+        run: |
+          printf '%s' "${{ secrets.SOURCEFORGE_SSH_KEY }}" > "$SF_KEY_PATH"
+          chmod 600 "$SF_KEY_PATH"
+          pip install paramiko --break-system-packages --quiet
+          python3 tools/upload_to_sourceforge.py \
+            --user  "$SOURCEFORGE_USERNAME" \
+            --project "$SOURCEFORGE_PROJECT" \
+            --folder "Hyggshi OS build #${{ github.run_number }}" \
+            --file  "${{ env.ISO_FILENAME }}" \
+            --key   "$SF_KEY_PATH"
+          rm -f "$SF_KEY_PATH"

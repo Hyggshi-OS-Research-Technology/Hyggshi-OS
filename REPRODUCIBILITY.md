@@ -4,8 +4,9 @@ Goal for now: **reproducible inputs**, not byte-for-byte reproducible ISOs.
 Two builds run months apart should pull the same inputs; they don't yet.
 
 ## Pinned today
-- `Windows-10` GTK theme (`scripts/desktop.sh`): pinned to a fixed commit via
-  `WINDOWS10_THEME_REF` (defaults to the `3.2.1` release commit, override-able).
+- `Skeuos-Blue-Dark` + `Skeuos-Blue-Dark-XFWM` themes (`scripts/desktop.sh`): cloned from
+  `daniruiz/skeuos-gtk` at `--depth=1` (floating tip of master). Pin via a
+  `SKEUOS_GTK_REF` env var if reproducibility becomes a concern.
 
 ## Still floating — pin next, roughly in priority order
 1. **Debian/Ubuntu package versions** — `apt-get install` always resolves to

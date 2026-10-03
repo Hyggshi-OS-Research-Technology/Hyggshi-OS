@@ -684,10 +684,9 @@ else
   echo "Bỏ qua tạo $SKEL/xfce4-desktop.xml (không có wallpaper.png thật) — giữ wallpaper mặc định của DE gốc."
 fi
 
-# NOTE: GTK ThemeName and xfwm4 theme below are both set to "Windows-10",
-# which already gives the same end result as the Appearance dialog's
-# "Set matching Xfwm4 theme if there is one" switch (new users get
-# synced themes on first login regardless of the switch's own state).
+# NOTE: GTK ThemeName trỏ vào Skeuos-Blue-Dark (GTK3/4), xfwm4 sẽ dùng
+# Skeuos-Blue-Dark-XFWM (window decoration) — cả hai được cài bởi desktop.sh
+# từ repo daniruiz/skeuos-gtk.
 #
 # If you also want the switch itself to render ON in the live dialog,
 # find its exact xfconf property first:
@@ -701,7 +700,7 @@ cat <<XML | sudo tee "$SKEL/xsettings.xml" > /dev/null
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
     <property name="IconThemeName" type="string" value="$ICON_NAME"/>
-    <property name="ThemeName" type="string" value="Windows-10"/>
+    <property name="ThemeName" type="string" value="Skeuos-Blue-Dark"/>
   </property>
 </channel>
 XML
@@ -710,7 +709,7 @@ cat <<XML | sudo tee "$SKEL/xfwm4.xml" > /dev/null
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfwm4" version="1.0">
   <property name="general" type="empty">
-    <property name="theme" type="string" value="Windows-10"/>
+    <property name="theme" type="string" value="Skeuos-Blue-Dark-XFWM"/>
     <property name="button_layout" type="string" value="O|SHMC"/>
   </property>
 </channel>

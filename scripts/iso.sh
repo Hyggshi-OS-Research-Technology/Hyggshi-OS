@@ -12,34 +12,59 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$SCRIPT_DIR/secureboot.sh" ] && source "$SCRIPT_DIR/secureboot.sh"
 
 
-echo "===== Unmount chroot filesystems ====="
-sudo umount -lf live-build/chroot/dev/pts 2>/dev/null || true
-sudo umount -lf live-build/chroot/dev 2>/dev/null || true
-sudo chroot live-build/chroot umount /proc 2>/dev/null || sudo umount -lf live-build/chroot/proc 2>/dev/null || true
-sudo chroot live-build/chroot umount /sys 2>/dev/null || sudo umount -lf live-build/chroot/sys 2>/dev/null || true
-sudo umount -lf live-build/chroot/run 2>/dev/null || true
-# Bind-mount cache .deb (xem step "Mount apt cache vào chroot" trong
-# workflow) PHẢI được unmount trước khi mksquashfs — nếu không toàn bộ
-# .deb đã tải sẽ bị đóng gói lẫn vào filesystem.squashfs, làm ISO phình to
-# vô ích (những .deb này chỉ cần tồn tại trên HOST để actions/cache lưu
-# lại dùng cho lần build sau, không cần có trong ISO cuối cùng).
-sudo umount -lf live-build/chroot/var/cache/apt/archives 2>/dev/null || true
+umount_chroot() {
+  local SFS="${1:-live-build/chroot}"
+  echo "===== Unmount chroot filesystems ====="
+  sudo umount -lf "$SFS/dev/pts" 2>/dev/null || true
+  sudo umount -lf "$SFS/dev" 2>/dev/null || true
+  sudo chroot "$SFS" umount /proc 2>/dev/null || sudo umount -lf "$SFS/proc" 2>/dev/null || true
+  sudo chroot "$SFS" umount /sys 2>/dev/null || sudo umount -lf "$SFS/sys" 2>/dev/null || true
+  sudo umount -lf "$SFS/run" 2>/dev/null || true
+  # Bind-mount cache .deb (xem step "Mount apt cache vào chroot" trong
+  # workflow) PHẢI được unmount trước khi mksquashfs — nếu không toàn bộ
+  # .deb đã tải sẽ bị đóng gói lẫn vào filesystem.squashfs, làm ISO phình to
+  # vô ích.
+  sudo umount -lf "$SFS/var/cache/apt/archives" 2>/dev/null || true
+}
 
-echo "===== Dọn sạch rác, cache, build artifacts và temporary files trong chroot trước khi mksquashfs ====="
-# Xoá toàn bộ file tạm và build artifacts trong /tmp và /var/tmp của chroot (bao gồm .deb 100MB của nexcode, zip, .o...)
-sudo rm -rf live-build/chroot/tmp/* live-build/chroot/tmp/.* 2>/dev/null || true
-sudo rm -rf live-build/chroot/var/tmp/* live-build/chroot/var/tmp/.* 2>/dev/null || true
+clean_virtual_dirs() {
+  local SFS="${1:-live-build/chroot}"
 
-# Xoá cache apt và apt list index (Debian testing index tốn hàng trăm MB)
-sudo rm -rf live-build/chroot/var/cache/apt/archives/*.deb live-build/chroot/var/cache/apt/archives/partial/* 2>/dev/null || true
-sudo rm -rf live-build/chroot/var/lib/apt/lists/* 2>/dev/null || true
-sudo rm -f live-build/chroot/etc/apt/apt.conf.d/01keep-debs 2>/dev/null || true
+  echo "===== Dọn sạch rác, cache, build artifacts và temporary files trong chroot trước khi mksquashfs ====="
+  # Dọn file tạm trước khi pack. Nếu build bị Ctrl+C giữa hook
+  # (đặc biệt WPS repack cũ), /tmp có thể còn .deb/data.tar.xz/opt rất lớn
+  # và make quick sẽ vô tình đóng gói chúng vào ISO.
+  sudo rm -rf "$SFS/tmp"/* "$SFS/tmp"/.* "$SFS/var/tmp"/* "$SFS/var/tmp"/.* 2>/dev/null || true
 
-# Xoá cache user/root
-sudo rm -rf live-build/chroot/root/.cache/* live-build/chroot/home/*/.cache/* 2>/dev/null || true
+  # Xoá cache apt và apt list index (Debian testing index tốn hàng trăm MB)
+  sudo rm -rf "$SFS/var/cache/apt/archives"/*.deb "$SFS/var/cache/apt/archives/partial"/* 2>/dev/null || true
+  sudo rm -rf "$SFS/var/lib/apt/lists"/* 2>/dev/null || true
+  sudo rm -f "$SFS/etc/apt/apt.conf.d/01keep-debs" 2>/dev/null || true
 
-# Truncate logs
-sudo find live-build/chroot/var/log -type f -exec truncate -s 0 {} \; 2>/dev/null || true
+  # Xoá cache user/root
+  sudo rm -rf "$SFS/root/.cache"/* "$SFS/home"/*/.cache/* 2>/dev/null || true
+
+  # Truncate logs
+  sudo find "$SFS/var/log" -type f -exec truncate -s 0 {} \; 2>/dev/null || true
+
+  # Đảm bảo các virtual fs dir trống sạch trước khi pack vào squashfs.
+  # KHÔNG dùng -e proc/sys/dev/run để loại trừ — nếu loại trừ, các thư mục
+  # này sẽ KHÔNG TỒN TẠI trong squashfs, casper/live-boot sẽ không có chỗ để mount
+  # devtmpfs/proc/sysfs vào → /dev/null không tồn tại → boot crash.
+  # Các dir phải có mặt nhưng TRỐNG; chúng đã được umount ở step_customize.
+  for dir in proc sys dev run; do
+    if [ -d "$SFS/$dir" ]; then
+      # Xoá nội dung bên trong nhưng giữ thư mục gốc
+      sudo find "$SFS/$dir" -mindepth 1 -delete 2>/dev/null || true
+    else
+      # Thư mục không tồn tại → tạo lại để casper/live-boot có chỗ mount
+      sudo mkdir -p "$SFS/$dir"
+    fi
+  done
+}
+
+umount_chroot
+clean_virtual_dirs
 
 echo "===== Build squashfs from chroot ====="
 mkdir -p live-build/image/live
@@ -81,6 +106,14 @@ else
     -comp zstd -b 1M -Xcompression-level 19 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
 fi
 
+# Cập nhật filesystem.size cho live installer (Calamares / Ubiquity)
+echo "===== Cập nhật filesystem.size ====="
+SFS_SIZE="$(sudo du -sx --block-size=1 live-build/chroot | cut -f1)"
+printf '%s' "$SFS_SIZE" | sudo tee live-build/image/live/filesystem.size >/dev/null
+if [ -d live-build/image/casper ]; then
+  printf '%s' "$SFS_SIZE" | sudo tee live-build/image/casper/filesystem.size >/dev/null
+fi
+
 echo "===== Prepare boot files (kernel + initrd) ====="
 # Dùng ls -t + head -n1 thay vì cp trực tiếp theo glob: nếu vì lý do gì đó
 # /boot có nhiều hơn 1 vmlinuz-*/initrd.img-* (ví dụ update kernel giữa
@@ -99,6 +132,14 @@ VMLINUZ_FILE=$(sudo ls -t live-build/chroot/boot/vmlinuz-* | head -n1)
 INITRD_FILE=$(sudo ls -t live-build/chroot/boot/initrd.img-* | head -n1)
 sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
 sudo cp "$INITRD_FILE" live-build/image/live/initrd
+
+# Live ISO boot Ubuntu/Mint dùng custom/casper/initrd.lz.
+# Hook Plymouth đã regenerate initramfs trong rootfs, nên đồng bộ sang casper nếu tồn tại.
+if [ -d live-build/image/casper ]; then
+  sudo cp "$VMLINUZ_FILE" live-build/image/casper/vmlinuz
+  sudo cp "$INITRD_FILE" live-build/image/casper/initrd.lz
+  echo "OK: live initrd đã cập nhật: $(basename "$INITRD_FILE") → casper/initrd.lz"
+fi
 
 # Fail-fast: không cho phép tạo ISO nếu initrd lại chứa Plymouth mặc định
 # thay vì theme Hyggshi. Đây chính là nguyên nhân màn hình QEMU trước đó chỉ
@@ -543,22 +584,47 @@ if [ -n "$GRUB_PC_DIR" ] && command -v grub-mkimage >/dev/null 2>&1; then
 fi
 [ -z "$GRUB_HYBRID_MBR" ] && [ -f "/usr/lib/grub/i386-pc/boot_hybrid.img" ] && GRUB_HYBRID_MBR="/usr/lib/grub/i386-pc/boot_hybrid.img"
 
-# 2. Đóng gói ISO bằng xorriso (chuẩn Debian Live-Build / Ubuntu hybrid ISO)
+# 2. Cập nhật md5sum.txt cho live ISO (hỗ trợ integrity check lúc boot)
+echo "===== Cập nhật md5sum.txt trong ISO (integrity check) ====="
+(
+  cd live-build/image
+  sudo rm -f md5sum.txt
+  sudo find . -type f ! -name 'md5sum.txt' ! -path './boot/grub/efi.img' -print0 | xargs -0 sudo md5sum | sudo tee md5sum.txt >/dev/null || true
+)
+
+# 3. Đóng gói ISO bằng xorriso (chuẩn Debian Live-Build / Ubuntu hybrid ISO)
 # Thay vì grub-mkrescue (luôn tự biên dịch grub unsigned phá hỏng chuỗi tin cậy Secure Boot),
 # dùng xorriso -as mkisofs trực tiếp gắn shim Microsoft ký sẵn + grub signed vào El Torito
 # và phân vùng GPT EFI.
+VOLID="${ISO_VOLID:-${DISTRO_NAME:-HYGGSHI_OS}}"
+VOLID=$(printf '%s' "$VOLID" | tr ' ' '_' | cut -c1-32)
+
 XORRISO_ARGS=(
   -iso-level 3
   -full-iso9660-filenames
-  -volid "HYGGSHI_OS"
+  -volid "$VOLID"
   -output "$ISO_FILENAME"
   -r
   -graft-points
 )
 
-# BIOS Legacy boot options
-if [ -f "live-build/image/boot/grub/i386-pc/eltorito.img" ] && [ -n "$GRUB_HYBRID_MBR" ] && [ -f "$GRUB_HYBRID_MBR" ]; then
-  echo "Thêm cấu hình BIOS Legacy (eltorito.img + MBR hybrid: $GRUB_HYBRID_MBR)"
+# BIOS Legacy boot options: isolinux (Mint / Syslinux) hoặc GRUB
+if [ -f "live-build/image/isolinux/isolinux.bin" ]; then
+  echo "    Boot: isolinux (BIOS)"
+  XORRISO_ARGS+=(
+    -b isolinux/isolinux.bin
+    -c isolinux/boot.cat
+    -no-emul-boot -boot-load-size 4 -boot-info-table
+  )
+  if [ -f /usr/lib/ISOLINUX/isohdpfx.bin ]; then
+    XORRISO_ARGS+=(-isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin)
+  elif [ -f /usr/lib/syslinux/isohdpfx.bin ]; then
+    XORRISO_ARGS+=(-isohybrid-mbr /usr/lib/syslinux/isohdpfx.bin)
+  elif [ -f /usr/lib/syslinux/mbr/isohdpfx.bin ]; then
+    XORRISO_ARGS+=(-isohybrid-mbr /usr/lib/syslinux/mbr/isohdpfx.bin)
+  fi
+elif [ -f "live-build/image/boot/grub/i386-pc/eltorito.img" ] && [ -n "$GRUB_HYBRID_MBR" ] && [ -f "$GRUB_HYBRID_MBR" ]; then
+  echo "    Boot: GRUB BIOS Legacy (eltorito.img + MBR hybrid: $GRUB_HYBRID_MBR)"
   XORRISO_ARGS+=(
     --grub2-mbr "$GRUB_HYBRID_MBR"
     --protective-msdos-label
@@ -567,17 +633,42 @@ if [ -f "live-build/image/boot/grub/i386-pc/eltorito.img" ] && [ -n "$GRUB_HYBRI
     -b boot/grub/i386-pc/eltorito.img
     -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info
   )
+elif [ -f "live-build/image/boot/grub/bios.img" ]; then
+  echo "    Boot: GRUB (bios.img)"
+  XORRISO_ARGS+=(
+    -eltorito-boot boot/grub/bios.img
+    -no-emul-boot -boot-load-size 4 -boot-info-table
+  )
+  if [ -f /usr/lib/grub/i386-pc/boot_hybrid.img ]; then
+    XORRISO_ARGS+=(--grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img)
+  fi
 fi
 
-# UEFI Secure Boot options
+# UEFI Secure Boot / UEFI options
 if [ "$SECURE_BOOT_OK" = "true" ] && [ -f "live-build/image/boot/grub/efi.img" ]; then
-  echo "Thêm cấu hình UEFI Secure Boot (shim-signed Microsoft ký sẵn + GRUB signed)"
+  echo "    Boot: UEFI Secure Boot (shim-signed Microsoft ký sẵn + GRUB signed)"
   XORRISO_ARGS+=(
     -eltorito-alt-boot
     -e boot/grub/efi.img
     -no-emul-boot
     -isohybrid-gpt-basdat
     -efi-boot-part --efi-boot-image
+  )
+elif [ -f "live-build/image/EFI/boot/efiboot.img" ]; then
+  echo "    Boot: EFI (efiboot.img)"
+  XORRISO_ARGS+=(
+    -eltorito-alt-boot
+    -e EFI/boot/efiboot.img
+    -no-emul-boot
+    -append_partition 2 0xef live-build/image/EFI/boot/efiboot.img
+  )
+elif [ -f "live-build/image/boot/grub/efi.img" ]; then
+  echo "    Boot: GRUB EFI (efi.img)"
+  XORRISO_ARGS+=(
+    -eltorito-alt-boot
+    -e boot/grub/efi.img
+    -no-emul-boot
+    -append_partition 2 0xef live-build/image/boot/grub/efi.img
   )
 fi
 

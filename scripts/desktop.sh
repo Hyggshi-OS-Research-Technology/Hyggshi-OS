@@ -970,12 +970,17 @@ EOF
       *)       apt-get install -y papirus-icon-theme ;;
     esac
 
-    # GTK theme cho khung cửa sổ/taskbar kiểu Windows 10 (B00merang-Project, open source)
+    # GTK + XFWM4 theme Skeuos (daniruiz/skeuos-gtk) — skeuomorphic, hỗ trợ XFCE.
+    # Clone toàn repo (--depth=1) rồi chỉ copy 2 thư mục cần thiết vào
+    # /usr/share/themes để tránh 130 MB còn lại nằm trong ISO.
     # BUG CŨ: clone không có fallback -> nếu GitHub rate-limit/timeout, `set -e`
     # sẽ abort NGUYÊN build ở bước này (dù DE/package chính đã cài xong).
-    if ! git clone --depth=1 https://github.com/B00merang-Project/Windows-10 \
-        /usr/share/themes/Windows-10; then
-      echo "⚠️  Clone theme Windows-10 thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
+    if git clone --depth=1 https://github.com/daniruiz/skeuos-gtk.git /tmp/skeuos-gtk; then
+      cp -a /tmp/skeuos-gtk/themes/Skeuos-Blue-Dark     /usr/share/themes/Skeuos-Blue-Dark
+      cp -a /tmp/skeuos-gtk/themes/Skeuos-Blue-Dark-XFWM /usr/share/themes/Skeuos-Blue-Dark-XFWM
+      rm -rf /tmp/skeuos-gtk
+    else
+      echo "⚠️  Clone skeuos-gtk thất bại (mạng/rate-limit) — bỏ qua, giữ GTK theme mặc định."
     fi
 
     echo "===== Hyggshi Sound Shortcut (phím tắt âm thanh + OSD cho XFCE) ====="
@@ -2475,10 +2480,10 @@ done
 rm -rf /var/cache/apt/archives/*.deb /tmp/* /var/tmp/* 2>/dev/null || true
 find /var/log -type f -exec truncate -s 0 {} \; 2>/dev/null || true
 
-# .git để lại bởi bước clone GTK theme Windows-10 ở trên (chỉ là metadata
-# lịch sử git, không cần trong hệ thống đã cài) — vài chục MB không đáng có
-# trong ISO.
-rm -rf /usr/share/themes/Windows-10/.git 2>/dev/null || true
+# Skeuos đã được clone vào /tmp rồi copy ra, không còn .git thừa trong /usr/share/themes.
+# Dọn phòng chống thừa nếu có file .git sót lại.
+rm -rf /usr/share/themes/Skeuos-Blue-Dark/.git \
+        /usr/share/themes/Skeuos-Blue-Dark-XFWM/.git 2>/dev/null || true
 
 echo "Checkpoint kernel CUỐI desktop.sh: $(ls /boot/vmlinuz-* 2>/dev/null || echo 'KHÔNG CÓ FILE')"
 echo "===== desktop.sh xong ====="
