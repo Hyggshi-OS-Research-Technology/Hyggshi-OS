@@ -1600,7 +1600,7 @@ class Resolver:
 
     _KNOWN_BASES = {"debian", "ubuntu", "mint", "fedora", "alpine", "arch"}
     _KNOWN_ARCHITECTURES = {"amd64", "arm64", "i386", "armhf", "riscv64"}
-    _KNOWN_OEM = {"oem-mode-no", "oem-mode-yes"}
+    _KNOWN_OEM = {"oem-mode-no", "oem-mode-yes", "build-all-oem-github-actions"}
 
     def _validate_enum_section(
         self,
