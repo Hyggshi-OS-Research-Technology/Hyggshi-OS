@@ -512,6 +512,8 @@ class Resolver:
                 continue
             if is_base_sec and k_clean in ("build-all-base-github-actions", "build-all-base-github-action", "build-all-base"):
                 continue
+            if is_base_sec and (k_clean.startswith("oem-") or k_clean.startswith("build-all-oem")):
+                continue
             pv = classify(k, raw)
             if pv.type == "BOOLEAN" and pv.value is True:
                 true_keys.append(k)
@@ -556,6 +558,56 @@ class Resolver:
             return (arch or "amd64").strip().lower()
         return "amd64"
 
+    def resolve_oem(self) -> dict:
+        """
+        Resolve [OEM] section (hoặc fallback tìm key OEM trong [Base]).
+        Hỗ trợ:
+          OEM-mode-no = false
+          OEM-mode-yes = false
+          Build-all-OEM-github-actions = false
+        """
+        sec = {}
+        for s in self.sections:
+            if s.strip().lower() == "oem":
+                sec = self._kv(s)
+                break
+        if not sec and "Base" in self.sections:
+            base_kv = self._kv("Base")
+            sec = {k: v for k, v in base_kv.items() if "oem" in k.strip().lower()}
+
+        oem_no = False
+        oem_yes = False
+        build_all = False
+
+        for k, v in sec.items():
+            k_clean = k.strip().lower().replace("_", "-")
+            pv = classify(k, v)
+            if pv.type == "BOOLEAN":
+                if k_clean in ("oem-mode-no", "oem-no", "no"):
+                    oem_no = bool(pv.value)
+                elif k_clean in ("oem-mode-yes", "oem-yes", "yes"):
+                    oem_yes = bool(pv.value)
+                elif k_clean in ("build-all-oem-github-actions", "build-all-oem", "build-all-oem-github-action"):
+                    build_all = bool(pv.value)
+
+        active_oem = oem_yes and not (oem_no and not oem_yes)
+
+        variants = []
+        if build_all:
+            variants = ["no", "yes"]
+        elif oem_yes:
+            variants = ["yes"]
+        else:
+            variants = ["no"]
+
+        return {
+            "oem_mode_no": oem_no,
+            "oem_mode_yes": oem_yes,
+            "build_all_oem_github_actions": build_all,
+            "active_oem": active_oem,
+            "oem_variants_to_build": variants,
+        }
+
     def resolve_desktop_environment(self) -> dict:
         """
         PATCH 12: resolve [Desktop-Environment].
@@ -568,7 +620,7 @@ class Resolver:
             "active_desktop": None,
             "desktops_to_build": [],
         }
-        known_desktops = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt"]
+        known_desktops = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
         all_desktops_with_cli = known_desktops + ["cli"]
 
         # 1. Tìm cờ Build-all-github-actions
@@ -1548,6 +1600,7 @@ class Resolver:
 
     _KNOWN_BASES = {"debian", "ubuntu", "mint", "fedora", "alpine", "arch"}
     _KNOWN_ARCHITECTURES = {"amd64", "arm64", "i386", "armhf", "riscv64"}
+    _KNOWN_OEM = {"oem-mode-no", "oem-mode-yes"}
 
     def _validate_enum_section(
         self,
@@ -1576,6 +1629,9 @@ class Resolver:
             k_clean = k.strip().lower()
             # Bỏ qua flag Build-all-*
             if k_clean.startswith("build-all"):
+                continue
+            # Bỏ qua flag OEM nếu nằm trong [Base]
+            if sec_key.strip().lower() == "base" and k_clean.startswith("oem-"):
                 continue
             # Bắt key lạ
             if k_clean not in known_keys:
@@ -1648,6 +1704,14 @@ class Resolver:
             "Architecture",
         )
 
+        # 3b. Schema cho [OEM] — enum: oem-mode-no / oem-mode-yes
+        self._validate_enum_section(
+            "oem",
+            self._KNOWN_OEM,
+            "ERROR HCL001",
+            "OEM",
+        )
+
         # 4. Type validation cho swap trong mọi section (tránh swap = "1GB" thay vì 1GB)
         for sec_name in self.order:
             for k, raw, _ in self._entries(sec_name):
@@ -1679,6 +1743,7 @@ class Resolver:
         kp = bp.get("kernel_profile") or {}
         
         result["architecture"] = self.resolve_architecture()
+        result["oem"] = self.resolve_oem()
 
         de_info = self.resolve_desktop_environment()
         result["desktop_environment"] = de_info
@@ -1757,7 +1822,9 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     # [kernel.<Edition>].desktop trong config.ini. Không override thì giữ
     # nguyên hành vi cũ (dùng kp.get("desktop")) để không phá các lần gọi
     # hcl_parser.py không truyền --de-override (vd chạy tay để debug).
-    de_effective = (de_override or kp.get("desktop") or "")
+    de_info = resolved.get("desktop_environment") or {}
+    active_from_env = de_info.get("active_desktop") or ""
+    de_effective = (de_override or active_from_env or kp.get("desktop") or "")
     put("DESKTOP_ENV", de_effective)
     if de_override and de_override.strip().lower() != str(kp.get("desktop") or "").strip().lower():
         print(
@@ -1810,6 +1877,8 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         "gnome": "gnome",
         "mate": "mate",
         "cli": "cli",
+        "hde": "hde",
+        "nexwm": "hde",
         # Các group con khác KHÔNG phải DE (package.compiler, .qt6, .x11, etc.)
         # không nằm ở đây -> is_de_group = False -> gói vào all_packages bình thường
     }
@@ -2116,8 +2185,21 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
 
     de_info = resolved.get("desktop_environment") or {}
     build_all = de_info.get("build_all_github_actions", False)
-    put("HCL_BUILD_ALL_DESKTOPS", str(build_all).lower())
-    put("HCL_DESKTOPS_MATRIX", " ".join(de_info.get("desktops_to_build", [])))
+    put("BUILD_ALL_DESKTOPS", str(build_all).lower())
+    put("DESKTOPS_MATRIX", " ".join(de_info.get("desktops_to_build", [])))
+
+    oem_info = resolved.get("oem") or {}
+    is_oem = oem_info.get("active_oem", False)
+    build_all_oem = oem_info.get("build_all_oem_github_actions", False)
+    put("OEM_MODE", "true" if is_oem else "false")
+    put("BUILD_ALL_OEM", "true" if build_all_oem else "false")
+    lines.append(f"OEM_MODE={'true' if is_oem else 'false'}")
+
+    if de_val == "hde":
+        lines.append("BUILD_NEXWM=true")
+        put("BUILD_NEXWM", "true")
+        put("NEXWM_REPO_URL", "https://github.com/Hyggshi-OS-Research-Technology/NexWM.git")
+        lines.append("NEXWM_REPO_URL=https://github.com/Hyggshi-OS-Research-Technology/NexWM.git")
 
     if base_val:
         lines.append(f"BASE_DISTRO={base_val}")
@@ -2189,15 +2271,16 @@ def main():
 
     if args.print_matrix_json:
         de_info = resolved.get("desktop_environment") or {}
+        oem_info = resolved.get("oem") or {}
         de_override = (args.de_override or "").strip().lower()
         if de_override == "all":
-            matrix_list = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt"]
+            matrix_list = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
         elif de_override and de_override not in ("auto", "none"):
             matrix_list = [de_override]
         elif de_info.get("build_all_github_actions"):
-            matrix_list = de_info.get("desktops_to_build") or ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt"]
+            matrix_list = de_info.get("desktops_to_build") or ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
         else:
-            active = de_info.get("active_desktop") or "xfce"
+            active = de_info.get("active_desktop") or "hde" if de_info.get("active_desktop") == "hde" else (de_info.get("active_desktop") or "xfce")
             matrix_list = [active]
         matrix_json = json.dumps(matrix_list)
         print(matrix_json)
@@ -2207,6 +2290,10 @@ def main():
                 with open(gh_output, "a", encoding="utf-8") as f:
                     f.write(f"matrix={matrix_json}\n")
                     f.write(f"is_matrix={'true' if len(matrix_list) > 1 else 'false'}\n")
+                    oem_variants = oem_info.get("oem_variants_to_build") or ["no"]
+                    f.write(f"oem_matrix={json.dumps(oem_variants)}\n")
+                    f.write(f"is_oem_matrix={'true' if len(oem_variants) > 1 else 'false'}\n")
+                    f.write(f"active_oem={'true' if oem_info.get('active_oem') else 'false'}\n")
             except Exception:
                 pass
         sys.exit(0)

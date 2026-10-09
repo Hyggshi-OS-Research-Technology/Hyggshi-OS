@@ -71,6 +71,11 @@ sudo rm -rf live-build/chroot/tmp/hyggshi-extensions-sound-shortcut
 sudo cp -r app-for-hyggshi/hyggshi-extensions-sound-shortcut live-build/chroot/tmp/hyggshi-extensions-sound-shortcut
 sudo cp app-for-hyggshi/sound-shortcut.sh live-build/chroot/tmp/sound-shortcut.sh
 sudo chmod +x live-build/chroot/tmp/sound-shortcut.sh
+
+# Stage build-nexwm.sh cho HDE
+sudo cp scripts/build-nexwm.sh live-build/chroot/tmp/build-nexwm.sh
+sudo chmod +x live-build/chroot/tmp/build-nexwm.sh
+
 # Stage HCL config và file_copies cho desktop.sh
 if [ -f "tools/hcl_parser.py" ] && [ -f "iso-config/config/config.ini" ]; then
   python3 tools/hcl_parser.py iso-config/config/config.ini \
@@ -106,9 +111,18 @@ except Exception:
     done
   fi
 fi
+
+# OEM mode: Không build OEM trên local, chỉ build trên GitHub Actions
+if [ "${HCL_OEM_MODE:-false}" = "true" ] || [ "${OEM_MODE:-false}" = "true" ]; then
+  echo "ℹ️  Lưu ý: Chế độ OEM (OEM-mode-yes) chỉ thực hiện trên GitHub Actions — local build chạy chế độ tiêu chuẩn (OEM_MODE=false)."
+fi
+OEM_MODE="false"
+export OEM_MODE
+
 sudo chmod +x live-build/chroot/tmp/desktop.sh
 sudo chroot live-build/chroot env \
   BASE_DISTRO="$BASE_DISTRO" DE="$DE" EDITION="$EDITION" DEBUG_MODE="$DEBUG_MODE" \
+  OEM_MODE="$OEM_MODE" \
   ICON_THEME="$ICON_THEME" OS_USERNAME="$OS_USERNAME" OS_PASSWORD="$OS_PASSWORD" \
   OS_HOSTNAME="$OS_HOSTNAME" OS_TIMEZONE="$OS_TIMEZONE" \
   INCLUDE_BROWSER="$INCLUDE_BROWSER" INCLUDE_OFFICE="$INCLUDE_OFFICE" \
@@ -116,6 +130,16 @@ sudo chroot live-build/chroot env \
   SWAP_MODE="${SWAP_MODE:-}" SWAP_MB="${SWAP_MB:-0}" \
   FLATHUB_APPS="${HCL_FLATHUB_APPS:-}" \
   EXTRA_PACKAGES="$EXTRA_PACKAGES ${HCL_PACKAGES:-}" /tmp/desktop.sh
+
+# ===== HDE / NEXWM: build & cài HDE từ source NexWM nếu DE=hde hoặc BUILD_NEXWM=true =====
+if [ "$DE" = "hde" ] || [ "${BUILD_NEXWM:-false}" = "true" ] || [ "${HCL_BUILD_NEXWM:-false}" = "true" ]; then
+  echo "===== [build-nexwm.sh] Build & cài HDE từ source NexWM (trong chroot) ====="
+  sudo chroot live-build/chroot env \
+    DEBUG_MODE="$DEBUG_MODE" \
+    NEXWM_REPO_URL="https://github.com/Hyggshi-OS-Research-Technology/NexWM.git" \
+    HDE_DEFAULT_SESSION="true" \
+    /tmp/build-nexwm.sh || echo "⚠️  build-nexwm.sh gặp lỗi trong local-build."
+fi
 
 # ===== ECOSYSTEM: cài nexfetch, nexcode, nexwm... =====
 echo "===== Cài hệ sinh thái Hyggshi (trong chroot) ====="

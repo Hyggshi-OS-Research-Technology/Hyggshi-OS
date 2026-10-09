@@ -506,7 +506,9 @@ done
     echo "fi"
     echo ""
   fi
-  echo "menuentry \"$DISTRO_NAME Live\" {"
+  OEM_LABEL_SUFFIX=""
+  [ "${OEM_MODE:-false}" = "true" ] && OEM_LABEL_SUFFIX=" (OEM Install Mode)"
+  echo "menuentry \"$DISTRO_NAME Live${OEM_LABEL_SUFFIX}\" {"
   echo "  linux /live/vmlinuz boot=live $KERNEL_CMDLINE_EXTRA"
   echo "  initrd /live/initrd"
   echo "}"

@@ -201,6 +201,12 @@ if [ -d /tmp/calamares ]; then
   chmod -R a+rX /etc/calamares
   echo "OK: /etc/calamares đã được ghi đè hoàn toàn từ source Hyggshi."
 
+  # Cấu hình OEM setup trong settings.conf nếu OEM_MODE=true
+  if [ "${OEM_MODE:-false}" = "true" ] || [ "${HCL_OEM_MODE:-false}" = "true" ]; then
+    echo "===== Chế độ OEM: Bật oem-setup: true trong /etc/calamares/settings.conf ====="
+    sed -i -E 's/^([[:space:]]*oem-setup:[[:space:]]*).*/\1true/' /etc/calamares/settings.conf
+  fi
+
   # Cài đặt post-install hook cho Calamares (fix Secure Boot trên Dell/Lenovo/HP và branding)
   mkdir -p /usr/local/sbin
   if [ -f /tmp/calamares/hyggshi-secureboot-postinstall.sh ]; then
@@ -660,6 +666,24 @@ ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 dpkg-reconfigure -f noninteractive tzdata || true
 
 case "$DE" in
+  hde)
+    echo "===== Cài đặt HDE (Hyggshi Desktop Environment) từ NexWM ====="
+    apt-get install -y lightdm lightdm-gtk-greeter xorg x11-xserver-utils \
+      network-manager-gnome git build-essential pkg-config \
+      libgtk-3-dev libwnck-3-dev libxi-dev libxrandr-dev libx11-dev \
+      libgtk-layer-shell-dev libwayland-dev wayland-protocols libxcb1-dev \
+      metacity dbus dbus-x11 adwaita-icon-theme librsvg2-common libglib2.0-bin \
+      pulseaudio-utils power-profiles-daemon upower libnotify-bin 2>/dev/null || true
+
+    apt-get install -y lxpolkit 2>/dev/null || apt-get install -y mate-polkit 2>/dev/null || apt-get install -y policykit-1-gnome 2>/dev/null || true
+
+    if [ -f /tmp/build-nexwm.sh ]; then
+      echo "===== Chạy /tmp/build-nexwm.sh (cài đặt HDE từ nguồn NexWM) ====="
+      chmod +x /tmp/build-nexwm.sh
+      HDE_DEFAULT_SESSION=true /tmp/build-nexwm.sh || echo "⚠️  build-nexwm.sh gặp lỗi, tiếp tục hoàn tất các bước cấu hình khác."
+    fi
+    ;;
+
   kde)
     apt-get install -y kde-plasma-desktop plasma-workspace sddm \
       plasma-nm bluedevil kde-config-sddm dolphin konsole || \
@@ -1097,6 +1121,7 @@ case "$DE" in
   gnome)    : ;; # gnome-shell tự có agent tích hợp
   cinnamon) : ;; # cinnamon-settings-daemon tự có agent tích hợp
   kde)      : ;; # plasma-workspace tự có agent tích hợp (polkit-kde-agent)
+  hde)      apt-get install -y lxpolkit || apt-get install -y mate-polkit || apt-get install -y policykit-1-gnome || true ;;
 esac
 
 mkdir -p /etc/polkit-1/rules.d
@@ -1923,6 +1948,21 @@ case "$DE" in
       echo "CANH BAO: gdm3 khong tim thay cho DE=gnome" >&2
     fi
     ;;
+  hde)
+    if [ -f /usr/sbin/lightdm ]; then
+      echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager
+      mkdir -p /etc/lightdm/lightdm.conf.d
+      printf '[Seat:*]\nuser-session=hde\n' > /etc/lightdm/lightdm.conf.d/50-hde.conf
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable sddm 2>/dev/null || true
+        systemctl disable gdm3 2>/dev/null || true
+        systemctl enable lightdm 2>/dev/null || true
+      fi
+      echo "OK: đặt lightdm làm DM mặc định cho DE=hde"
+    else
+      echo "CANH BAO: lightdm khong tim thay cho DE=hde" >&2
+    fi
+    ;;
   *)
     # XFCE, MATE, Cinnamon dùng LightDM
     if [ -f /usr/sbin/lightdm ]; then
@@ -2012,6 +2052,15 @@ autologin-user-timeout=0
 autologin-session=cinnamon
 EOF
   fi
+elif [ "$DE" = "hde" ]; then
+  mkdir -p /etc/lightdm/lightdm.conf.d
+  cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=hde
+user-session=hde
+EOF
 else
   # Mặc định: XFCE + lightdm-gtk-greeter
   mkdir -p /etc/lightdm/lightdm.conf.d

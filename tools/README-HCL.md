@@ -69,8 +69,9 @@ python3 tools/hcl_parser.py iso-config/config/config.ini \
 ```
 
 
-Biến xuất ra `$GITHUB_ENV` bao gồm:
 - `HCL_BASE_DISTRO`, `HCL_DESKTOP_ENV`, `HCL_SWAP_MB`
+- `HCL_OEM_MODE`, `HCL_BUILD_ALL_OEM`, `OEM_MODE` (chế độ OEM cho Calamares, chỉ build trên GitHub Actions)
+- `BUILD_NEXWM`, `NEXWM_REPO_URL` (tự động bật khi DE = hde)
 - `HCL_FIRMWARE_PACKAGES`, `HCL_DESKTOP_PACKAGES`
 - `HCL_APP_INSTALLS`: danh sách tất cả file và URL app khai báo qua `fileinstall(...)` (ví dụ `./app-for-hyggshi/nexfetch...` hoặc `https://.../app.deb`)
 - `HCL_PACKAGES`: danh sách tất cả các gói hệ thống được bật `= true` trong `[package]` (được tự động chuyển tiếp vào `EXTRA_PACKAGES` cho `desktop.sh`)

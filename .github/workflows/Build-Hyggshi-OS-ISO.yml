@@ -70,10 +70,10 @@ on:
         options: [normal, developer, server, lite]
         default: "normal"
       desktop:
-        description: "Desktop environment (auto = tự động theo config.ini / Build-all-github-actions, all = build song song cả 6 DEs, hoặc chọn 1 DE cụ thể)"
+        description: "Desktop environment (auto = tự động theo config.ini / Build-all-github-actions, all = build song song các DEs, hoặc chọn 1 DE cụ thể)"
         required: false
         type: choice
-        options: [auto, all, xfce, kde, lxqt, gnome, mate, cinnamon]
+        options: [auto, all, xfce, kde, lxqt, gnome, mate, cinnamon, hde]
         default: "auto"
       panel_style:
         description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
@@ -111,7 +111,7 @@ on:
       # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như cũ — không script nào khác
       # (desktop.sh, welcome.sh...) phải đổi theo.
       feature_flags:
-        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme, arm64. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. arm64: build kiến trúc arm64 thay vì amd64 mặc định — CHỈ áp dụng khi distro = debian (xem [Architecture] trong config.ini + scripts/arch.sh); Ubuntu/Mint/Alpine/Arch/Fedora job chưa hỗ trợ, luôn build amd64 dù có cờ này. Chậm hơn amd64 đáng kể (QEMU binfmt emulation) và ISO chưa có UEFI Secure Boot signing. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
+        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme, arm64, oem. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. arm64: build kiến trúc arm64 thay vì amd64 mặc định — CHỈ áp dụng khi distro = debian (xem [Architecture] trong config.ini + scripts/arch.sh); Ubuntu/Mint/Alpine/Arch/Fedora job chưa hỗ trợ, luôn build amd64 dù có cờ này. oem: bật chế độ OEM (Calamares oem-setup) cho nhà sản xuất/lắp ráp máy. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
         required: false
         default: "browser,autologin,autoscale,welcome,auto-theme"
       extra_packages:
@@ -188,6 +188,8 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       is_matrix: ${{ steps.set-matrix.outputs.is_matrix }}
+      oem_matrix: ${{ steps.set-matrix.outputs.oem_matrix }}
+      is_oem_matrix: ${{ steps.set-matrix.outputs.is_oem_matrix }}
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
@@ -201,7 +203,7 @@ jobs:
             --print-matrix-json
 
   build-iso:
-    name: "Build ISO (${{ matrix.desktop }})"
+    name: "Build ISO (${{ matrix.desktop }}${{ matrix.oem == 'yes' && ' - OEM' || '' }})"
     needs: matrix-prep
     runs-on: ubuntu-26.04
     
@@ -210,9 +212,11 @@ jobs:
       fail-fast: false
       matrix:
         desktop: ${{ fromJson(needs.matrix-prep.outputs.matrix) }}
+        oem: ${{ fromJson(needs.matrix-prep.outputs.oem_matrix || '["no"]') }}
     env:
       DE: ${{ matrix.desktop }}
-      ISO_FILENAME: "hyggshi-os-${{ matrix.desktop }}-${{ github.run_number }}.iso"
+      OEM: ${{ matrix.oem }}
+      ISO_FILENAME: "hyggshi-os-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-${{ github.run_number }}.iso"
     # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -243,7 +247,7 @@ jobs:
       - name: Upload resolved config.ini (debug)
         uses: actions/upload-artifact@v4
         with:
-          name: hcl-resolved-config-${{ matrix.desktop }}
+          name: hcl-resolved-config-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}
           path: /tmp/hcl-resolved.json
           retention-days: 14
 
@@ -312,6 +316,11 @@ jobs:
           else
             echo "ARCH=amd64" >> "$GITHUB_ENV"
           fi
+          if [ "${{ matrix.oem || '' }}" = "yes" ] || [ "$(has_flag oem)" = "true" ] || [ "${HCL_OEM_MODE:-false}" = "true" ]; then
+            echo "OEM_MODE=true" >> "$GITHUB_ENV"
+          else
+            echo "OEM_MODE=false" >> "$GITHUB_ENV"
+          fi
 
       # QEMU user-mode binfmt: CẦN cho debootstrap --arch=arm64 + chroot chạy
       # binary arm64 trên runner ubuntu-latest (amd64) — không có bước này,
@@ -370,6 +379,7 @@ jobs:
         run: |
           sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
           sudo cp scripts/kernel-tuning.sh "${CHROOT_DIR}/tmp/kernel-tuning.sh"
+          sudo cp scripts/build-nexwm.sh "${CHROOT_DIR}/tmp/build-nexwm.sh"
           sudo cp scripts/arch.sh "${CHROOT_DIR}/tmp/arch.sh"
           sudo cp scripts/secureboot.sh "${CHROOT_DIR}/tmp/secureboot.sh"
           sudo cp scripts/fix-cinnamon-tela-persistence.sh "${CHROOT_DIR}/tmp/fix-cinnamon-tela-persistence.sh"
@@ -446,6 +456,7 @@ jobs:
             EDITION="$EDITION" \
             ARCH="$ARCH" \
             DEBUG_MODE="$DEBUG_MODE" \
+            OEM_MODE="$OEM_MODE" \
             ICON_THEME="$ICON_THEME" \
             OS_USERNAME="$OS_USERNAME" \
             OS_PASSWORD="$OS_PASSWORD" \
@@ -580,23 +591,20 @@ jobs:
           mkdir -p /etc/skel/.local/share/cinnamon/themes
           CHROOT_SCRIPT
 
-      # === 3.5) NEXWM: clone + build (make) + cài NexWM TỪ SOURCE, và tạo
-      # đúng X11 session (/usr/share/xsessions/nexwm.desktop, Type=XSession)
-      # — chạy BÊN TRONG chroot (giống desktop.sh/welcome.sh) vì binary +
-      # session file cần nằm trong rootfs của ISO, không phải máy runner CI.
-      # Chạy SONG SONG với bước cài .deb nexfetch/nexwm-binary.zip có sẵn ở
-      # bước [install-ecosystem-for-hyggshi.sh] bên dưới — không xoá bước đó.
-      # TUỲ CHỌN, KHÔNG mặc định: chỉ chạy khi input build_nexwm = true
-      # (xem BUILD_NEXWM ở env cấp workflow) — build từ source tốn nhiều
-      # thời gian CI hơn hẳn so với cài sẵn .deb ở bước ecosystem bên dưới.
-      - name: "[build-nexwm.sh] Build & cài NexWM từ source (trong chroot)"
-        if: ${{ env.BUILD_NEXWM == 'true' }}
+      # === 3.5) NEXWM / HDE: clone + build (make) + cài HDE TỪ SOURCE NexWM
+      # và tạo session X11/Wayland (/usr/share/xsessions/hde.desktop, nexwm.desktop)
+      # — chạy BÊN TRONG chroot vì binary + session file nằm trong rootfs ISO.
+      # Tự động kích hoạt khi DE=hde hoặc BUILD_NEXWM=true.
+      - name: "[build-nexwm.sh] Build & cài HDE từ source NexWM (trong chroot)"
+        if: ${{ env.BUILD_NEXWM == 'true' || env.DE == 'hde' || matrix.desktop == 'hde' }}
         run: |
           set -o pipefail
           sudo cp scripts/build-nexwm.sh "${CHROOT_DIR}/tmp/build-nexwm.sh"
           sudo chmod +x "${CHROOT_DIR}/tmp/build-nexwm.sh"
           sudo chroot "${CHROOT_DIR}" env \
             DEBUG_MODE="$DEBUG_MODE" \
+            HDE_DEFAULT_SESSION="true" \
+            NEXWM_REPO_URL="https://github.com/Hyggshi-OS-Research-Technology/NexWM.git" \
             /tmp/build-nexwm.sh 2>&1 | tee nexwm-build-debug.log
 
       # === 4) ECOSYSTEM: mở app-for-hyggshi/*.zip, cài .deb, cấu hình
@@ -824,7 +832,7 @@ jobs:
         if: ${{ env.DEBUG_MODE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-debug-${{ matrix.desktop }}
+          name: hyggshi-os-debug-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}
           path: |
             install-debug.log
             nexwm-build-debug.log
@@ -849,7 +857,7 @@ jobs:
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-${{ matrix.desktop }}-iso
+          name: hyggshi-os-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-iso
           path: |
             ${{ env.ISO_FILENAME }}
             ${{ env.ISO_FILENAME }}.sha256
