@@ -1,0 +1,144 @@
+name: "Reusable - Package DEB & Checksum"
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: "Tên gói debian (vd: hyggshi-welcome, nexwm)"
+        required: true
+        type: string
+      version:
+        description: "Phiên bản gói (vd: 1.0.0)"
+        required: true
+        type: string
+      architecture:
+        description: "Kiến trúc CPU (amd64, arm64, all)"
+        required: false
+        type: string
+        default: "amd64"
+      source_path:
+        description: "Đường dẫn thư mục chứa mã nguồn trong repo"
+        required: false
+        type: string
+        default: "."
+      build_system:
+        description: "Hệ thống build (cmake, make, manual)"
+        required: false
+        type: string
+        default: "cmake"
+      run_shellcheck:
+        description: "Chạy kiểm tra cú pháp script trước khi build"
+        required: false
+        type: boolean
+        default: true
+      maintainer:
+        description: "Thông tin maintainer cho Debian control file"
+        required: false
+        type: string
+        default: "Hyggshi OS Ecosystem <hyggshi@research.tech>"
+      description:
+        description: "Mô tả ngắn về gói ứng dụng"
+        required: false
+        type: string
+        default: "Application package for Hyggshi OS ecosystem"
+    outputs:
+      deb_filename:
+        description: "Tên file .deb đã tạo"
+        value: ${{ jobs.build-and-package.outputs.deb_filename }}
+      sha256_checksum:
+        description: "Mã băm SHA256 của file .deb"
+        value: ${{ jobs.build-and-package.outputs.sha256_checksum }}
+
+jobs:
+  build-and-package:
+    name: "Build & Package ${{ inputs.package_name }}"
+    runs-on: ubuntu-latest
+    outputs:
+      deb_filename: ${{ steps.package.outputs.deb_filename }}
+      sha256_checksum: ${{ steps.package.outputs.sha256_checksum }}
+    steps:
+      - name: "Checkout source code"
+        uses: actions/checkout@v4
+
+      - name: "Install build dependencies"
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake dpkg-dev shellcheck qtbase5-dev qttools5-dev-tools
+
+      - name: "Optional ShellCheck validation"
+        if: ${{ inputs.run_shellcheck }}
+        shell: bash
+        run: |
+          echo "Scanning shell scripts in source path..."
+          if find "${{ inputs.source_path }}" -type f -name "*.sh" | grep -q .; then
+            find "${{ inputs.source_path }}" -type f -name "*.sh" -exec shellcheck --severity=error {} +
+          else
+            echo "No shell scripts found to lint."
+          fi
+
+      - name: "Build and create .deb package"
+        id: package
+        shell: bash
+        run: |
+          PKG_NAME="${{ inputs.package_name }}"
+          PKG_VER="${{ inputs.version }}"
+          PKG_ARCH="${{ inputs.architecture }}"
+          BUILD_SYS="${{ inputs.build_system }}"
+          SRC="${{ inputs.source_path }}"
+          
+          DEB_FILE="${PKG_NAME}_${PKG_VER}_${PKG_ARCH}.deb"
+          STAGE_DIR="staging_${PKG_NAME}"
+          mkdir -p "${STAGE_DIR}/DEBIAN"
+          
+          if [ "$BUILD_SYS" = "cmake" ] && [ -f "${SRC}/CMakeLists.txt" ]; then
+            echo "Building with CMake..."
+            mkdir -p "${SRC}/build_reusable"
+            cd "${SRC}/build_reusable"
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            make -j$(nproc)
+            make install DESTDIR="../../${STAGE_DIR}"
+            cd ../..
+          elif [ "$BUILD_SYS" = "make" ] && [ -f "${SRC}/Makefile" ]; then
+            echo "Building with Make..."
+            cd "${SRC}"
+            make -j$(nproc)
+            make install DESTDIR="../${STAGE_DIR}" PREFIX=/usr
+            cd ..
+          else
+            echo "Manual staging from source files..."
+            if [ -d "${SRC}/usr" ]; then
+              cp -r "${SRC}/usr" "${STAGE_DIR}/"
+            fi
+            if [ -d "${SRC}/etc" ]; then
+              cp -r "${SRC}/etc" "${STAGE_DIR}/"
+            fi
+          fi
+
+          # Generate DEBIAN/control file
+          printf 'Package: %s\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: %s\nMaintainer: %s\nDescription: %s\n' \
+            "$PKG_NAME" "$PKG_VER" "$PKG_ARCH" "${{ inputs.maintainer }}" "${{ inputs.description }}" > "${STAGE_DIR}/DEBIAN/control"
+
+          # Build .deb
+          mkdir -p output
+          dpkg-deb --build "${STAGE_DIR}" "output/${DEB_FILE}"
+          
+          # Calculate SHA256 checksum
+          cd output
+          CHECKSUM=$(sha256sum "${DEB_FILE}" | awk '{print $1}')
+          sha256sum "${DEB_FILE}" > "${DEB_FILE}.sha256"
+          cd ..
+          
+          echo "Package built: output/${DEB_FILE}"
+          echo "SHA256: ${CHECKSUM}"
+          
+          echo "deb_filename=${DEB_FILE}" >> $GITHUB_OUTPUT
+          echo "sha256_checksum=${CHECKSUM}" >> $GITHUB_OUTPUT
+
+      - name: "Upload Deb Package Artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package_name }}-${{ inputs.version }}-${{ inputs.architecture }}-deb
+          path: output/*
+          retention-days: 14

@@ -1,0 +1,68 @@
+name: "Workflow & Script Linting"
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "*.sh"
+      - "app-for-hyggshi/**"
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "*.sh"
+      - "app-for-hyggshi/**"
+  workflow_dispatch:
+
+jobs:
+  actionlint:
+    name: "Actionlint (GitHub Actions Workflows)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Download & Install actionlint"
+        shell: bash
+        run: |
+          echo "Installing latest actionlint binary..."
+          bash <(curl -sL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -version
+
+      - name: "Run actionlint"
+        shell: bash
+        run: |
+          echo "Scanning .github/workflows for syntax, expression, and context errors..."
+          # actionlint automatically uses shellcheck to inspect inline run scripts when present in PATH
+          ./actionlint -color
+
+  shellcheck:
+    name: "ShellCheck & Bash Syntax"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Verify Bash Syntax (bash -n)"
+        shell: bash
+        run: |
+          echo "Verifying Bash syntax across all shell scripts..."
+          find . -type f -name "*.sh" -not -path '*/.*' -print0 | xargs -0 -n 1 bash -n
+          echo "All bash scripts passed syntax validation!"
+
+      - name: "Run ShellCheck"
+        shell: bash
+        run: |
+          echo "Running ShellCheck on scripts..."
+          # Chạy kiểm tra với mức độ nghiêm trọng (severity=error) để bắt các lỗi logic/cú pháp nghiêm trọng
+          shellcheck --severity=error $(find scripts -type f -name "*.sh")
+          if [ -f "branding.sh" ]; then
+            shellcheck --severity=error branding.sh
+          fi
+          if [ -d "app-for-hyggshi" ]; then
+            find app-for-hyggshi -type f -name "*.sh" -exec shellcheck --severity=error {} +
+          fi
+          echo "ShellCheck completed successfully!"

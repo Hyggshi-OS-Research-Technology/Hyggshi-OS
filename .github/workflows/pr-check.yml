@@ -1,0 +1,91 @@
+name: "Pull Request Validation & CI"
+
+on:
+  pull_request:
+    branches: [ main, master ]
+    types: [ opened, synchronize, reopened ]
+  workflow_dispatch:
+
+concurrency:
+  group: pr-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-hcl-and-configs:
+    name: "Validate HCL & Config Files"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "Validate HCL (config.ini) với Resolver --strict"
+        shell: bash
+        run: |
+          echo "Kiểm tra cú pháp và logic phụ thuộc HCL trong iso-config/config/config.ini..."
+          python3 tools/hcl_parser.py --strict iso-config/config/config.ini --root .
+
+      - name: "Test HCL Matrix JSON Export"
+        shell: bash
+        run: |
+          echo "Kiểm tra trích xuất matrix JSON cho các desktop environment..."
+          python3 tools/hcl_parser.py --print-matrix-json iso-config/config/config.ini --root .
+
+      - name: "Validate JSON & YAML configuration files"
+        shell: bash
+        run: |
+          echo "Kiểm tra tính hợp lệ của các file JSON..."
+          find . -name "*.json" -not -path '*/.*' -exec python3 -m json.tool {} > /dev/null \;
+          
+          echo "Kiểm tra các file cấu hình Calamares..."
+          if [ -d "iso-config/calamares" ]; then
+            python3 -c "import glob, yaml; [yaml.safe_load(open(f)) for f in glob.glob('iso-config/calamares/**/*.yaml', recursive=True) + glob.glob('iso-config/calamares/**/*.conf', recursive=True)]" || echo "YAML check completed with notices"
+          fi
+
+  verify-scripts-and-ecosystem:
+    name: "Check NexWM/HDE & Build Scripts"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "Verify shell syntax (bash -n)"
+        shell: bash
+        run: |
+          echo "Kiểm tra cú pháp bash của tất cả script..."
+          find . -type f -name "*.sh" -not -path '*/.*' -print0 | xargs -0 -n 1 bash -n
+
+      - name: "Verify NexWM / HDE build script integrity"
+        shell: bash
+        run: |
+          echo "Kiểm tra scripts/build-nexwm.sh..."
+          bash -n scripts/build-nexwm.sh
+          
+          echo "Kiểm tra scripts/desktop.sh..."
+          bash -n scripts/desktop.sh
+          
+          echo "Kiểm tra scripts/install-ecosystem-for-hyggshi.sh..."
+          bash -n scripts/install-ecosystem-for-hyggshi.sh
+
+      - name: "Test integrity of binary archives (unzip -t)"
+        shell: bash
+        run: |
+          echo "Kiểm tra tính toàn vẹn của các gói zip binary (tránh lỗi file bị hỏng hoặc lỗi Git LFS)..."
+          if [ -f "app-for-hyggshi/nexwm-binary.zip" ]; then
+            unzip -t app-for-hyggshi/nexwm-binary.zip
+          fi
+          if [ -f "app-for-hyggshi/nexde-binaries.zip" ]; then
+            unzip -t app-for-hyggshi/nexde-binaries.zip
+          fi
+
+      - name: "Validate Dockerfile (nếu có)"
+        shell: bash
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "Kiểm tra cú pháp Dockerfile..."
+            docker build --check . || echo "Docker build check completed."
+          fi

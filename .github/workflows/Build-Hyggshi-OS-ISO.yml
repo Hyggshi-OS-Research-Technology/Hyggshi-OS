@@ -183,7 +183,7 @@ env:
 jobs:
   matrix-prep:
     name: "Chuẩn bị Desktop Matrix"
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -205,7 +205,7 @@ jobs:
   build-iso:
     name: "Build ISO (${{ matrix.desktop }}${{ matrix.oem == 'yes' && ' - OEM' || '' }})"
     needs: matrix-prep
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     strategy:

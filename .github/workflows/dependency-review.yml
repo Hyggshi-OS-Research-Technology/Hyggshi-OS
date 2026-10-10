@@ -1,0 +1,28 @@
+name: "Dependency Review & Security"
+
+on:
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: "Dependency Review & Vulnerability Check"
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'Hyggshi-OS-Research-Technology' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "Dependency Review Action"
+        uses: actions/dependency-review-action@v4
+        with:
+          # Cảnh báo và chặn PR nếu phát hiện lỗ hổng nghiêm trọng (high hoặc critical)
+          fail-on-severity: high
+          comment-summary-in-pr: always
+          deny-licenses: GPL-3.0, AGPL-3.0
+          # Cho phép retry nếu GitHub dependency graph chưa hoàn tất snapshot
+          retry-on-snapshot-warnings: true

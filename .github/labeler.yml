@@ -1,0 +1,51 @@
+# Cấu hình tự động gắn nhãn cho Pull Request theo file thay đổi (actions/labeler v5)
+# Áp dụng cho các thành phần của Hyggshi OS
+
+desktop:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'app-for-hyggshi/**'
+          - 'scripts/desktop.sh'
+          - 'scripts/build-nexwm.sh'
+          - 'scripts/*theme*.sh'
+          - 'scripts/plymouth.sh'
+          - 'scripts/sound-shortcut.sh'
+          - '.nexcode/**'
+
+build-system:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/iso.sh'
+          - 'scripts/build.sh'
+          - 'scripts/local-build.sh'
+          - 'scripts/repack.sh'
+          - 'scripts/arch.sh'
+          - 'scripts/kernel-tuning.sh'
+          - 'scripts/distros/**'
+          - 'branding.sh'
+          - 'Dockerfile'
+          - '.github/workflows/**'
+
+installer:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'iso-config/calamares/**'
+          - 'iso-config/branding/**'
+          - 'iso-config/config/**'
+          - 'tools/hcl_parser.py'
+          - 'tools/README-HCL.md'
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/secureboot.sh'
+          - 'docs/SECURE_BOOT.md'
+          - '.github/workflows/dependency-review.yml'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '*.md'
+          - '**/*.md'
+          - 'LICENSE'

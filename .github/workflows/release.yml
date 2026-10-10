@@ -1,0 +1,145 @@
+name: "Package & Publish Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag hoặc phiên bản phát hành (vd: v1.4.2)"
+        required: true
+        default: "v1.4.2"
+      sf_iso_url:
+        description: "Đường dẫn tải ISO trên SourceForge (nếu có)"
+        required: false
+        default: "https://sourceforge.net/projects/hyggshi-os/files/"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: "Build Packages & Publish GitHub Release"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Install Build Dependencies"
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake qtbase5-dev qttools5-dev-tools dpkg-dev
+
+      - name: "Determine Tag & Version"
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: "Prepare Release Directory"
+        shell: bash
+        run: |
+          mkdir -p dist
+
+      - name: "Package Hyggshi Ecosystem Applications (.deb)"
+        shell: bash
+        run: |
+          echo "Building deb packages for Hyggshi apps..."
+          
+          # 1. Package hyggshi-welcome
+          if [ -d "app-for-hyggshi/hyggshi-welcome" ]; then
+            echo "Packaging hyggshi-welcome..."
+            mkdir -p app-for-hyggshi/hyggshi-welcome/build
+            cd app-for-hyggshi/hyggshi-welcome/build
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            make -j$(nproc)
+            
+            # Staging directory for .deb
+            STAGE_DIR="deb-pkg"
+            mkdir -p "${STAGE_DIR}/DEBIAN"
+            make install DESTDIR="${STAGE_DIR}"
+            
+            printf 'Package: hyggshi-welcome\nVersion: %s\nSection: x11\nPriority: optional\nArchitecture: amd64\nMaintainer: Hyggshi OS Team <hyggshi@research.tech>\nDescription: Welcome wizard and quick settings application for Hyggshi OS\n' "$VERSION" > "${STAGE_DIR}/DEBIAN/control"
+            dpkg-deb --build "${STAGE_DIR}" "../../../dist/hyggshi-welcome_${VERSION}_amd64.deb"
+            cd ../../..
+          fi
+
+          # 2. Package hyggshi-extensions-sound-shortcut
+          if [ -d "app-for-hyggshi/hyggshi-extensions-sound-shortcut" ]; then
+            echo "Packaging hyggshi-extensions-sound-shortcut..."
+            mkdir -p app-for-hyggshi/hyggshi-extensions-sound-shortcut/build
+            cd app-for-hyggshi/hyggshi-extensions-sound-shortcut/build
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            make -j$(nproc)
+            
+            STAGE_DIR="deb-pkg"
+            mkdir -p "${STAGE_DIR}/DEBIAN"
+            make install DESTDIR="${STAGE_DIR}"
+            
+            printf 'Package: hyggshi-extensions-sound-shortcut\nVersion: %s\nSection: x11\nPriority: optional\nArchitecture: amd64\nMaintainer: Hyggshi OS Team <hyggshi@research.tech>\nDescription: Hyggshi OS Audio & Sound switcher shortcut extension\n' "$VERSION" > "${STAGE_DIR}/DEBIAN/control"
+            dpkg-deb --build "${STAGE_DIR}" "../../../dist/hyggshi-extensions-sound-shortcut_${VERSION}_amd64.deb"
+            cd ../../..
+          fi
+
+          # 3. Copy bundled binaries and utilities
+          if [ -f "app-for-hyggshi/nexde-binaries.zip" ]; then
+            cp "app-for-hyggshi/nexde-binaries.zip" "dist/nexde-binaries-${VERSION}.zip"
+          fi
+          if [ -f "app-for-hyggshi/nexwm-binary.zip" ]; then
+            cp "app-for-hyggshi/nexwm-binary.zip" "dist/nexwm-binary-${VERSION}.zip"
+          fi
+
+      - name: "Generate Version Metadata"
+        shell: bash
+        run: |
+          printf '{\n  "project": "Hyggshi OS",\n  "tag": "%s",\n  "version": "%s",\n  "git_commit": "%s",\n  "build_timestamp": "%s",\n  "supported_distros": ["debian", "ubuntu", "linuxmint", "arch", "fedora", "alpine"],\n  "ecosystem": ["HDE", "NexWM", "NexCode"]\n}\n' \
+            "$TAG" "$VERSION" "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/metadata.json
+
+      - name: "Generate SHA256 Checksums"
+        shell: bash
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          echo "==== SHA256 Checksums ===="
+          cat SHA256SUMS.txt
+          cd ..
+
+      - name: "Create GitHub Release & Upload Assets"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "Hyggshi OS ${{ env.TAG }}"
+          files: |
+            dist/*
+          generate_release_notes: true
+          body: |
+            ## Hyggshi OS ${{ env.TAG }} Release
+
+            ### 📦 Phát hành & Tải về
+            - **ISO Images:** Tải các bản ISO cài đặt đầy đủ tại [SourceForge Files](${{ github.event.inputs.sf_iso_url || 'https://sourceforge.net/projects/hyggshi-os/files/' }}).
+            - **Gói ứng dụng (.deb) & Binaries:** Đã được đính kèm trực tiếp trong Release assets bên dưới.
+
+            ### 🔒 Mã băm SHA256 (Checksums)
+            Kiểm tra tính toàn vẹn của tệp đã tải bằng lệnh:
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ### ℹ️ Thông tin phiên bản
+            - **Phiên bản:** `${{ env.VERSION }}`
+            - **Commit SHA:** `${{ github.sha }}`
+            - **Thời gian đóng gói:** `$(date -u +'%Y-%m-%d %H:%M:%S UTC')`
