@@ -195,11 +195,14 @@ fi
 # cấu hình Hyggshi bằng cấu hình Debian mặc định.
 if [ -d /tmp/calamares ]; then
   echo "===== Ghi đè /etc/calamares bằng iso-config/calamares ====="
-  rm -rf /etc/calamares
-  mkdir -p /etc/calamares
+  # KHÔNG rm -rf /etc/calamares: calamares-settings-debian cung cấp partition.conf,
+  # locale.conf, keyboard.conf, shellprocess (sources-media, dpkg-unsafe-io, ...).
+  # Xóa hết sẽ làm module partition thiếu config -> "failed to create partition".
+  # Chỉ ghi đè (overlay) file của Hyggshi lên trên.
+  mkdir -p /etc/calamares/modules
   cp -a /tmp/calamares/. /etc/calamares/
   chmod -R a+rX /etc/calamares
-  echo "OK: /etc/calamares đã được ghi đè hoàn toàn từ source Hyggshi."
+  echo "OK: /etc/calamares đã được overlay bằng source Hyggshi."
 
   # Cấu hình OEM setup trong settings.conf nếu OEM_MODE=true
   if [ "${OEM_MODE:-false}" = "true" ] || [ "${HCL_OEM_MODE:-false}" = "true" ]; then
