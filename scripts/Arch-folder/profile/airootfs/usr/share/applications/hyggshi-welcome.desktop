@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hyggshi OS Welcome
+Comment=Welcome Center and Quick Setup for Hyggshi OS
+Exec=/usr/local/bin/hyggshi-welcome
+Icon=hyggshi-logo
+Terminal=false
+Categories=System;Utility;Qt;
+StartupNotify=true
+X-KDE-autostart-after=panel

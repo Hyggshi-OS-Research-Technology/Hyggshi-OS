@@ -1,0 +1,17 @@
+[Unit]
+Description=Add the Flathub remote for Flatpak (Discover)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/var/lib/hyggshi/flathub-added
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/mkdir -p /var/lib/hyggshi
+ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+ExecStartPost=/usr/bin/touch /var/lib/hyggshi/flathub-added
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

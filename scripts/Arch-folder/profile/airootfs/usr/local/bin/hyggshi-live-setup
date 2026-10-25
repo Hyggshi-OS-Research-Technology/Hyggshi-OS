@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Runs once at live-boot: creates "liveuser" (autologin, passwordless sudo).
+# Not baked into /etc/passwd so the installed system never contains it.
+set -eu
+
+groupadd -rf autologin
+groupadd -rf nopasswdlogin
+
+if ! id liveuser &>/dev/null; then
+    useradd -m -u 1000 -s /bin/bash -c "Hyggshi Live User" \
+        -G wheel,audio,video,storage,optical,lp,power,network,autologin,nopasswdlogin \
+        liveuser
+fi
+echo "liveuser:liveuser" | chpasswd
+
+# Desktop shortcut for the installer
+desk=/home/liveuser/Desktop
+install -d -o liveuser -g liveuser "$desk"
+install -m 755 -o liveuser -g liveuser \
+    /usr/local/share/hyggshi/install-hyggshi.desktop "$desk/install-hyggshi.desktop"

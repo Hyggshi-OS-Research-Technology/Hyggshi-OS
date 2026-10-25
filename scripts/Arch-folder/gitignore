@@ -1,0 +1,9 @@
+# Secure Boot signing keys: NEVER commit private keys
+keys/
+*.key
+*.pem
+*.p12
+*.pfx
+# build output
+work/
+out/

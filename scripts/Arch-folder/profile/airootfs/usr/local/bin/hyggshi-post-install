@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Hyggshi OS Post-Install Script
+# Runs in the *target* chroot right after Calamares unpackfs / cleanup phase.
+# Strips all live-ISO artifacts so the installed system is a pristine, secure Hyggshi OS.
+set -u
+
+echo "==> [Hyggshi Post-Install] Starting target system cleanup and configuration..."
+
+# 1) Kernel restoration:
+# mkarchiso strips /boot/vmlinuz-linux from squashfs. Restore from /usr/lib/modules/<ver>/vmlinuz
+mkdir -p /boot
+k=$(ls -1 /usr/lib/modules/*/vmlinuz 2>/dev/null | sort -V | tail -n 1)
+if [ -n "$k" ] && [ -f "$k" ]; then
+    echo "==> Restoring kernel to /boot/vmlinuz-linux from $k"
+    cp -f "$k" /boot/vmlinuz-linux
+else
+    echo "WARNING: No kernel found under /usr/lib/modules" >&2
+fi
+
+# 2) Strip liveuser and live credentials
+echo "==> Removing liveuser, live sessions and passwordless sudo..."
+if id -u liveuser >/dev/null 2>&1; then
+    userdel -r -f liveuser 2>/dev/null || true
+fi
+groupdel autologin 2>/dev/null || true
+groupdel nopasswdlogin 2>/dev/null || true
+rm -rf /home/liveuser
+rm -f  /etc/sudoers.d/10-liveuser
+rm -f  /etc/sddm.conf.d/50-hyggshi-live.conf
+rm -f  /etc/lightdm/lightdm.conf.d/50-hyggshi-live.conf
+rm -rf /etc/systemd/system/getty@tty1.service.d
+
+# 3) Remove live ISO-only services and generators
+echo "==> Disabling ISO-only systemd services..."
+LIVE_SERVICES=(
+    pacman-init
+    choose-mirror
+    livecd-talk
+    livecd-alsa-unmuter
+    hyggshi-live-setup
+    hyggshi-flathub
+)
+for s in "${LIVE_SERVICES[@]}"; do
+    rm -f "/etc/systemd/system/$s.service" \
+          "/etc/systemd/system/multi-user.target.wants/$s.service" \
+          "/etc/systemd/system/sound.target.wants/$s.service"
+done
+
+rm -f  /etc/systemd/system/etc-pacman.d-gnupg.mount
+rm -f  /etc/systemd/system-generators/systemd-gpt-auto-generator
+rm -f  /etc/systemd/logind.conf.d/do-not-suspend.conf
+rm -f  /etc/systemd/journald.conf.d/volatile-storage.conf
+rm -f  /etc/motd
+rm -f  /etc/pacman.d/hooks/uncomment-mirrors.hook
+rm -f  /etc/pacman.d/hooks/zzzz99-remove-custom-hooks-from-airootfs.hook
+rm -f  /root/.automated_script.sh /root/.zlogin
+
+# 4) Clean live-only helper scripts but KEEP installed hyggshi tools
+rm -f  /usr/local/bin/{choose-mirror,livecd-sound,Installation_guide}
+rm -rf /usr/local/share/livecd-sound
+
+# 5) Reset and initialize unique machine-id
+echo "==> Resetting machine-id..."
+rm -f /etc/machine-id /var/lib/dbus/machine-id
+if command -v systemd-machine-id-setup >/dev/null 2>&1; then
+    systemd-machine-id-setup
+else
+    touch /etc/machine-id
+fi
+
+# 6) Initialize pacman keyring for the installed system
+echo "==> Initializing target pacman keyring..."
+pacman-key --init 2>/dev/null || true
+pacman-key --populate archlinux 2>/dev/null || true
+
+# 7) Regenerate initramfs for the target system (remove archiso hook configs first)
+rm -f /etc/mkinitcpio.conf.d/archiso.conf
+if [ -f /boot/vmlinuz-linux ] && command -v mkinitcpio >/dev/null 2>&1; then
+    echo "==> Regenerating clean initramfs with mkinitcpio -P..."
+    mkinitcpio -P || echo "WARNING: mkinitcpio failed during post-install"
+fi
+
+# 8) Enable essential desktop system services
+echo "==> Enabling installed system services..."
+for svc in sddm.service NetworkManager.service bluetooth.service cups.service power-profiles-daemon.service fstrim.timer; do
+    systemctl enable "$svc" 2>/dev/null || true
+done
+
+# 9) Ensure Hyggshi release files and branding are intact
+if [ ! -f /etc/hyggshi-release ]; then
+    echo "Hyggshi OS Arch Edition release 2.0.0 (rolling)" > /etc/hyggshi-release
+fi
+[ -f /etc/hyggshi-edition ] || echo "Arch Edition" > /etc/hyggshi-edition
+[ -f /etc/hyggshi-version ] || echo "2.0.0" > /etc/hyggshi-version
+
+# 10) Remove Calamares installer packages and configs from target
+echo "==> Removing Calamares installer from target system..."
+pacman -Rns --noconfirm calamares 2>/dev/null || true
+rm -rf /etc/calamares
+rm -f  /usr/local/share/hyggshi/install-hyggshi.desktop
+
+echo "==> [Hyggshi Post-Install] Complete!"
+exit 0

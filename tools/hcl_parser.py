@@ -541,10 +541,16 @@ class Resolver:
             return None
 
         if len(true_keys) > 1:
-            self.diags.append(Diagnostic(
-                "error",
-                f"ERROR {err_code}: [{section_name}] requires exactly one {noun}. "
-                f"Found {len(true_keys)}: {', '.join(true_keys)}"))
+            if is_base_sec:
+                self.diags.append(Diagnostic(
+                    "warning",
+                    f"[{section_name}] có {len(true_keys)} base distro được bật ({', '.join(true_keys)}). "
+                    f"Sử dụng base đầu tiên ({true_keys[0]}) làm base mặc định cho build."))
+            else:
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"ERROR {err_code}: [{section_name}] requires exactly one {noun}. "
+                    f"Found {len(true_keys)}: {', '.join(true_keys)}"))
         return true_keys[0]
 
     def resolve_architecture(self) -> str:

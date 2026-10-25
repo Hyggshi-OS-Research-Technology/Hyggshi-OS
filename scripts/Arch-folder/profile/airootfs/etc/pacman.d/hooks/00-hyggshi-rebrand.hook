@@ -1,0 +1,13 @@
+# remove from airootfs!
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+
+[Action]
+Description = Rebranding os-release / issue for Hyggshi OS...
+When = PostTransaction
+Depends = sed
+Depends = sh
+Exec = /usr/local/bin/hyggshi-rebrand

@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""
+Hyggshi OS Welcome Center
+A sleek, lightweight welcome application for Hyggshi OS Arch Edition.
+"""
+
+import sys
+import os
+import subprocess
+import webbrowser
+
+def is_live_session():
+    return os.path.exists("/run/archiso") or os.environ.get("USER") == "liveuser"
+
+def run_command(cmd, detached=True):
+    try:
+        if detached:
+            subprocess.Popen(cmd, shell=isinstance(cmd, str), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run(cmd, shell=isinstance(cmd, str))
+    except Exception as e:
+        print(f"Error launching {cmd}: {e}", file=sys.stderr)
+
+def open_url(url):
+    webbrowser.open(url)
+
+def set_autostart(enable):
+    autostart_dir = os.path.expanduser("~/.config/autostart")
+    desktop_file = os.path.join(autostart_dir, "hyggshi-welcome.desktop")
+    os.makedirs(autostart_dir, exist_ok=True)
+    if enable:
+        content = """[Desktop Entry]
+Type=Application
+Name=Hyggshi OS Welcome
+Exec=/usr/local/bin/hyggshi-welcome
+Icon=hyggshi-logo
+Terminal=false
+Categories=System;Utility;
+X-KDE-autostart-after=panel
+"""
+        with open(desktop_file, "w") as f:
+            f.write(content)
+    else:
+        if os.path.exists(desktop_file):
+            try:
+                os.remove(desktop_file)
+            except OSError:
+                pass
+
+def is_autostart_enabled():
+    desktop_file = os.path.expanduser("~/.config/autostart/hyggshi-welcome.desktop")
+    return os.path.exists(desktop_file)
+
+
+# ----------------------------------------------------------------------
+# PyQt6 GUI Implementation
+# ----------------------------------------------------------------------
+def run_qt_gui():
+    from PyQt6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QGridLayout, QPushButton, QLabel, QCheckBox, QFrame, QGraphicsDropShadowEffect
+    )
+    from PyQt6.QtCore import Qt, QSize
+    from PyQt6.QtGui import QIcon, QFont, QColor, QCursor
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("Hyggshi OS Welcome")
+
+    win = QMainWindow()
+    win.setWindowTitle("Welcome to Hyggshi OS")
+    win.setFixedSize(780, 560)
+
+    # Dark Tokyo Night Palette
+    win.setStyleSheet("""
+        QMainWindow {
+            background-color: #1a1b26;
+        }
+        QLabel {
+            color: #c0caf5;
+            font-family: 'Noto Sans', 'Segoe UI', sans-serif;
+        }
+        QFrame#card {
+            background-color: #24283b;
+            border-radius: 10px;
+            border: 1px solid #2f3549;
+        }
+        QPushButton.action-btn {
+            background-color: #24283b;
+            color: #c0caf5;
+            border: 1px solid #3b4261;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: left;
+        }
+        QPushButton.action-btn:hover {
+            background-color: #2f3549;
+            border: 1px solid #7aa2f7;
+            color: #7aa2f7;
+        }
+        QPushButton.action-btn:pressed {
+            background-color: #1f2335;
+        }
+        QPushButton.primary-btn {
+            background-color: #7aa2f7;
+            color: #15161e;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 24px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        QPushButton.primary-btn:hover {
+            background-color: #89b4fa;
+        }
+        QPushButton.install-btn {
+            background-color: #9ece6a;
+            color: #15161e;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: bold;
+            text-align: left;
+        }
+        QPushButton.install-btn:hover {
+            background-color: #b9f27c;
+        }
+        QCheckBox {
+            color: #7982a9;
+            font-size: 12px;
+            spacing: 8px;
+        }
+        QCheckBox::indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 1px solid #3b4261;
+            background: #24283b;
+        }
+        QCheckBox::indicator:checked {
+            background: #7aa2f7;
+            border: 1px solid #7aa2f7;
+        }
+    """)
+
+    central = QWidget()
+    win.setCentralWidget(central)
+    root_layout = QVBoxLayout(central)
+    root_layout.setContentsMargins(32, 28, 32, 24)
+    root_layout.setSpacing(20)
+
+    # --- Header Section ---
+    header = QHBoxLayout()
+    header.setSpacing(18)
+
+    logo_label = QLabel()
+    logo_path = "/usr/share/icons/hicolor/scalable/apps/hyggshi-logo.svg"
+    if not os.path.exists(logo_path):
+        logo_path = "/usr/local/share/icons/hyggshi-logo.svg"
+    if os.path.exists(logo_path):
+        logo_icon = QIcon(logo_path)
+        logo_label.setPixmap(logo_icon.pixmap(QSize(56, 56)))
+    else:
+        logo_label.setText("❄")
+        logo_label.setStyleSheet("font-size: 40px; color: #7aa2f7;")
+    header.addWidget(logo_label)
+
+    title_box = QVBoxLayout()
+    title_box.setSpacing(4)
+    
+    title_lbl = QLabel("Welcome to Hyggshi OS")
+    title_font = QFont("Noto Sans", 20, QFont.Weight.Bold)
+    title_lbl.setFont(title_font)
+    title_lbl.setStyleSheet("color: #c0caf5;")
+
+    edition_layout = QHBoxLayout()
+    edition_layout.setSpacing(8)
+    sub_lbl = QLabel("Arch Edition — Fast, Elegant, Modern")
+    sub_lbl.setStyleSheet("color: #7982a9; font-size: 13px;")
+    
+    badge = QLabel(" 2.0.0 ")
+    badge.setStyleSheet("background-color: #3b4261; color: #7aa2f7; border-radius: 4px; font-size: 11px; font-weight: bold; padding: 2px 4px;")
+    
+    edition_layout.addWidget(sub_lbl)
+    edition_layout.addWidget(badge)
+    edition_layout.addStretch()
+
+    title_box.addWidget(title_lbl)
+    title_box.addLayout(edition_layout)
+    header.addLayout(title_box)
+    header.addStretch()
+    root_layout.addLayout(header)
+
+    # Divider line
+    div = QFrame()
+    div.setFrameShape(QFrame.Shape.HLine)
+    div.setStyleSheet("color: #2f3549;")
+    root_layout.addWidget(div)
+
+    # --- Action Grid Section ---
+    grid = QGridLayout()
+    grid.setSpacing(14)
+
+    def open_sysinfo():
+        if os.path.exists("/usr/bin/kinfocenter"):
+            run_command(["kinfocenter"])
+        else:
+            run_command(["konsole", "-e", "fastfetch"])
+
+    def open_update():
+        run_command(["konsole", "-e", "bash", "-c", "sudo pacman -Syu; echo; read -p 'Press Enter to exit...'"])
+
+    def open_software():
+        if os.path.exists("/usr/bin/plasma-discover"):
+            run_command(["plasma-discover"])
+        else:
+            run_command(["konsole", "-e", "bash", "-c", "echo 'Available software tools: pacman, flatpak'; read -p 'Press Enter to exit...'"])
+
+    def open_drivers():
+        run_command(["konsole", "-e", "bash", "-c", "hyggshi-hardware --check; echo; read -p 'Press Enter to close...'"])
+
+    def open_docs():
+        open_url("https://github.com/Hyggshi-OS-project-center")
+
+    def open_community():
+        open_url("https://github.com/Hyggshi-OS-project-center/Hyggshi-OS-arch/discussions")
+
+    def open_bugs():
+        open_url("https://github.com/Hyggshi-OS-project-center/Hyggshi-OS-arch/issues")
+
+    def open_installer():
+        run_command(["sudo", "calamares"])
+
+    actions = [
+        ("󰌢  System Information", "View hardware & OS details", open_sysinfo, False),
+        ("󰚰  Update System", "Synchronize packages & security", open_update, False),
+        ("󰏓  Install Software", "Discover apps & Flatpaks", open_software, False),
+        ("󰢮  Drivers & Hardware", "Inspect GPU, Wi-Fi & ucode", open_drivers, False),
+        ("󰈙  Documentation", "Hyggshi guides & setup manual", open_docs, False),
+        ("󰍩  Hyggshi Community", "Join conversations & forums", open_community, False),
+        ("󰃤  Report a Bug", "Help improve Hyggshi OS", open_bugs, False),
+    ]
+
+    if is_live_session() and os.path.exists("/usr/bin/calamares"):
+        actions.insert(0, ("󰒓  Install Hyggshi OS", "Start Calamares installer", open_installer, True))
+
+    for idx, (label, desc, func, is_special) in enumerate(actions):
+        row = idx // 2
+        col = idx % 2
+        btn = QPushButton()
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        if is_special:
+            btn.setProperty("class", "install-btn")
+            btn.setText(f"{label}\n→ {desc}")
+        else:
+            btn.setProperty("class", "action-btn")
+            btn.setText(f"{label}\n  {desc}")
+        btn.clicked.connect(func)
+        grid.addWidget(btn, row, col)
+
+    root_layout.addLayout(grid)
+    root_layout.addStretch()
+
+    # --- Footer Section ---
+    footer = QHBoxLayout()
+    chk_autostart = QCheckBox("Show this welcome screen on startup")
+    chk_autostart.setChecked(is_autostart_enabled() or is_live_session())
+    
+    def on_toggle(state):
+        set_autostart(state == 2)
+    
+    chk_autostart.stateChanged.connect(on_toggle)
+    footer.addWidget(chk_autostart)
+    footer.addStretch()
+
+    btn_get_started = QPushButton("Get Started")
+    btn_get_started.setProperty("class", "primary-btn")
+    btn_get_started.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+    btn_get_started.clicked.connect(win.close)
+    footer.addWidget(btn_get_started)
+
+    root_layout.addLayout(footer)
+
+    win.show()
+    sys.exit(app.exec())
+
+
+# ----------------------------------------------------------------------
+# Terminal / Zenity Fallback
+# ----------------------------------------------------------------------
+def run_cli_fallback():
+    print("""
+==================================================
+        Welcome to Hyggshi OS Arch Edition
+==================================================
+1) System Information   (fastfetch / kinfocenter)
+2) Update System        (pacman -Syu)
+3) Install Software     (Discover / Flatpak)
+4) Drivers & Hardware   (hyggshi-hardware)
+5) Documentation        (Hyggshi Guides)
+6) Community & Forums   (GitHub Discussions)
+7) Report an Issue      (GitHub Issues)
+8) Install to Disk      (Calamares)
+9) Exit
+==================================================
+""")
+    choice = input("Select an option [1-9]: ").strip()
+    if choice == '1':
+        run_command(["fastfetch"], detached=False)
+    elif choice == '2':
+        run_command(["sudo", "pacman", "-Syu"], detached=False)
+    elif choice == '3':
+        run_command(["plasma-discover"])
+    elif choice == '4':
+        run_command(["hyggshi-hardware", "--check"], detached=False)
+    elif choice == '5':
+        open_url("https://github.com/Hyggshi-OS-project-center")
+    elif choice == '6':
+        open_url("https://github.com/Hyggshi-OS-project-center/Hyggshi-OS-arch/discussions")
+    elif choice == '7':
+        open_url("https://github.com/Hyggshi-OS-project-center/Hyggshi-OS-arch/issues")
+    elif choice == '8':
+        run_command(["sudo", "calamares"])
+    sys.exit(0)
+
+if __name__ == "__main__":
+    try:
+        run_qt_gui()
+    except ImportError:
+        run_cli_fallback()

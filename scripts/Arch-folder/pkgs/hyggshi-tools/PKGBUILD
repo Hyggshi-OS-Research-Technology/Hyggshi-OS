@@ -1,0 +1,26 @@
+# Maintainer: Hyggshi OS Team <hyggshidev@gmail.com>
+pkgname=hyggshi-tools
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Core utilities for Hyggshi OS: hardware diagnostic, Secure Boot helper and post-installer"
+arch=('any')
+url="https://github.com/Hyggshi-OS-project-center"
+license=('GPL-3.0-or-later')
+depends=('bash' 'pciutils' 'util-linux' 'openssl' 'sbsigntool')
+optdepends=(
+    'mokutil: MOK enrollment support'
+    'efibootmgr: UEFI boot entry configuration'
+)
+
+package() {
+    local bin_dir="$startdir/../../profile/airootfs/usr/local/bin"
+
+    install -d -m 755 "$pkgdir/usr/local/bin" "$pkgdir/usr/bin"
+
+    install -m 755 "$bin_dir/hyggshi-hardware" "$pkgdir/usr/local/bin/hyggshi-hardware"
+    install -m 755 "$bin_dir/hyggshi-secureboot" "$pkgdir/usr/local/bin/hyggshi-secureboot"
+    install -m 755 "$bin_dir/hyggshi-post-install" "$pkgdir/usr/local/bin/hyggshi-post-install"
+
+    ln -sf /usr/local/bin/hyggshi-hardware "$pkgdir/usr/bin/hyggshi-hardware"
+    ln -sf /usr/local/bin/hyggshi-secureboot "$pkgdir/usr/bin/hyggshi-secureboot"
+}

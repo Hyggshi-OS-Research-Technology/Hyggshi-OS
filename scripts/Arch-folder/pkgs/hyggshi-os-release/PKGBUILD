@@ -1,0 +1,36 @@
+# Maintainer: Hyggshi OS Team <hyggshidev@gmail.com>
+pkgname=hyggshi-os-release
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Hyggshi OS Arch Edition release identification and metadata"
+arch=('any')
+url="https://github.com/Hyggshi-OS-project-center"
+license=('GPL-3.0-or-later')
+provides=('hyggshi-release')
+conflicts=('hyggshi-release')
+
+package() {
+    install -d -m 755 "$pkgdir/usr/lib" "$pkgdir/etc"
+
+    cat << 'EOF' > "$pkgdir/usr/lib/os-release"
+NAME="Hyggshi OS"
+PRETTY_NAME="Hyggshi OS Arch Edition"
+ID=hyggshi
+ID_LIKE=arch
+VERSION="2.0.0"
+VERSION_ID="2.0.0"
+VERSION_CODENAME="tokyo"
+BUILD_ID="rolling"
+ANSI_COLOR="38;2;122;162;247"
+HOME_URL="https://github.com/Hyggshi-OS-project-center"
+DOCUMENTATION_URL="https://github.com/Hyggshi-OS-project-center"
+SUPPORT_URL="https://github.com/Hyggshi-OS-project-center"
+BUG_REPORT_URL="https://github.com/Hyggshi-OS-project-center"
+LOGO=hyggshi-logo
+EOF
+
+    ln -sf ../usr/lib/os-release "$pkgdir/etc/os-release"
+    echo "Hyggshi OS Arch Edition release 2.0.0 (rolling)" > "$pkgdir/etc/hyggshi-release"
+    echo "Arch Edition" > "$pkgdir/etc/hyggshi-edition"
+    echo "2.0.0" > "$pkgdir/etc/hyggshi-version"
+}

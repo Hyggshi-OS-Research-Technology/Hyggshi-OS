@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Hyggshi OS
+Description=Hyggshi OS Boot Splash Theme
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/hyggshi
+ScriptFile=/usr/share/plymouth/themes/hyggshi/hyggshi.script

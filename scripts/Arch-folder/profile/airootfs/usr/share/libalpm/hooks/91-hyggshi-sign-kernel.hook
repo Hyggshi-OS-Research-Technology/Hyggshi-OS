@@ -1,0 +1,13 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = linux
+Target = linux-lts
+Target = linux-zen
+Target = linux-hardened
+
+[Action]
+Description = Signing the kernel for Secure Boot...
+When = PostTransaction
+Exec = /usr/local/bin/hyggshi-secureboot sign

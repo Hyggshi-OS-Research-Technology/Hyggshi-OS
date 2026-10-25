@@ -1,0 +1,15 @@
+{
+  "KPackageStructure": "Plasma/LookAndFeel",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Hyggshi OS"
+      }
+    ],
+    "Description": "Hyggshi OS default look and feel",
+    "Id": "org.hyggshi.desktop",
+    "License": "GPL-2.0+",
+    "Name": "Hyggshi OS",
+    "Version": "1.0"
+  }
+}

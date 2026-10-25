@@ -1,0 +1,26 @@
+# Maintainer: Hyggshi OS Team <hyggshidev@gmail.com>
+pkgname=hyggshi-welcome
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Welcome Center and First-Run Hub for Hyggshi OS"
+arch=('any')
+url="https://github.com/Hyggshi-OS-project-center"
+license=('GPL-3.0-or-later')
+depends=('python' 'python-pyqt6')
+optdepends=(
+    'kinfocenter: KDE System Information integration'
+    'calamares: System installer integration'
+    'discover: Software center integration'
+)
+
+package() {
+    local airootfs="$startdir/../../profile/airootfs"
+    
+    install -d -m 755 "$pkgdir/usr/local/bin" "$pkgdir/usr/share/applications"
+    install -m 755 "$airootfs/usr/local/bin/hyggshi-welcome" "$pkgdir/usr/local/bin/hyggshi-welcome"
+    install -m 644 "$airootfs/usr/share/applications/hyggshi-welcome.desktop" "$pkgdir/usr/share/applications/hyggshi-welcome.desktop"
+
+    # Also install to /usr/bin for standard system PATH
+    install -d -m 755 "$pkgdir/usr/bin"
+    ln -sf /usr/local/bin/hyggshi-welcome "$pkgdir/usr/bin/hyggshi-welcome"
+}

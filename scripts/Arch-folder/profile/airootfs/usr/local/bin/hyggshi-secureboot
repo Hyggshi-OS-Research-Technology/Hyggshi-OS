@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# hyggshi-secureboot - UEFI Secure Boot (shim + MOK) for an installed Hyggshi OS.
+#
+#   setup    first-time setup (run by the installer): key, shim chain, signed GRUB/kernel, boot entry, MOK request
+#   sign     sign every /boot/vmlinuz-* (pacman hook after a kernel update)
+#   refresh  reinstall + sign GRUB and the shim chain (pacman hook after a grub update)
+#   enroll   queue the machine key for enrolment (MokManager asks for the password on next boot)
+#   status   show what is set up
+#
+# Every machine gets its own signing key in /var/lib/hyggshi/secureboot (root only, never leaves the machine).
+# The key is enrolled once through MokManager; the one-time password is shown in the installer ("hyggshi").
+set -u
+
+DIR=${HYGGSHI_SB_DIR:-/var/lib/hyggshi/secureboot}
+ESP=${HYGGSHI_ESP:-/boot/efi}
+BOOT=${HYGGSHI_BOOT:-/boot}
+SHIM_SRC=${HYGGSHI_SHIM_SRC:-/usr/share/hyggshi/secureboot}
+MOK_PASSWORD=${HYGGSHI_MOK_PASSWORD:-hyggshi}
+ID=hyggshi
+LABEL="Hyggshi OS"
+
+log() { echo "hyggshi-secureboot: $*" >&2; }
+
+have_uefi() {
+    [ -n "${HYGGSHI_FORCE_UEFI:-}" ] && return 0
+    [ -d /sys/firmware/efi ] && mountpoint -q "$ESP"
+}
+
+have_key() { [ -f "$DIR/mok.key" ] && [ -f "$DIR/mok.crt" ]; }
+
+sb_enabled() {
+    if command -v mokutil >/dev/null 2>&1 && mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
+        return 0
+    fi
+    local f
+    f=$(ls /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | head -n1)
+    [ -n "$f" ] && [ "$(od -An -t u1 -j4 -N1 "$f" 2>/dev/null | tr -d ' ')" = 1 ]
+}
+
+gen_key() {
+    have_key && return 0
+    local host
+    host=$(tr -cd 'A-Za-z0-9._-' < /etc/hostname 2>/dev/null)
+    install -d -m 700 "$DIR" || return 1
+    openssl req -new -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
+        -subj "/CN=Hyggshi OS Machine Owner Key (${host:-pc})/" \
+        -addext "keyUsage=digitalSignature" -addext "extendedKeyUsage=codeSigning" \
+        -keyout "$DIR/mok.key" -out "$DIR/mok.crt" 2>/dev/null || return 1
+    chmod 600 "$DIR/mok.key"
+    openssl x509 -in "$DIR/mok.crt" -outform DER -out "$DIR/mok.cer"
+}
+
+sign_file() {
+    local f=$1
+    [ -f "$f" ] || return 0
+    sbverify --cert "$DIR/mok.crt" "$f" >/dev/null 2>&1 && return 0
+    if sbsign --key "$DIR/mok.key" --cert "$DIR/mok.crt" --output "$f.signed" "$f" >/dev/null 2>&1; then
+        mv -f "$f.signed" "$f"
+        log "signed $f"
+    else
+        rm -f "$f.signed"
+        log "WARNING: could not sign $f"
+        return 1
+    fi
+}
+
+sign_kernels() {
+    have_key || { log "no machine key yet - nothing to sign"; return 0; }
+    local k
+    for k in "$BOOT"/vmlinuz-*; do sign_file "$k"; done
+}
+
+install_grub() {
+    # --disable-shim-lock: the kernel is verified by shim through the firmware, GRUB only has to be MOK-signed
+    # --no-nvram: we create the boot entry ourselves so it points at shim
+    grub-install --target=x86_64-efi --efi-directory="$ESP" --bootloader-id="$ID" \
+        --modules="tpm" --disable-shim-lock --no-nvram >/dev/null 2>&1 \
+        || { log "WARNING: grub-install failed"; return 1; }
+    sign_file "$ESP/EFI/$ID/grubx64.efi"
+}
+
+install_shim() {
+    local d="$ESP/EFI/$ID" b="$ESP/EFI/BOOT"
+    [ -f "$SHIM_SRC/shimx64.efi" ] || { log "WARNING: shim is missing in $SHIM_SRC"; return 1; }
+    install -d "$d" "$b"
+    install -m 0644 "$SHIM_SRC/shimx64.efi" "$d/shimx64.efi"
+    [ -f "$SHIM_SRC/mmx64.efi" ] && install -m 0644 "$SHIM_SRC/mmx64.efi" "$d/mmx64.efi"
+    install -m 0644 "$DIR/mok.cer" "$d/mok.cer"
+    # removable-media fallback path
+    install -m 0644 "$SHIM_SRC/shimx64.efi" "$b/BOOTx64.EFI"
+    [ -f "$SHIM_SRC/mmx64.efi" ] && install -m 0644 "$SHIM_SRC/mmx64.efi" "$b/mmx64.efi"
+    [ -f "$d/grubx64.efi" ] && install -m 0644 "$d/grubx64.efi" "$b/grubx64.efi"
+    return 0
+}
+
+make_boot_entry() {
+    command -v efibootmgr >/dev/null 2>&1 || { log "WARNING: efibootmgr not found"; return 1; }
+    local src name part pk num
+    src=$(findmnt -no SOURCE "$ESP") || return 1
+    name=${src#/dev/}
+    part=$(cat "/sys/class/block/$name/partition" 2>/dev/null)
+    pk=$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1)
+    [ -n "$part" ] && [ -n "$pk" ] || { log "WARNING: cannot find the disk of $src"; return 1; }
+    # drop entries the installer created for plain GRUB, then add one for shim
+    for num in $(efibootmgr -v 2>/dev/null | grep -iE "\\\\EFI\\\\$ID\\\\(grub|shim)x64\.efi" \
+                 | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\).*/\1/p'); do
+        efibootmgr -q -B -b "$num"
+    done
+    efibootmgr -q --create --disk "/dev/$pk" --part "$part" \
+        --loader "\\EFI\\$ID\\shimx64.efi" --label "$LABEL" \
+        || { log "WARNING: could not create the UEFI boot entry"; return 1; }
+}
+
+enroll_key() {
+    have_key || { log "no machine key yet"; return 1; }
+    command -v mokutil >/dev/null 2>&1 || { log "mokutil not installed"; return 1; }
+    if mokutil --test-key "$DIR/mok.cer" 2>/dev/null | grep -qi 'already enrolled'; then
+        log "key is already enrolled"
+        return 0
+    fi
+    local hf
+    hf=$(mktemp) || return 1
+    openssl passwd -6 "$MOK_PASSWORD" > "$hf"
+    if mokutil --import "$DIR/mok.cer" --hash-file "$hf" >/dev/null 2>&1; then
+        log "key queued. On the next boot choose 'Enroll MOK' > Continue > Yes and type the password: $MOK_PASSWORD"
+    else
+        log "WARNING: mokutil --import failed. Enrol $ESP/EFI/$ID/mok.cer by hand in MokManager."
+    fi
+    rm -f "$hf"
+}
+
+cmd_setup() {
+    have_uefi || { log "BIOS/legacy install (or no EFI partition) - Secure Boot setup skipped"; return 0; }
+    gen_key       || { log "WARNING: key generation failed"; return 0; }
+    install_grub
+    install_shim
+    sign_kernels
+    make_boot_entry
+    if sb_enabled; then
+        enroll_key
+    else
+        log "Secure Boot is off. To use it later: enable it in the firmware, then boot and enrol $ESP/EFI/$ID/mok.cer in MokManager (or run: sudo hyggshi-secureboot enroll)."
+    fi
+    return 0    # never fail the installation
+}
+
+cmd_sign()    { sign_kernels; }
+cmd_refresh() { have_key && have_uefi || return 0; install_grub; install_shim; }
+cmd_status() {
+    echo "key:      $(have_key && echo "present ($DIR)" || echo missing)"
+    echo "UEFI:     $(have_uefi && echo yes || echo no)"
+    echo "firmware: $(sb_enabled && echo 'Secure Boot enabled' || echo 'Secure Boot off/unknown')"
+    local k
+    for k in "$BOOT"/vmlinuz-*; do
+        [ -f "$k" ] && echo "kernel:   $k $(have_key && sbverify --cert "$DIR/mok.crt" "$k" >/dev/null 2>&1 && echo signed || echo UNSIGNED)"
+    done
+    if have_key && command -v mokutil >/dev/null 2>&1; then
+        mokutil --test-key "$DIR/mok.cer" 2>/dev/null | sed 's/^/MOK:      /'
+    fi
+}
+
+case "${1:-}" in
+    setup)   cmd_setup ;;
+    sign)    cmd_sign ;;
+    refresh) cmd_refresh ;;
+    enroll)  enroll_key ;;
+    status)  cmd_status ;;
+    *) echo "usage: $0 {setup|sign|refresh|enroll|status}" >&2; exit 1 ;;
+esac

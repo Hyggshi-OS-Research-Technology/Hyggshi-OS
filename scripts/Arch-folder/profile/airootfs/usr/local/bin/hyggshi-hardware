@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+# hyggshi-hardware - Hardware & Driver Diagnostics for Hyggshi OS
+# Checks CPU microcode, GPU drivers, Wi-Fi firmware, Bluetooth, PipeWire & Power Management.
+set -euo pipefail
+
+# ANSI Color Palette (Tokyo Night aesthetic)
+C_RESET="\033[0m"
+C_BOLD="\033[1m"
+C_TITLE="\033[1;38;2;122;162;247m"   # #7aa2f7
+C_KEY="\033[38;2;187;154;247m"       # #bb9af7
+C_OK="\033[38;2;158;206;106m"        # #9ece6a (Green)
+C_WARN="\033[38;2;224;175;104m"      # #e0af68 (Yellow)
+C_ERR="\033[38;2;247;118;142m"       # #f7768e (Red)
+C_INFO="\033[38;2;125;207;255m"      # #7dcfff (Cyan)
+C_MUTED="\033[38;2;86;95;137m"       # #565f89 (Muted)
+
+header() {
+    echo -e "${C_TITLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_TITLE}  󰌢  Hyggshi OS Hardware & Driver Diagnostics${C_RESET}"
+    echo -e "${C_TITLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+}
+
+section() {
+    echo -e "\n${C_BOLD}${C_KEY}󰅂 $1${C_RESET}"
+}
+
+check_cpu_microcode() {
+    section "CPU & Microcode"
+    local vendor model ucode
+    vendor=$(grep -m1 "vendor_id" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}' || echo "Unknown")
+    model=$(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}' || echo "Unknown")
+    ucode=$(grep -m1 "microcode" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}' || echo "Unknown")
+
+    echo -e "  ${C_INFO}CPU:${C_RESET}     $model"
+    echo -e "  ${C_INFO}Vendor:${C_RESET}  $vendor"
+    echo -e "  ${C_INFO}Ucode:${C_RESET}   $ucode"
+
+    if [[ "$vendor" =~ GenuineIntel ]]; then
+        if dmesg 2>/dev/null | grep -qi "microcode updated early"; then
+            echo -e "  ${C_INFO}Status:${C_RESET}  ${C_OK}✓ Intel microcode loaded early by bootloader${C_RESET}"
+        elif [[ "$ucode" != "Unknown" && "$ucode" != "0x0" ]]; then
+            echo -e "  ${C_INFO}Status:${C_RESET}  ${C_OK}✓ Intel microcode active ($ucode)${C_RESET}"
+        else
+            echo -e "  ${C_INFO}Status:${C_RESET}  ${C_WARN}! Verify intel-ucode in bootloader config${C_RESET}"
+        fi
+    elif [[ "$vendor" =~ AuthenticAMD ]]; then
+        if dmesg 2>/dev/null | grep -qi "microcode: patch"; then
+            echo -e "  ${C_INFO}Status:${C_RESET}  ${C_OK}✓ AMD microcode patch applied${C_RESET}"
+        elif [[ "$ucode" != "Unknown" && "$ucode" != "0x0" ]]; then
+            echo -e "  ${C_INFO}Status:${C_RESET}  ${C_OK}✓ AMD microcode active ($ucode)${C_RESET}"
+        else
+            echo -e "  ${C_INFO}Status:${C_RESET}  ${C_WARN}! Verify amd-ucode in bootloader config${C_RESET}"
+        fi
+    else
+        echo -e "  ${C_INFO}Status:${C_RESET}  ${C_MUTED}Virtual or unassisted CPU${C_RESET}"
+    fi
+}
+
+check_gpu() {
+    section "Graphics (GPU)"
+    local gpus
+    gpus=$(lspci -nn 2>/dev/null | grep -iE 'vga|3d|display' || true)
+    if [[ -z "$gpus" ]]; then
+        echo -e "  ${C_WARN}! No GPU detected via lspci${C_RESET}"
+        return
+    fi
+
+    while IFS= read -r line; do
+        local slot name driver
+        slot=$(echo "$line" | awk '{print $1}')
+        name=$(echo "$line" | sed 's/^[0-9a-f:.]* [^:]*: //')
+        driver=$(lspci -k -s "$slot" 2>/dev/null | grep "in use:" | awk '{print $NF}' || echo "none")
+
+        echo -e "  ${C_INFO}Device:${C_RESET}  $name"
+        echo -e "  ${C_INFO}Driver:${C_RESET}  $driver"
+
+        local line_lower
+        line_lower=$(echo "$line" | tr '[:upper:]' '[:lower:]')
+        if [[ "$line_lower" =~ nvidia ]]; then
+            if [[ "$driver" =~ nvidia ]]; then
+                echo -e "  ${C_INFO}State:${C_RESET}   ${C_OK}✓ Official NVIDIA proprietary driver active${C_RESET}"
+            elif [[ "$driver" =~ nouveau ]]; then
+                echo -e "  ${C_INFO}State:${C_RESET}   ${C_WARN}! Open-source Nouveau driver active (consider 'nvidia' for 3D/gaming)${C_RESET}"
+            else
+                echo -e "  ${C_INFO}State:${C_RESET}   ${C_ERR}✗ No kernel driver attached to NVIDIA GPU${C_RESET}"
+            fi
+        elif [[ "$line_lower" =~ (^|[[:space:]])(amd|radeon|ati)([[:space:]]|$) ]]; then
+            if [[ "$driver" =~ amdgpu ]]; then
+                echo -e "  ${C_INFO}State:${C_RESET}   ${C_OK}✓ AMDGPU modern driver active (RADV/Mesa)${C_RESET}"
+            else
+                echo -e "  ${C_INFO}State:${C_RESET}   ${C_INFO}✓ Driver: $driver${C_RESET}"
+            fi
+        elif [[ "$line_lower" =~ intel ]]; then
+            if [[ "$driver" =~ i915|xe ]]; then
+                echo -e "  ${C_INFO}State:${C_RESET}   ${C_OK}✓ Intel $driver kernel driver active (Iris/UHD/Xe)${C_RESET}"
+            fi
+        fi
+    done <<< "$gpus"
+}
+
+check_network() {
+    section "Network & Wireless"
+    # Ethernet
+    local eth wifi
+    eth=$(ip -br link 2>/dev/null | grep -E '^en|^eth' || true)
+    if [[ -n "$eth" ]]; then
+        echo -e "  ${C_INFO}Ethernet:${C_RESET} ${C_OK}Available${C_RESET} ($(echo "$eth" | awk '{print $1, $2}'))"
+    fi
+
+    # Wi-Fi
+    wifi=$(ip -br link 2>/dev/null | grep -E '^wl' || true)
+    if [[ -n "$wifi" ]]; then
+        local wdev wstate
+        wdev=$(echo "$wifi" | awk '{print $1}')
+        wstate=$(echo "$wifi" | awk '{print $2}')
+        echo -e "  ${C_INFO}Wi-Fi:${C_RESET}    ${C_OK}Interface $wdev${C_RESET} (State: $wstate)"
+    else
+        echo -e "  ${C_INFO}Wi-Fi:${C_RESET}    ${C_MUTED}No wireless interface detected${C_RESET}"
+    fi
+
+    # Missing firmware check
+    local missing_fw
+    missing_fw=$(dmesg 2>/dev/null | grep -iE "firmware: failed to load|direct-loading of.*failed" | head -n2 || true)
+    if [[ -n "$missing_fw" ]]; then
+        echo -e "  ${C_INFO}Firmware:${C_RESET}${C_WARN}! Some firmware files were requested but missing:${C_RESET}"
+        echo -e "           ${C_MUTED}$missing_fw${C_RESET}"
+    else
+        echo -e "  ${C_INFO}Firmware:${C_RESET}${C_OK}✓ No firmware load failures logged${C_RESET}"
+    fi
+
+    # Bluetooth
+    if command -v rfkill >/dev/null 2>&1 && rfkill list bluetooth 2>/dev/null | grep -q 'bluetooth'; then
+        local b_blocked
+        b_blocked=$(rfkill list bluetooth | grep -i 'blocked: yes' || true)
+        if [[ -n "$b_blocked" ]]; then
+            echo -e "  ${C_INFO}Bluetooth:${C_RESET}${C_WARN}! Present but soft/hard blocked (enable with rfkill unblock bluetooth)${C_RESET}"
+        else
+            echo -e "  ${C_INFO}Bluetooth:${C_RESET}${C_OK}✓ Present and unblocked${C_RESET}"
+        fi
+    else
+        echo -e "  ${C_INFO}Bluetooth:${C_RESET}${C_MUTED}None detected${C_RESET}"
+    fi
+}
+
+check_audio() {
+    section "Audio & PipeWire"
+    if pgrep -x "pipewire" >/dev/null 2>&1; then
+        echo -e "  ${C_INFO}PipeWire:${C_RESET}   ${C_OK}✓ Running${C_RESET}"
+    else
+        echo -e "  ${C_INFO}PipeWire:${C_RESET}   ${C_WARN}! Not currently running${C_RESET}"
+    fi
+
+    if pgrep -x "wireplumber" >/dev/null 2>&1; then
+        echo -e "  ${C_INFO}Session:${C_RESET}    ${C_OK}✓ WirePlumber session manager active${C_RESET}"
+    else
+        echo -e "  ${C_INFO}Session:${C_RESET}    ${C_WARN}! WirePlumber not active${C_RESET}"
+    fi
+
+    if [[ -f /proc/asound/cards ]]; then
+        local cards
+        cards=$(grep -E '^[ 0-9]' /proc/asound/cards | sed 's/^ *//' || true)
+        if [[ -n "$cards" ]]; then
+            echo -e "  ${C_INFO}Audio Cards:${C_RESET}"
+            while IFS= read -r card; do
+                echo -e "    ${C_MUTED}• $card${C_RESET}"
+            done <<< "$cards"
+        fi
+    fi
+}
+
+check_power_and_battery() {
+    section "Power & Laptop Capabilities"
+    local chassis="Desktop/Other"
+    if [[ -f /sys/class/dmi/id/chassis_type ]]; then
+        local code
+        code=$(cat /sys/class/dmi/id/chassis_type 2>/dev/null || true)
+        case "$code" in
+            8|9|10|11|12|14|30|31|32) chassis="Laptop / Portable" ;;
+            3|4|5|6|7|15|16) chassis="Desktop / Workstation" ;;
+        esac
+    fi
+    echo -e "  ${C_INFO}Chassis:${C_RESET}    $chassis"
+
+    # Battery
+    local bats=(/sys/class/power_supply/BAT*)
+    if [[ -d "${bats[0]:-}" ]]; then
+        for b in "${bats[@]}"; do
+            local bname bstat bcap
+            bname=$(basename "$b")
+            bstat=$(cat "$b/status" 2>/dev/null || echo "Unknown")
+            bcap=$(cat "$b/capacity" 2>/dev/null || echo "Unknown")
+            echo -e "  ${C_INFO}Battery ($bname):${C_RESET} ${C_OK}$bcap%${C_RESET} ($bstat)"
+        done
+    else
+        echo -e "  ${C_INFO}Battery:${C_RESET}    ${C_MUTED}No battery (AC powered)${C_RESET}"
+    fi
+
+    # Power profiles daemon
+    if command -v powerprofilesctl >/dev/null 2>&1; then
+        local profile
+        profile=$(powerprofilesctl get 2>/dev/null || echo "inactive")
+        echo -e "  ${C_INFO}Profile:${C_RESET}    ${C_OK}power-profiles-daemon active${C_RESET} (Current: $profile)"
+    fi
+
+    # Suspend modes
+    if [[ -f /sys/power/mem_sleep ]]; then
+        local modes
+        modes=$(cat /sys/power/mem_sleep 2>/dev/null || true)
+        echo -e "  ${C_INFO}Sleep Modes:${C_RESET}$modes"
+    fi
+}
+
+cmd_summary() {
+    header
+    check_cpu_microcode
+    check_gpu
+    check_network
+    check_audio
+    check_power_and_battery
+    echo -e "\n${C_TITLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
+}
+
+case "${1:-summary}" in
+    --check|-c)
+        cmd_summary
+        ;;
+    summary|--summary|-s)
+        cmd_summary
+        ;;
+    *)
+        echo "Usage: $0 [--summary | --check]" >&2
+        exit 1
+        ;;
+esac

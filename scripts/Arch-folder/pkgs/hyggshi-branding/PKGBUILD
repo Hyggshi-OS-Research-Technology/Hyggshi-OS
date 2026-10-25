@@ -1,0 +1,44 @@
+# Maintainer: Hyggshi OS Team <hyggshidev@gmail.com>
+pkgname=hyggshi-branding
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Branding assets, color schemes, KDE Look-and-Feel, wallpapers and splash for Hyggshi OS"
+arch=('any')
+url="https://github.com/Hyggshi-OS-project-center"
+license=('GPL-3.0-or-later' 'CC-BY-SA-4.0')
+depends=('plasma-workspace' 'breeze' 'breeze-icons')
+
+package() {
+    local src_root="$startdir/../../profile/airootfs/usr/share"
+    if [ ! -d "$src_root" ]; then
+        src_root="$srcdir"
+    fi
+
+    # Wallpapers
+    install -d -m 755 "$pkgdir/usr/share/wallpapers/Hyggshi"
+    cp -r "$src_root/wallpapers/Hyggshi/." "$pkgdir/usr/share/wallpapers/Hyggshi/"
+
+    # Color Schemes
+    install -d -m 755 "$pkgdir/usr/share/color-schemes"
+    cp -r "$src_root/color-schemes/." "$pkgdir/usr/share/color-schemes/"
+
+    # Plasma Look and Feel
+    install -d -m 755 "$pkgdir/usr/share/plasma/look-and-feel/org.hyggshi.desktop"
+    cp -r "$src_root/plasma/look-and-feel/org.hyggshi.desktop/." "$pkgdir/usr/share/plasma/look-and-feel/org.hyggshi.desktop/"
+
+    # SDDM Theme overlay
+    install -d -m 755 "$pkgdir/usr/share/sddm/themes/breeze"
+    cp -r "$src_root/sddm/themes/breeze/." "$pkgdir/usr/share/sddm/themes/breeze/"
+
+    # Icons / Logo
+    install -d -m 755 "$pkgdir/usr/share/icons/hicolor/scalable/apps"
+    install -m 644 "$src_root/icons/hicolor/scalable/apps/hyggshi-logo.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/"
+
+    # Cursor Theme
+    install -d -m 755 "$pkgdir/usr/share/icons/Hyggshi-Cursors"
+    install -m 644 "$src_root/icons/Hyggshi-Cursors/index.theme" "$pkgdir/usr/share/icons/Hyggshi-Cursors/"
+
+    # Plymouth Theme
+    install -d -m 755 "$pkgdir/usr/share/plymouth/themes/hyggshi"
+    cp -r "$src_root/plymouth/themes/hyggshi/." "$pkgdir/usr/share/plymouth/themes/hyggshi/"
+}

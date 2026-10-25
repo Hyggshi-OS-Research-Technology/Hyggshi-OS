@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = grub
+
+[Action]
+Description = Re-installing the signed GRUB for Secure Boot...
+When = PostTransaction
+Exec = /usr/local/bin/hyggshi-secureboot refresh

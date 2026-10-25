@@ -1,0 +1,20 @@
+#!/bin/sh
+# Build-time only (pacman hook, right after `filesystem` is installed).
+# /etc/os-release is a symlink owned by `filesystem`, so we can't ship it in airootfs;
+# instead we overwrite its target with our own file. mkarchiso appends IMAGE_ID/IMAGE_VERSION later.
+src=/usr/local/share/hyggshi/os-release
+if [ -f "$src" ]; then
+    cp -f "$src" /usr/lib/os-release
+    # Also keep /etc/os-release target updated
+    [ -L /etc/os-release ] || ln -sf ../usr/lib/os-release /etc/os-release
+fi
+
+[ -f /etc/issue ]       && sed -i 's/Arch Linux/Hyggshi OS/' /etc/issue
+[ -f /etc/lsb-release ] && sed -i -e 's/^DISTRIB_ID=.*/DISTRIB_ID="Hyggshi"/' -e 's/^DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION="Hyggshi OS Arch Edition"/' /etc/lsb-release
+
+# Specific Hyggshi release metadata markers
+echo "Hyggshi OS Arch Edition release 2.0.0 (rolling)" > /etc/hyggshi-release
+echo "Arch Edition" > /etc/hyggshi-edition
+echo "2.0.0" > /etc/hyggshi-version
+
+exit 0
