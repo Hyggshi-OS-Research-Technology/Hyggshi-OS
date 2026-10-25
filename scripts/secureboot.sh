@@ -56,7 +56,7 @@ hyggshi_sb_verify() {
     return 0
   fi
 
-  if sbverify --list "$target_file" >/dev/null 2>&1; then
+  if sudo sbverify --list "$target_file" >/dev/null 2>&1; then
     return 0
   else
     return 1
@@ -75,7 +75,7 @@ hyggshi_sb_is_microsoft_signed() {
   fi
 
   local sig_info
-  sig_info=$(sbverify --list "$target_file" 2>&1 || true)
+  sig_info=$(sudo sbverify --list "$target_file" 2>&1 || true)
   if echo "$sig_info" | grep -qi "Microsoft Corporation UEFI CA"; then
     return 0
   elif echo "$sig_info" | grep -qi "Microsoft Windows UEFI Driver Publisher"; then
@@ -108,7 +108,7 @@ hyggshi_sb_sign() {
   fi
 
   echo "Đang ký Secure Boot: $input_file -> $output_file"
-  sbsign --key "$key_file" --cert "$cert_file" --output "$output_file" "$input_file"
+  sudo sbsign --key "$key_file" --cert "$cert_file" --output "$output_file" "$input_file"
 }
 
 # Thiết lập cấu trúc thư mục ESP chuẩn cho UEFI Secure Boot

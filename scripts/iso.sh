@@ -130,14 +130,20 @@ if ! sudo ls live-build/chroot/boot/vmlinuz-* >/dev/null 2>&1 || \
 fi
 VMLINUZ_FILE=$(sudo ls -t live-build/chroot/boot/vmlinuz-* | head -n1)
 INITRD_FILE=$(sudo ls -t live-build/chroot/boot/initrd.img-* | head -n1)
+
+# Phân quyền đọc (a+r) cho toàn bộ /boot trong chroot (trên Ubuntu mặc định kernel/initrd tạo với mode 0600)
+sudo chmod -R a+rX live-build/chroot/boot
+
 sudo cp "$VMLINUZ_FILE" live-build/image/live/vmlinuz
 sudo cp "$INITRD_FILE" live-build/image/live/initrd
+sudo chmod -R a+rX live-build/image/live 2>/dev/null || true
 
 # Live ISO boot Ubuntu/Mint dùng custom/casper/initrd.lz.
 # Hook Plymouth đã regenerate initramfs trong rootfs, nên đồng bộ sang casper nếu tồn tại.
 if [ -d live-build/image/casper ]; then
   sudo cp "$VMLINUZ_FILE" live-build/image/casper/vmlinuz
   sudo cp "$INITRD_FILE" live-build/image/casper/initrd.lz
+  sudo chmod -R a+rX live-build/image/casper 2>/dev/null || true
   echo "OK: live initrd đã cập nhật: $(basename "$INITRD_FILE") → casper/initrd.lz"
 fi
 
@@ -324,12 +330,13 @@ else
   fi
 
   if command -v sbverify >/dev/null 2>&1; then
-    if ! sbverify --list "$SHIM_BIN" >/dev/null 2>&1; then
+    if ! sudo sbverify --list "$SHIM_BIN" >/dev/null 2>&1; then
       echo "LỖI FATAL: shim ($SHIM_BIN) không có chữ ký Secure Boot hợp lệ." >&2
+      sudo sbverify --list "$SHIM_BIN" >&2 || true
       exit 1
     fi
     echo "OK: shim có signature hợp lệ:"
-    sbverify --list "$SHIM_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+    sudo sbverify --list "$SHIM_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
 
     # Xác thực chữ ký Microsoft UEFI CA (đảm bảo boot thẳng trên Dell, Lenovo, HP không cần vào BIOS enroll key)
     if declare -f hyggshi_sb_is_microsoft_signed >/dev/null 2>&1; then
@@ -340,20 +347,22 @@ else
       fi
     fi
 
-    if ! sbverify --list "$GRUB_SIGNED_BIN" >/dev/null 2>&1; then
+    if ! sudo sbverify --list "$GRUB_SIGNED_BIN" >/dev/null 2>&1; then
       echo "LỖI FATAL: GRUB ($GRUB_SIGNED_BIN) không có chữ ký Secure Boot hợp lệ." >&2
+      sudo sbverify --list "$GRUB_SIGNED_BIN" >&2 || true
       exit 1
     fi
     echo "OK: GRUB có signature hợp lệ:"
-    sbverify --list "$GRUB_SIGNED_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+    sudo sbverify --list "$GRUB_SIGNED_BIN" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
 
-    if ! sbverify --list "$VMLINUZ_FILE" >/dev/null 2>&1; then
+    if ! sudo sbverify --list "$VMLINUZ_FILE" >/dev/null 2>&1; then
       echo "LỖI FATAL: Linux kernel ($VMLINUZ_FILE) không có chữ ký Secure Boot hợp lệ." >&2
+      sudo sbverify --list "$VMLINUZ_FILE" >&2 || true
       echo "Không phát hành ISO Secure Boot khi kernel chưa được ký." >&2
       exit 1
     fi
     echo "OK: Linux kernel có signature hợp lệ:"
-    sbverify --list "$VMLINUZ_FILE" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
+    sudo sbverify --list "$VMLINUZ_FILE" 2>&1 | grep -E 'signature|issuer|subject' | head -n4 || true
   else
     echo "CẢNH BÁO: Không tìm thấy lệnh sbverify trên host." >&2
   fi

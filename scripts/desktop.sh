@@ -71,6 +71,9 @@ apt-get install -y "$(hyggshi_kernel_package "$ARCH")" live-boot systemd-sysv \
   initramfs-tools plymouth plymouth-themes network-manager sudo locales tzdata \
   lsb-release
 
+# Đảm bảo kernel và initrd có quyền đọc (trên Ubuntu mặc định vmlinuz tạo ra với mode 0600)
+chmod -R a+r /boot 2>/dev/null || true
+
 if [ "$BASE_DISTRO" = "ubuntu" ] || [ "$BASE_DISTRO" = "linuxmint" ]; then
   echo "===== Gỡ Plymouth theme mặc định của Ubuntu (chờ branding.sh cài theme Hyggshi riêng) ====="
   # plymouth-themes (vừa cài ở trên) là gói TỔNG HỢP kéo theo nhiều theme,
