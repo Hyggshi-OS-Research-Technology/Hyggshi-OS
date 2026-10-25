@@ -624,6 +624,30 @@ class Resolver:
             "oem_variants_to_build": variants,
         }
 
+    def resolve_sourceforge(self) -> dict:
+        """
+        Resolve [upload-Releases-iso-sourceforge] section.
+        Hỗ trợ:
+          sourceforge = true / false
+        """
+        sec = {}
+        for s in self.sections:
+            if s.strip().lower() in ("upload-releases-iso-sourceforge", "upload-releases-sourceforge", "sourceforge"):
+                sec = self._kv(s)
+                break
+
+        enabled = False
+        for k, v in sec.items():
+            k_clean = k.strip().lower().replace("_", "-")
+            if k_clean in ("sourceforge", "upload-sourceforge", "upload", "enabled"):
+                try:
+                    pv = classify(k, v)
+                    if pv.type == "BOOLEAN":
+                        enabled = bool(pv.value)
+                except Exception:
+                    pass
+        return {"enabled": enabled}
+
     def resolve_desktop_environment(self) -> dict:
         """
         PATCH 12: resolve [Desktop-Environment].
@@ -1822,6 +1846,7 @@ class Resolver:
         
         result["architecture"] = self.resolve_architecture()
         result["oem"] = self.resolve_oem()
+        result["sourceforge"] = self.resolve_sourceforge()
 
         de_info = self.resolve_desktop_environment()
         result["desktop_environment"] = de_info
@@ -2294,6 +2319,24 @@ def to_env_lines(resolved: dict, de_override: str | None = None, distro_override
         lines.append(f"HYGGSHI_VERSION_ID={version_val}")
     if codename_val:
         lines.append(f"HYGGSHI_CODENAME={codename_val}")
+
+    # SourceForge upload settings & naming conventions
+    clean_ver = str(version_val).strip().lstrip("v") if version_val else "1.0"
+    v_tag = f"v{clean_ver}"
+    sf_folder = f"Hyggshi OS {clean_ver} Archive"
+    put("SOURCEFORGE_FOLDER", sf_folder)
+    lines.append(f"SOURCEFORGE_FOLDER={sf_folder}")
+
+    sf_info = resolved.get("sourceforge") or {}
+    sf_enabled = sf_info.get("enabled", False)
+    put("SOURCEFORGE_UPLOAD", "true" if sf_enabled else "false")
+    lines.append(f"SOURCEFORGE_UPLOAD={'true' if sf_enabled else 'false'}")
+
+    # ISO Filename: hyggshi-os-[DE]-[Version]-[Base].iso (vd: hyggshi-os-xfce-v1.4.2-debian.iso)
+    oem_suffix = "-oem" if is_oem else ""
+    iso_filename = f"hyggshi-os-{de_val}-{v_tag}-{base_val}{oem_suffix}.iso"
+    put("ISO_FILENAME", iso_filename)
+    lines.append(f"ISO_FILENAME={iso_filename}")
     if app_installs:
         lines.append(f"HCL_APP_INSTALLS={' '.join(app_installs)}")
     if app_urls:
@@ -2401,6 +2444,15 @@ def main():
                     f.write(f"oem_matrix={json.dumps(oem_variants)}\n")
                     f.write(f"is_oem_matrix={'true' if len(oem_variants) > 1 else 'false'}\n")
                     f.write(f"active_oem={'true' if oem_info.get('active_oem') else 'false'}\n")
+                    # Version & SourceForge metadata
+                    bp = resolved.get("base_profile") or {}
+                    ver_raw = bp.get("version") or "1.0"
+                    clean_v = str(ver_raw).strip().lstrip("v")
+                    sf_info = resolved.get("sourceforge") or {}
+                    f.write(f"version={clean_v}\n")
+                    f.write(f"version_tag=v{clean_v}\n")
+                    f.write(f"folder_name=Hyggshi OS {clean_v} Archive\n")
+                    f.write(f"sourceforge_upload={'true' if sf_info.get('enabled') else 'false'}\n")
             except Exception:
                 pass
         sys.exit(0)

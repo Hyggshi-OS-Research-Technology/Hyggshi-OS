@@ -192,6 +192,9 @@ jobs:
       is_base_matrix: ${{ steps.set-matrix.outputs.is_base_matrix }}
       oem_matrix: ${{ steps.set-matrix.outputs.oem_matrix }}
       is_oem_matrix: ${{ steps.set-matrix.outputs.is_oem_matrix }}
+      version: ${{ steps.set-matrix.outputs.version }}
+      folder_name: ${{ steps.set-matrix.outputs.folder_name }}
+      sourceforge_upload: ${{ steps.set-matrix.outputs.sourceforge_upload }}
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
@@ -221,7 +224,7 @@ jobs:
       BASE_DISTRO: ${{ matrix.distro }}
       DE: ${{ matrix.desktop }}
       OEM: ${{ matrix.oem }}
-      ISO_FILENAME: "hyggshi-os-${{ matrix.distro }}-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-${{ github.run_number }}.iso"
+      ISO_FILENAME: "hyggshi-os-${{ matrix.desktop }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-${{ matrix.distro }}${{ matrix.oem == 'yes' && '-oem' || '' }}.iso"
     # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -863,7 +866,7 @@ jobs:
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-${{ matrix.distro }}-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-iso
+          name: hyggshi-os-${{ matrix.desktop }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-${{ matrix.distro }}${{ matrix.oem == 'yes' && '-oem' || '' }}-iso
           path: |
             ${{ env.ISO_FILENAME }}
             ${{ env.ISO_FILENAME }}.sha256
@@ -874,19 +877,27 @@ jobs:
           SOURCEFORGE_USERNAME: ${{ secrets.SOURCEFORGE_USERNAME }}
           SOURCEFORGE_PROJECT: ${{ secrets.SOURCEFORGE_PROJECT }}
           SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
+          SOURCEFORGE_FOLDER: ${{ env.SOURCEFORGE_FOLDER }}
+          SOURCEFORGE_UPLOAD: ${{ env.SOURCEFORGE_UPLOAD }}
           SF_KEY_PATH: /tmp/sf_key
         run: |
+          if [ "${SOURCEFORGE_UPLOAD}" != "true" ]; then
+            echo "SOURCEFORGE_UPLOAD không được kích hoạt trong config.ini ([upload-Releases-iso-sourceforge] sourceforge = false). Bỏ qua upload lên SourceForge."
+            exit 0
+          fi
           if [ -z "${SOURCEFORGE_SSH_KEY}" ]; then
             echo "SOURCEFORGE_SSH_KEY chưa được cấu hình. Bỏ qua bước upload lên SourceForge."
             exit 0
           fi
+          SF_USER="${SOURCEFORGE_USERNAME:-hyggshios}"
+          SF_PROJ="${SOURCEFORGE_PROJECT:-hyggshi-os}"
           printf '%s' "${SOURCEFORGE_SSH_KEY}" > "$SF_KEY_PATH"
           chmod 600 "$SF_KEY_PATH"
           pip install paramiko --break-system-packages --quiet
           python3 tools/upload_to_sourceforge.py \
-            --user  "$SOURCEFORGE_USERNAME" \
-            --project "$SOURCEFORGE_PROJECT" \
-            --folder "Hyggshi OS build #${{ github.run_number }}" \
+            --user  "$SF_USER" \
+            --project "$SF_PROJ" \
+            --folder "${SOURCEFORGE_FOLDER:-Hyggshi OS Archive}" \
             --file  "${{ env.ISO_FILENAME }}" \
             --file  "${{ env.ISO_FILENAME }}.sha256" \
             --key   "$SF_KEY_PATH"
@@ -979,17 +990,27 @@ jobs:
           SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
           SF_KEY_PATH: /tmp/sf_key
         run: |
+          SF_ENABLED=$(grep -A5 '\[upload-Releases-iso-sourceforge\]' iso-config/config/config.ini | grep -E '^\s*sourceforge\s*=' | head -n1 | cut -d= -f2 | tr -d ' "')
+          if [ "${SF_ENABLED}" != "true" ]; then
+            echo "SOURCEFORGE_UPLOAD không được kích hoạt trong config.ini ([upload-Releases-iso-sourceforge] sourceforge = false). Bỏ qua upload lên SourceForge."
+            exit 0
+          fi
           if [ -z "${SOURCEFORGE_SSH_KEY}" ]; then
             echo "SOURCEFORGE_SSH_KEY chưa được cấu hình. Bỏ qua bước upload lên SourceForge."
             exit 0
           fi
+          SF_USER="${SOURCEFORGE_USERNAME:-hyggshios}"
+          SF_PROJ="${SOURCEFORGE_PROJECT:-hyggshi-os}"
+          HYGGSHI_VER=$(grep -E '^\s*Version\s*=' iso-config/config/config.ini | head -n1 | cut -d= -f2 | tr -d ' "' | sed 's/^v//')
+          HYGGSHI_VER=${HYGGSHI_VER:-1.0}
+          SF_FOLDER="Hyggshi OS ${HYGGSHI_VER} Archive"
           printf '%s' "${SOURCEFORGE_SSH_KEY}" > "$SF_KEY_PATH"
           chmod 600 "$SF_KEY_PATH"
           pacman -Sy --noconfirm python python-pip python-paramiko 2>/dev/null || pip install paramiko --break-system-packages --quiet || true
           python3 tools/upload_to_sourceforge.py \
-            --user  "$SOURCEFORGE_USERNAME" \
-            --project "$SOURCEFORGE_PROJECT" \
-            --folder "Hyggshi OS build #${{ github.run_number }}" \
+            --user  "$SF_USER" \
+            --project "$SF_PROJ" \
+            --folder "$SF_FOLDER" \
             --file  "${{ env.ISO_FILENAME }}" \
             --key   "$SF_KEY_PATH"
           rm -f "$SF_KEY_PATH"
@@ -1045,17 +1066,27 @@ jobs:
           SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
           SF_KEY_PATH: /tmp/sf_key
         run: |
+          SF_ENABLED=$(grep -A5 '\[upload-Releases-iso-sourceforge\]' iso-config/config/config.ini | grep -E '^\s*sourceforge\s*=' | head -n1 | cut -d= -f2 | tr -d ' "')
+          if [ "${SF_ENABLED}" != "true" ]; then
+            echo "SOURCEFORGE_UPLOAD không được kích hoạt trong config.ini ([upload-Releases-iso-sourceforge] sourceforge = false). Bỏ qua upload lên SourceForge."
+            exit 0
+          fi
           if [ -z "${SOURCEFORGE_SSH_KEY}" ]; then
             echo "SOURCEFORGE_SSH_KEY chưa được cấu hình. Bỏ qua bước upload lên SourceForge."
             exit 0
           fi
+          SF_USER="${SOURCEFORGE_USERNAME:-hyggshios}"
+          SF_PROJ="${SOURCEFORGE_PROJECT:-hyggshi-os}"
+          HYGGSHI_VER=$(grep -E '^\s*Version\s*=' iso-config/config/config.ini | head -n1 | cut -d= -f2 | tr -d ' "' | sed 's/^v//')
+          HYGGSHI_VER=${HYGGSHI_VER:-1.0}
+          SF_FOLDER="Hyggshi OS ${HYGGSHI_VER} Archive"
           printf '%s' "${SOURCEFORGE_SSH_KEY}" > "$SF_KEY_PATH"
           chmod 600 "$SF_KEY_PATH"
           dnf install -y python3-paramiko 2>/dev/null || pip install paramiko --break-system-packages --quiet || true
           python3 tools/upload_to_sourceforge.py \
-            --user  "$SOURCEFORGE_USERNAME" \
-            --project "$SOURCEFORGE_PROJECT" \
-            --folder "Hyggshi OS build #${{ github.run_number }}" \
+            --user  "$SF_USER" \
+            --project "$SF_PROJ" \
+            --folder "$SF_FOLDER" \
             --file  "${{ env.ISO_FILENAME }}" \
             --key   "$SF_KEY_PATH"
           rm -f "$SF_KEY_PATH"
