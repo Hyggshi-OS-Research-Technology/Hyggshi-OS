@@ -16,11 +16,11 @@ on:
         required: false
         default: ""
       distro:
-        description: "Bản phân phối gốc (base distro)"
+        description: "Bản phân phối gốc (base distro; auto = tự động theo config.ini / Build-all-base-github-actions, all = build song song các base)"
         required: false
         type: choice
-        options: [debian, ubuntu, linuxmint, alpine, arch, fedora]
-        default: "debian"
+        options: [auto, all, debian, ubuntu, linuxmint, alpine, arch, fedora]
+        default: "auto"
       debian_version:
         description: "Phiên bản Debian (chỉ áp dụng khi distro = debian). 'testing' luôn trỏ đúng bản Testing hiện tại của Debian (rolling), không hardcode theo 1 codename cụ thể."
         required: false
@@ -182,28 +182,31 @@ env:
 
 jobs:
   matrix-prep:
-    name: "Chuẩn bị Desktop Matrix"
+    name: "Chuẩn bị Desktop & Base Matrix"
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       is_matrix: ${{ steps.set-matrix.outputs.is_matrix }}
+      base_matrix: ${{ steps.set-matrix.outputs.base_matrix }}
+      is_base_matrix: ${{ steps.set-matrix.outputs.is_base_matrix }}
       oem_matrix: ${{ steps.set-matrix.outputs.oem_matrix }}
       is_oem_matrix: ${{ steps.set-matrix.outputs.is_oem_matrix }}
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
 
-      - name: Xác định Desktop Matrix từ config.ini / input
+      - name: Xác định Desktop & Base Matrix từ config.ini / input
         id: set-matrix
         run: |
           python3 tools/hcl_parser.py iso-config/config/config.ini \
             --root "$GITHUB_WORKSPACE" \
+            --distro-override "${{ github.event.inputs.distro || 'auto' }}" \
             --de-override "${{ github.event.inputs.desktop || 'auto' }}" \
             --print-matrix-json
 
   build-iso:
-    name: "Build ISO (${{ matrix.desktop }}${{ matrix.oem == 'yes' && ' - OEM' || '' }})"
+    name: "Build ISO (${{ matrix.distro }} - ${{ matrix.desktop }}${{ matrix.oem == 'yes' && ' - OEM' || '' }})"
     needs: matrix-prep
     runs-on: ubuntu-latest
     
@@ -211,12 +214,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        distro: ${{ fromJson(needs.matrix-prep.outputs.base_matrix || '["debian"]') }}
         desktop: ${{ fromJson(needs.matrix-prep.outputs.matrix) }}
         oem: ${{ fromJson(needs.matrix-prep.outputs.oem_matrix || '["no"]') }}
     env:
+      BASE_DISTRO: ${{ matrix.distro }}
       DE: ${{ matrix.desktop }}
       OEM: ${{ matrix.oem }}
-      ISO_FILENAME: "hyggshi-os-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-${{ github.run_number }}.iso"
+      ISO_FILENAME: "hyggshi-os-${{ matrix.distro }}-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-${{ github.run_number }}.iso"
     # debootstrap + chroot cần quyền root
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -239,6 +244,7 @@ jobs:
         run: |
           python3 tools/hcl_parser.py iso-config/config/config.ini \
             --root "$GITHUB_WORKSPACE" \
+            --distro-override "$BASE_DISTRO" \
             --de-override "$DE" \
             --emit-json /tmp/hcl-resolved.json \
             --emit-env "$GITHUB_ENV" \
@@ -247,7 +253,7 @@ jobs:
       - name: Upload resolved config.ini (debug)
         uses: actions/upload-artifact@v4
         with:
-          name: hcl-resolved-config-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}
+          name: hcl-resolved-config-${{ matrix.distro }}-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}
           path: /tmp/hcl-resolved.json
           retention-days: 14
 
@@ -832,7 +838,7 @@ jobs:
         if: ${{ env.DEBUG_MODE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-debug-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}
+          name: hyggshi-os-debug-${{ matrix.distro }}-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}
           path: |
             install-debug.log
             nexwm-build-debug.log
@@ -857,7 +863,7 @@ jobs:
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-iso
+          name: hyggshi-os-${{ matrix.distro }}-${{ matrix.desktop }}${{ matrix.oem == 'yes' && '-oem' || '' }}-iso
           path: |
             ${{ env.ISO_FILENAME }}
             ${{ env.ISO_FILENAME }}.sha256

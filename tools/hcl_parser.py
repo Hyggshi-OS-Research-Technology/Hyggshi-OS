@@ -445,6 +445,16 @@ def classify(key: str, raw: str) -> ParsedValue:
 # 4. RESOLVER
 # ---------------------------------------------------------------------------
 
+BASE_CANONICAL = {
+    "debian": "debian",
+    "ubuntu": "ubuntu",
+    "mint": "linuxmint",
+    "linuxmint": "linuxmint",
+    "fedora": "fedora",
+    "alpine": "alpine",
+    "arch": "arch",
+}
+
 class Resolver:
     def __init__(self, sections: list, root: str):
         # PATCH 8: config.ini có 2 section CÙNG TÊN "[package]" (1 cái ở
@@ -662,6 +672,60 @@ class Resolver:
             else:
                 out["active_desktop"] = true_desktops[0]
                 out["desktops_to_build"] = true_desktops
+
+        return out
+
+    def resolve_base_distro(self, distro_override: str | None = None) -> dict:
+        """
+        Resolve [Base] section.
+        Hỗ trợ cờ Build-all-base-github-actions và multi-base selection (ví dụ Debian + Mint).
+        """
+        sec = self._kv("Base") if "Base" in self.sections else {}
+        out = {
+            "build_all_base_github_actions": False,
+            "active_base": "debian",
+            "bases_to_build": [],
+        }
+        known_bases = ["debian", "linuxmint", "ubuntu"]
+
+        # 1. Tìm cờ Build-all-base-github-actions
+        for k, v in sec.items():
+            k_clean = k.strip().lower().replace("_", "-")
+            if k_clean in ("build-all-base-github-actions", "build-all-base-github-action", "build-all-base"):
+                pv = classify(k, v)
+                if pv.type == "BOOLEAN":
+                    out["build_all_base_github_actions"] = bool(pv.value)
+
+        # 2. Tìm các Base đang = true
+        true_bases = []
+        for k, v in sec.items():
+            k_clean = k.strip().lower().replace("_", "-")
+            if k_clean.startswith("build-all") or k_clean.startswith("oem-"):
+                continue
+            canonical = BASE_CANONICAL.get(k.strip().lower(), k.strip().lower())
+            pv = classify(k, v)
+            if pv.type == "BOOLEAN" and pv.value is True:
+                if canonical not in true_bases:
+                    true_bases.append(canonical)
+
+        override = (distro_override or "").strip().lower()
+        if override == "all":
+            out["bases_to_build"] = known_bases
+            out["active_base"] = "debian"
+        elif override and override not in ("auto", "none"):
+            can = BASE_CANONICAL.get(override, override)
+            out["bases_to_build"] = [can]
+            out["active_base"] = can
+        elif out["build_all_base_github_actions"]:
+            out["bases_to_build"] = true_bases if true_bases else known_bases
+            out["active_base"] = true_bases[0] if true_bases else "debian"
+        else:
+            if true_bases:
+                out["active_base"] = true_bases[0]
+                out["bases_to_build"] = true_bases
+            else:
+                out["active_base"] = "debian"
+                out["bases_to_build"] = ["debian"]
 
         return out
 
@@ -914,13 +978,17 @@ class Resolver:
 
         return result
 
-    def resolve_my_version_os_base(self) -> dict:
+    def resolve_my_version_os_base(self, distro_override: str | None = None) -> dict:
         kv = self._kv("my-version-os-base")
         out = {}
         out["version"] = self.resolve_value("Version", kv["Version"])
         out["codename"] = self.resolve_value("codename", kv["codename"])
 
-        base_choice = self.resolve_enum_section("Base")
+        if distro_override and distro_override.strip().lower() not in ("auto", "none", "all"):
+            base_choice = BASE_CANONICAL.get(distro_override.strip().lower(), distro_override.strip().lower())
+        else:
+            base_raw = self.resolve_enum_section("Base")
+            base_choice = BASE_CANONICAL.get((base_raw or "").strip().lower(), (base_raw or "").strip().lower())
         out["base"] = base_choice
 
         kernel_raw = classify("kernel", kv["kernel"]).value
@@ -958,8 +1026,11 @@ class Resolver:
         out["firmware_enabled"] = firmware_flag
         fw_section_guess = f"firmware-{base_choice}" if base_choice else None
         if fw_section_guess and fw_section_guess not in self.sections:
+            fw_candidates = [f"firmware-{base_choice}".lower()]
+            if base_choice == "linuxmint":
+                fw_candidates.append("firmware-mint")
             fw_section_guess = next(
-                (s for s in self.order if s.lower() == f"firmware-{base_choice}".lower()),
+                (s for s in self.order if s.lower() in fw_candidates),
                 None,
             )
         out["firmware_section"] = fw_section_guess
@@ -1604,7 +1675,7 @@ class Resolver:
     # Schema validators
     # ------------------------------------------------------------------
 
-    _KNOWN_BASES = {"debian", "ubuntu", "mint", "fedora", "alpine", "arch"}
+    _KNOWN_BASES = {"debian", "ubuntu", "mint", "linuxmint", "fedora", "alpine", "arch"}
     _KNOWN_ARCHITECTURES = {"amd64", "arm64", "i386", "armhf", "riscv64"}
     _KNOWN_OEM = {"oem-mode-no", "oem-mode-yes", "build-all-oem-github-actions"}
 
@@ -1742,9 +1813,10 @@ class Resolver:
                         "error", f"[{sec_name}] {key} = {raw!r} — {e}"))
         self.validate_known_schemas()
 
-    def resolve_all(self, de_override: str | None = None) -> dict:
+    def resolve_all(self, de_override: str | None = None, distro_override: str | None = None) -> dict:
         result = {}
-        result["base_profile"] = self.resolve_my_version_os_base()
+        result["base_distro"] = self.resolve_base_distro(distro_override=distro_override)
+        result["base_profile"] = self.resolve_my_version_os_base(distro_override=distro_override)
         bp = result["base_profile"]
         kp = bp.get("kernel_profile") or {}
         
@@ -1793,7 +1865,7 @@ class Resolver:
 # 5. GITHUB ACTIONS ENV EXPORT
 # ---------------------------------------------------------------------------
 
-def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
+def to_env_lines(resolved: dict, de_override: str | None = None, distro_override: str | None = None) -> list:
     bp = resolved["base_profile"]
     lines = []
 
@@ -1804,7 +1876,12 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
     put("HYGGSHI_NAME", bp.get("name"))
     put("HYGGSHI_VERSION", bp.get("version"))
     put("HYGGSHI_CODENAME", bp.get("codename"))
-    put("BASE_DISTRO", str(bp.get("base") or "").lower())
+    
+    distro_effective = (distro_override or "").strip().lower()
+    if not distro_effective or distro_effective in ("auto", "none", "all"):
+        distro_effective = str(bp.get("base") or "debian").strip().lower()
+    base_val = BASE_CANONICAL.get(distro_effective, distro_effective)
+    put("BASE_DISTRO", base_val)
     arch_val = (resolved.get("architecture") or "amd64").strip().lower()
     put("ARCH", arch_val)
     lines.append(f"ARCH={arch_val}")
@@ -2172,7 +2249,7 @@ def to_env_lines(resolved: dict, de_override: str | None = None) -> list:
         autologin_val = True  # fallback: không có [Auto-login] -> default true
     lines.append(f"AUTOLOGIN={'true' if autologin_val else 'false'}")
 
-    base_val     = str(bp.get("base") or "").lower()
+    base_val     = BASE_CANONICAL.get(distro_effective, distro_effective)
     # BUG ĐÃ SỬA: dòng này trước đây tự đọc lại kp_val.get("desktop") (giá
     # trị TĨNH từ config.ini), bỏ qua de_override/de_effective đã tính ở
     # trên — nên dù --de-override đã lọc HCL_DESKTOP_PACKAGES đúng theo DE
@@ -2253,6 +2330,11 @@ def main():
         ),
     )
     ap.add_argument(
+        "--distro-override",
+        default=None,
+        help="Ghi đè base distro active khi resolve (vd debian, linuxmint, all, auto)"
+    )
+    ap.add_argument(
         "--print-matrix-json",
         action="store_true",
         help="In mảng JSON danh sách desktop matrix cần build (dành cho GitHub Actions matrix strategy)"
@@ -2270,7 +2352,7 @@ def main():
     resolver.validate_every_entry()
 
     try:
-        resolved = resolver.resolve_all(de_override=args.de_override)
+        resolved = resolver.resolve_all(de_override=args.de_override, distro_override=args.distro_override)
     except HclError as e:
         print(f"::error::[HCL resolve] {e}", file=sys.stderr)
         sys.exit(1)
@@ -2278,6 +2360,9 @@ def main():
     if args.print_matrix_json:
         de_info = resolved.get("desktop_environment") or {}
         oem_info = resolved.get("oem") or {}
+        base_info = resolved.get("base_distro") or {}
+
+        # 1. Desktop Matrix
         de_override = (args.de_override or "").strip().lower()
         if de_override == "all":
             matrix_list = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
@@ -2288,7 +2373,21 @@ def main():
         else:
             active = de_info.get("active_desktop") or "hde" if de_info.get("active_desktop") == "hde" else (de_info.get("active_desktop") or "xfce")
             matrix_list = [active]
+
+        # 2. Base Distro Matrix
+        base_override = (args.distro_override or "").strip().lower()
+        if base_override == "all":
+            base_list = ["debian", "linuxmint"]
+        elif base_override and base_override not in ("auto", "none"):
+            can = BASE_CANONICAL.get(base_override, base_override)
+            base_list = [can]
+        elif base_info.get("build_all_base_github_actions"):
+            base_list = base_info.get("bases_to_build") or ["debian", "linuxmint"]
+        else:
+            base_list = base_info.get("bases_to_build") or ["debian"]
+
         matrix_json = json.dumps(matrix_list)
+        base_matrix_json = json.dumps(base_list)
         print(matrix_json)
         gh_output = os.environ.get("GITHUB_OUTPUT")
         if gh_output:
@@ -2296,6 +2395,8 @@ def main():
                 with open(gh_output, "a", encoding="utf-8") as f:
                     f.write(f"matrix={matrix_json}\n")
                     f.write(f"is_matrix={'true' if len(matrix_list) > 1 else 'false'}\n")
+                    f.write(f"base_matrix={base_matrix_json}\n")
+                    f.write(f"is_base_matrix={'true' if len(base_list) > 1 else 'false'}\n")
                     oem_variants = oem_info.get("oem_variants_to_build") or ["no"]
                     f.write(f"oem_matrix={json.dumps(oem_variants)}\n")
                     f.write(f"is_oem_matrix={'true' if len(oem_variants) > 1 else 'false'}\n")
@@ -2318,7 +2419,7 @@ def main():
         print(f"[HCL] đã ghi {args.emit_json}")
 
     if args.emit_env:
-        lines = to_env_lines(resolved, de_override=args.de_override)
+        lines = to_env_lines(resolved, de_override=args.de_override, distro_override=args.distro_override)
         with open(args.emit_env, "a", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
         print(f"[HCL] đã append {len(lines)} biến env vào {args.emit_env}")
