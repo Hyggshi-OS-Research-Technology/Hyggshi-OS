@@ -114,6 +114,11 @@ if [ -f "iso-config/branding/Verdant-Valley.png" ]; then
   sudo install -m 0644 "iso-config/branding/Verdant-Valley.png" \
     "$CHROOT/usr/share/backgrounds/hyggshi/Verdant-Valley.png"
   echo "Đã copy Verdant-Valley.png vào /usr/share/backgrounds/hyggshi/"
+  if [ "${BASE_DISTRO:-}" = "linuxmint" ]; then
+    sudo touch "$CHROOT/etc/hyggshi-linuxmint"
+  else
+    sudo rm -f "$CHROOT/etc/hyggshi-linuxmint"
+  fi
 
   # Linux Mint ships its own Cinnamon background defaults. Seed a later
   # system dconf database after the image is in place so Mint's first user
@@ -984,6 +989,10 @@ echo "=== hyggshi-set-wallpaper.sh $(date) ==="
 BG_DIR="/usr/share/backgrounds/hyggshi"
 if [ -n "$1" ]; then
   WALL="$1"
+elif [ -f /etc/hyggshi-linuxmint ] && [ -f "$BG_DIR/wallpaper.png" ]; then
+  # Linux Mint's branded default is deterministic: wallpaper.png is copied
+  # from Verdant-Valley.png during the build.
+  WALL="$BG_DIR/wallpaper.png"
 else
   POOL=()
   for CANDIDATE in wallpaper.png car-light.png; do
@@ -1070,6 +1079,34 @@ apply_wallpaper_cinnamon() {
   fi
 }
 
+apply_wallpaper_xfce() {
+  wait_for_de_process xfdesktop
+  if ! command -v xfconf-query >/dev/null 2>&1; then
+    echo "CẢNH BÁO: thiếu xfconf-query — không thể áp wallpaper XFCE lúc đăng nhập." >&2
+    return 0
+  fi
+
+  local wallpaper_props
+  wallpaper_props=$(xfconf-query -c xfce4-desktop -lv 2>/dev/null \
+    | awk '$1 ~ /\/last-image$/ {print $1}')
+  if [ -n "$wallpaper_props" ]; then
+    while IFS= read -r prop; do
+      [ -n "$prop" ] || continue
+      xfconf-query -c xfce4-desktop -p "$prop" -s "$WALL" 2>>"$LOG" || true
+    done <<< "$wallpaper_props"
+  else
+    # A fresh profile may not have xfdesktop properties yet. Seed a concrete
+    # image for the primary monitor/workspace so the desktop can load it.
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image \
+      --create -t string -s "$WALL" 2>>"$LOG" || true
+  fi
+
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style \
+    --create -t int -s 5 2>>"$LOG" || true
+  xfdesktop --reload 2>>"$LOG" || true
+  echo "Đã set wallpaper XFCE -> $WALL"
+}
+
 apply_wallpaper_gnome() {
   gsettings set org.gnome.desktop.background picture-uri "file://$WALL" 2>>"$LOG"
   gsettings set org.gnome.desktop.background picture-uri-dark "file://$WALL" 2>>"$LOG"
@@ -1141,7 +1178,7 @@ apply_wallpaper_fallback() {
 DE_DETECTED=$(detect_de)
 echo "DE dò được: $DE_DETECTED"
 case "$DE_DETECTED" in
-  xfce)     echo "XFCE: bỏ qua auto-apply wallpaper lúc login (tính năng đã bị gỡ), giữ wallpaper mặc định lúc build." ;;
+  xfce)     apply_wallpaper_xfce ;;
   cinnamon) apply_wallpaper_cinnamon ;;
   gnome)    apply_wallpaper_gnome ;;
   mate)     apply_wallpaper_mate ;;
@@ -1206,7 +1243,7 @@ X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=8
 X-KDE-autostart-after=panel
 X-KDE-autostart-phase=2
-OnlyShowIn=Cinnamon;GNOME;MATE;KDE;LXQt;
+OnlyShowIn=XFCE;Cinnamon;GNOME;MATE;KDE;LXQt;
 NoDisplay=true
 Terminal=false
 DESKTOP
