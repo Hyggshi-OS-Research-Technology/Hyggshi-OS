@@ -114,6 +114,29 @@ if [ -f "iso-config/branding/Verdant-Valley.png" ]; then
   sudo install -m 0644 "iso-config/branding/Verdant-Valley.png" \
     "$CHROOT/usr/share/backgrounds/hyggshi/Verdant-Valley.png"
   echo "Đã copy Verdant-Valley.png vào /usr/share/backgrounds/hyggshi/"
+
+  # Linux Mint ships its own Cinnamon background defaults. Seed a later
+  # system dconf database after the image is in place so Mint's first user
+  # session (including users created by Calamares) starts with Verdant Valley.
+  if [ "${BASE_DISTRO:-}" = "linuxmint" ] && [ "${DE:-}" = "cinnamon" ]; then
+    MINT_DCONF_DIR="$CHROOT/etc/dconf/db/local.d"
+    sudo mkdir -p "$CHROOT/etc/dconf/profile" "$MINT_DCONF_DIR"
+    if [ ! -f "$CHROOT/etc/dconf/profile/user" ]; then
+      sudo tee "$CHROOT/etc/dconf/profile/user" > /dev/null <<'EOF'
+user-db:user
+system-db:local
+EOF
+    fi
+    sudo tee "$MINT_DCONF_DIR/02-hyggshi-wallpaper" > /dev/null <<'EOF'
+[org/cinnamon/desktop/background]
+picture-uri='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
+picture-uri-dark='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
+picture-options='zoom'
+EOF
+    sudo chroot "$CHROOT" dconf update || \
+      echo "WARNING: dconf update failed; Mint may apply the wallpaper on first login instead."
+    echo "OK: Linux Mint Cinnamon system default wallpaper set to Verdant Valley"
+  fi
 else
   echo "⚠️ Không thấy iso-config/branding/Verdant-Valley.png — Cinnamon sẽ dùng wallpaper fallback hiện có."
 fi
@@ -131,9 +154,14 @@ for CAR_FILE in car-light.png car-Dark.png car-auto.png; do
   fi
 done
 
-# 1. Ưu tiên file wallpaper có sẵn trong repo (checkout local, không phân biệt hoa/thường)
-WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \
-  \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+# 1. Linux Mint dùng Verdant Valley làm wallpaper mặc định cho mọi desktop
+# environment. Các distro khác giữ lựa chọn wallpaper.* hiện tại.
+if [ "${BASE_DISTRO:-}" = "linuxmint" ] && [ -f "iso-config/branding/Verdant-Valley.png" ]; then
+  WALLPAPER_FILE="iso-config/branding/Verdant-Valley.png"
+else
+  WALLPAPER_FILE=$(find iso-config/branding -maxdepth 1 -iname "wallpaper.*" \
+    \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+fi
 
 # 2. Nếu không có, tải trực tiếp từ GitHub
 if [ -z "$WALLPAPER_FILE" ]; then

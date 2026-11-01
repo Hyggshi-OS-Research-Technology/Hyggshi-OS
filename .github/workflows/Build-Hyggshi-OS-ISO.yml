@@ -190,6 +190,7 @@ jobs:
       is_matrix: ${{ steps.set-matrix.outputs.is_matrix }}
       base_matrix: ${{ steps.set-matrix.outputs.base_matrix }}
       is_base_matrix: ${{ steps.set-matrix.outputs.is_base_matrix }}
+      matrix_exclude: ${{ steps.set-matrix.outputs.matrix_exclude }}
       oem_matrix: ${{ steps.set-matrix.outputs.oem_matrix }}
       is_oem_matrix: ${{ steps.set-matrix.outputs.is_oem_matrix }}
       version: ${{ steps.set-matrix.outputs.version }}
@@ -219,6 +220,7 @@ jobs:
       matrix:
         distro: ${{ fromJson(needs.matrix-prep.outputs.base_matrix || '["debian"]') }}
         desktop: ${{ fromJson(needs.matrix-prep.outputs.matrix) }}
+        exclude: ${{ fromJson(needs.matrix-prep.outputs.matrix_exclude || '[]') }}
         oem: ${{ fromJson(needs.matrix-prep.outputs.oem_matrix || '["no"]') }}
     env:
       BASE_DISTRO: ${{ matrix.distro }}

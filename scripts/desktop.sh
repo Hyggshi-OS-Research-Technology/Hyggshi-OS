@@ -960,6 +960,43 @@ picture-uri='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
 picture-uri-dark='file:///usr/share/backgrounds/hyggshi/Verdant-Valley.png'
 picture-options='zoom'
 EOF
+
+    # Seed an intentional, fixed workspace layout for new users. Values live
+    # in config.ini so the workspace setup stays editable with the rest of HCL.
+    python3 - <<'PY'
+import json
+from pathlib import Path
+
+config_path = Path('/tmp/hcl-resolved.json')
+try:
+    resolved = json.loads(config_path.read_text())
+    config = resolved.get('base_profile', {}).get('config', {})
+except (OSError, json.JSONDecodeError, AttributeError):
+    config = {}
+
+try:
+    count = max(1, min(8, int(config.get('cinnamon-workspace-count', 4))))
+except (TypeError, ValueError):
+    count = 4
+
+names = [str(config.get(f'cinnamon-workspace-name-{i}', f'{i:02d}'))
+         for i in range(1, count + 1)]
+def gvariant_string(value):
+    escaped = (value.replace('\\', '\\\\')
+                    .replace("'", "\\'")
+                    .replace('\n', '\\n')
+                    .replace('\r', '\\r'))
+    return "'" + escaped + "'"
+
+workspace_names = '[' + ', '.join(gvariant_string(name) for name in names) + ']'
+Path('/etc/dconf/db/local.d/02-hyggshi-workspaces').write_text(
+    '[org/cinnamon/desktop/wm/preferences]\n'
+    f'num-workspaces={count}\n'
+    f'workspace-names={workspace_names}\n\n'
+    '[org/cinnamon/muffin]\n'
+    'dynamic-workspaces=false\n'
+)
+PY
     dconf update || echo "⚠️  dconf update thất bại — có thể do chạy trong chroot thiếu D-Bus, kiểm tra lại lúc boot thật."
 
     # Calamares can create the installed user's dconf database from the live

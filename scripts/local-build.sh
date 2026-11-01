@@ -41,6 +41,15 @@ case "$BASE_DISTRO" in
     ;;
 esac
 
+if [ "$BASE_DISTRO" = "linuxmint" ]; then
+  DE_MATRIX_JSON="$(python3 tools/hcl_parser.py iso-config/config/config.ini \
+    --root "$PWD" \
+    --distro-override "$BASE_DISTRO" \
+    --de-override "$DE" \
+    --print-matrix-json)"
+  DE="$(python3 -c 'import json,sys; print(json.load(sys.stdin)[0])' <<< "$DE_MATRIX_JSON")"
+fi
+
 if [ "$(id -u)" -ne 0 ] && ! command -v sudo >/dev/null; then
   echo "This build needs root privileges; install sudo or run it as root." >&2
   exit 1
