@@ -704,7 +704,7 @@ class Resolver:
                 continue
             custom = self.resolve_function(pv.value)
             target = str(custom.get("target", "")).strip().lower().replace("-", "")
-            desktop = str(custom.get("object", "")).strip().lower()
+            desktop = str(custom.get("object") or custom.get("DE-target") or custom.get("de-target") or "").strip().lower()
             if target and desktop:
                 out["custom_desktops"][target] = desktop
 
@@ -832,7 +832,7 @@ class Resolver:
         result = {"call": name, **kwargs}
         if name == "customDE":
             target = str(kwargs.get("target", "")).strip().lower().replace("-", "")
-            desktop = str(kwargs.get("object", "")).strip().lower()
+            desktop = str(kwargs.get("object") or kwargs.get("DE-target") or kwargs.get("de-target") or "").strip().lower()
             if not target:
                 self.diags.append(Diagnostic(
                     "error", "customDE(...) thiếu 'target' — cần tên base distro."))
@@ -841,7 +841,7 @@ class Resolver:
                     "error", f"customDE(target={target}) — base distro không được hỗ trợ."))
             if not desktop:
                 self.diags.append(Diagnostic(
-                    "error", "customDE(...) thiếu 'object' — cần tên desktop environment."))
+                    "error", "customDE(...) thiếu 'object' — cần tên desktop environment (có thể dùng DE-target)."))
             elif desktop not in {"xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde", "cli"}:
                 self.diags.append(Diagnostic(
                     "error", f"customDE(object={desktop}) — desktop environment không được hỗ trợ."))
