@@ -373,6 +373,31 @@ DISTRIB_CODENAME="$HYGGSHI_CODENAME"
 DISTRIB_DESCRIPTION="$DISTRIB_DESCRIPTION"
 EOF
 
+# Mint's System Info panel reads its own release metadata, independently of
+# /etc/os-release. Keep Mint's real release/codename/edition fields intact for
+# Mint tools, while replacing the user-facing names with the Hyggshi branding.
+if [ "$BASE_DISTRO" = "linuxmint" ] && [ -f "$CHROOT/etc/linuxmint/info" ]; then
+  sudo python3 - "$CHROOT/etc/linuxmint/info" "$PRETTY_NAME" <<'PY'
+from pathlib import Path
+import sys
+
+info = Path(sys.argv[1])
+description = sys.argv[2].replace('"', '\\"')
+lines = info.read_text(encoding="utf-8").splitlines()
+updated = set()
+for index, line in enumerate(lines):
+    key, separator, _value = line.partition("=")
+    if separator and key in {"DESCRIPTION", "GRUB_TITLE"}:
+        lines[index] = f'{key}="{description}"'
+        updated.add(key)
+for key in ("DESCRIPTION", "GRUB_TITLE"):
+    if key not in updated:
+        lines.append(f'{key}="{description}"')
+info.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+  echo "OK: branded /etc/linuxmint/info as $PRETTY_NAME"
+fi
+
 printf "%s \\n \\l\n\n" "$ISSUE_TITLE" | sudo tee "$CHROOT/etc/issue" > /dev/null
 echo "Welcome to $MOTD_TITLE — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
