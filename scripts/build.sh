@@ -2,10 +2,8 @@
 # build.sh — chuẩn bị host + dispatch sang script bootstrap riêng của từng distro.
 # Chạy trên HOST (runner), không chạy trong chroot.
 #
-# Phần bootstrap/apt-sources riêng cho từng distro giờ nằm ở
-# scripts/distros/build-<distro>.sh (debian / ubuntu / linuxmint / alpine /
-# arch), file này chỉ còn lo phần dùng chung (cài dependency trên host, dọn
-# ổ đĩa) rồi source đúng script của $BASE_DISTRO.
+# Phần bootstrap/apt-sources riêng cho từng distro nằm cạnh các script build;
+# Linux Mint dùng builder riêng trong scripts/Mint-folder.
 set -e
 [ "$DEBUG_MODE" = "true" ] && set -x
 
@@ -52,7 +50,7 @@ echo "$DE" | sudo tee "$DE_MARKER" >/dev/null
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$BASE_DISTRO" = "linuxmint" ]; then
   MINT_FOLDER="${HCL_MINT_FOLDER:-scripts/Mint-folder}"
-  MINT_BOOTSTRAP="${HCL_MINT_BOOTSTRAP:-scripts/distros/build-linuxmint.sh}"
+  MINT_BOOTSTRAP="${HCL_MINT_BOOTSTRAP:-scripts/Mint-folder/scripts/base/bootstrap-linuxmint.sh}"
   DISTRO_SCRIPT="$MINT_BOOTSTRAP"
   export MINT_FOLDER
   echo "MINT_FOLDER=$MINT_FOLDER" >> "$GITHUB_ENV"

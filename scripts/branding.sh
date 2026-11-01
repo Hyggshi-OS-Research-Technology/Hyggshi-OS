@@ -1056,11 +1056,6 @@ wait_for_de_process() {
   echo "CẢNH BÁO: không thấy tiến trình $proc sau 20s — vẫn thử áp wallpaper."
 }
 
-# Đã gỡ apply_wallpaper_xfce() (auto-apply wallpaper lúc login cho XFCE qua
-# xfconf-query + restart xfdesktop). XFCE giờ rơi vào apply_wallpaper_fallback
-# ở dispatch case bên dưới — không tự set wallpaper lúc login nữa, chỉ giữ
-# wallpaper mặc định đã patch sẵn vào xfce4-desktop.xml lúc build (skel).
-
 apply_wallpaper_cinnamon() {
   # Cinnamon dùng dconf/GSettings, không có "process reload" như xfdesktop —
   # cinnamon-settings-daemon tự áp ngay khi property đổi.
