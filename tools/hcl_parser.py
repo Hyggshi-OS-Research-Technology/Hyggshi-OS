@@ -624,6 +624,30 @@ class Resolver:
             "oem_variants_to_build": variants,
         }
 
+    def resolve_mint_build(self) -> dict:
+        """Resolve the Mint source folder and its integrated bootstrap script."""
+        values = {}
+        for key, raw, _group in self._entries("Mint-build"):
+            key_clean = key.strip().lower().replace("_", "-")
+            if key_clean not in {"mint-folder", "mint-bootstrap"}:
+                continue
+            parsed = self.resolve_value(key, raw)
+            values[key_clean] = str(parsed or "").strip()
+
+        folder = values.get("mint-folder", "")
+        bootstrap = values.get("mint-bootstrap", "")
+        if folder:
+            folder_path = os.path.normpath(os.path.join(self.root, folder))
+            if not os.path.isdir(folder_path):
+                self.diags.append(Diagnostic(
+                    "error", f"[Mint-build] Mint-folder — thư mục không tồn tại: {folder_path}"))
+        if bootstrap:
+            bootstrap_path = os.path.normpath(os.path.join(self.root, bootstrap))
+            if not os.path.isfile(bootstrap_path):
+                self.diags.append(Diagnostic(
+                    "error", f"[Mint-build] Mint-bootstrap — file không tồn tại: {bootstrap_path}"))
+        return {"folder": folder, "bootstrap": bootstrap}
+
     def resolve_sourceforge(self) -> dict:
         """
         Resolve [upload-Releases-iso-sourceforge] section.
@@ -1872,6 +1896,7 @@ class Resolver:
         
         result["architecture"] = self.resolve_architecture()
         result["oem"] = self.resolve_oem()
+        result["mint_build"] = self.resolve_mint_build()
         result["sourceforge"] = self.resolve_sourceforge()
 
         de_info = self.resolve_desktop_environment()
@@ -1927,6 +1952,9 @@ def to_env_lines(resolved: dict, de_override: str | None = None, distro_override
     put("HYGGSHI_NAME", bp.get("name"))
     put("HYGGSHI_VERSION", bp.get("version"))
     put("HYGGSHI_CODENAME", bp.get("codename"))
+    mint_build = resolved.get("mint_build") or {}
+    put("MINT_FOLDER", mint_build.get("folder", ""))
+    put("MINT_BOOTSTRAP", mint_build.get("bootstrap", ""))
     
     distro_effective = (distro_override or "").strip().lower()
     if not distro_effective or distro_effective in ("auto", "none", "all"):

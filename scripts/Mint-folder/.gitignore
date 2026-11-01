@@ -1,0 +1,9 @@
+# Generated build output
+build/chroot/
+build/image/
+build/*.iso
+build/*.sha256
+build/*.log
+build/*.env
+*.iso
+*.squashfs

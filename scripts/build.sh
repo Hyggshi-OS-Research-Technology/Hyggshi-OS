@@ -50,7 +50,19 @@ mkdir -p "$CHROOT_DIR"
 echo "$DE" | sudo tee "$DE_MARKER" >/dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
+if [ "$BASE_DISTRO" = "linuxmint" ]; then
+  MINT_FOLDER="${HCL_MINT_FOLDER:-scripts/Mint-folder}"
+  MINT_BOOTSTRAP="${HCL_MINT_BOOTSTRAP:-scripts/distros/build-linuxmint.sh}"
+  DISTRO_SCRIPT="$MINT_BOOTSTRAP"
+  export MINT_FOLDER
+  echo "MINT_FOLDER=$MINT_FOLDER" >> "$GITHUB_ENV"
+else
+  DISTRO_SCRIPT="$SCRIPT_DIR/distros/build-${BASE_DISTRO}.sh"
+fi
+
+if [[ "$DISTRO_SCRIPT" != /* ]]; then
+  DISTRO_SCRIPT="$PWD/${DISTRO_SCRIPT#./}"
+fi
 
 if [ ! -f "$DISTRO_SCRIPT" ]; then
   echo "Distro không hợp lệ: $BASE_DISTRO (không tìm thấy $DISTRO_SCRIPT)"
