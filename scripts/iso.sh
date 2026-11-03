@@ -396,7 +396,8 @@ if [ "$SECURE_BOOT_OK" = "true" ]; then
   for REDIRECT_DIR in "$EFI_STAGE/EFI/debian" "$EFI_STAGE/EFI/ubuntu" "$EFI_STAGE/EFI/BOOT" "$EFI_STAGE/boot/grub"; do
     mkdir -p "$REDIRECT_DIR"
     cat <<'REDIR_EOF' > "$REDIRECT_DIR/grub.cfg"
-search --file --no-floppy --set=hyggshi_root /boot/grub/grub.cfg
+search --file --no-floppy --set=hyggshi_root /live/vmlinuz
+set root=($hyggshi_root)
 set prefix=($hyggshi_root)/boot/grub
 configfile ($hyggshi_root)/boot/grub/grub.cfg
 REDIR_EOF
@@ -426,7 +427,9 @@ REDIR_EOF
   # Redirect grub.cfg trong cây ISO
   for REDIRECT_DIR in live-build/image/EFI/debian live-build/image/EFI/ubuntu live-build/image/EFI/BOOT; do
     cat <<'REDIR_EOF' | sudo tee "$REDIRECT_DIR/grub.cfg" >/dev/null
-search --file --no-floppy --set=hyggshi_root /boot/grub/grub.cfg
+search --file --no-floppy --set=hyggshi_root /live/vmlinuz
+set root=($hyggshi_root)
+set prefix=($hyggshi_root)/boot/grub
 configfile ($hyggshi_root)/boot/grub/grub.cfg
 REDIR_EOF
   done
@@ -499,6 +502,15 @@ done
 {
   echo "set timeout=10"
   echo "set default=0"
+  echo ""
+  # Luôn trỏ root vào phân vùng ISO9660 (nơi có /live/vmlinuz). Nếu không,
+  # khi boot UEFI từ efi.img thì root = ESP (FAT) -> 'file /live/vmlinuz not found'.
+  echo "insmod part_gpt"
+  echo "insmod part_msdos"
+  echo "insmod iso9660"
+  echo "insmod search_fs_file"
+  echo "search --no-floppy --file --set=root /live/vmlinuz"
+  echo "set prefix=(\$root)/boot/grub"
   echo ""
   if [ "$GRUB_BACKGROUND_APPLIED" = "true" ]; then
     # Chuyển GRUB sang gfxterm và áp background PNG. Dùng if/then để nếu
