@@ -70,18 +70,24 @@ cp -r /usr/share/archiso/configs/releng/ "$PROFILE_DIR"
 
 echo "===== packages.x86_64: thêm gói theo DE/edition/branding ====="
 # Gói base của releng đã có: base linux linux-firmware, mkinitcpio-archiso,
-# networkmanager, grub, efibootmgr, dosfstools, squashfs-tools... — chỉ cần
-# APPEND thêm, không ghi đè để không mất phần archiso cần cho live-boot.
+# grub, efibootmgr, dosfstools, squashfs-tools... — thêm networkmanager,
+# audio, X11/mesa và gói theo DE vào packages.x86_64.
 {
   echo ""
   echo "# ===== Hyggshi OS: gói thêm theo DE/edition (build-arch-iso.sh) ====="
+  echo "networkmanager"
+  echo "pipewire"
+  echo "pipewire-pulse"
+  echo "wireplumber"
+  echo "xorg-server"
+  echo "mesa"
   case "$DE" in
     kde)
-      printf '%s\n' plasma-desktop sddm konsole dolphin
+      printf '%s\n' plasma-desktop plasma-nm plasma-pa sddm konsole dolphin
       DISPLAY_MANAGER="sddm"
       ;;
     lxqt)
-      printf '%s\n' lxqt sddm pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt qps screengrab openbox obconf-qt
+      printf '%s\n' lxqt sddm pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt qps screengrab openbox obconf-qt network-manager-applet
       DISPLAY_MANAGER="sddm"
       ;;
     gnome)
@@ -89,15 +95,15 @@ echo "===== packages.x86_64: thêm gói theo DE/edition/branding ====="
       DISPLAY_MANAGER="gdm"
       ;;
     mate)
-      printf '%s\n' mate mate-extra lightdm lightdm-gtk-greeter
+      printf '%s\n' mate mate-extra lightdm lightdm-gtk-greeter network-manager-applet
       DISPLAY_MANAGER="lightdm"
       ;;
     cinnamon)
-      printf '%s\n' cinnamon lightdm lightdm-gtk-greeter
+      printf '%s\n' cinnamon lightdm lightdm-gtk-greeter network-manager-applet
       DISPLAY_MANAGER="lightdm"
       ;;
     *)
-      printf '%s\n' xfce4 xfce4-goodies xfce4-terminal lightdm lightdm-gtk-greeter
+      printf '%s\n' xfce4 xfce4-goodies xfce4-terminal lightdm lightdm-gtk-greeter network-manager-applet
       DISPLAY_MANAGER="lightdm"
       ;;
   esac
@@ -197,13 +203,22 @@ rm -f /root/.hyggshi-display-manager
 ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 
 echo "===== Tạo user mặc định cho live session ====="
-useradd -m -G wheel,storage,power,network -s /bin/bash "$OS_USERNAME"
+for grp in wheel storage power network video audio input autologin; do
+  groupadd -r "$grp" 2>/dev/null || true
+done
+id -u "$OS_USERNAME" >/dev/null 2>&1 || useradd -m -G wheel,audio,video,input,autologin -s /bin/bash "$OS_USERNAME"
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
-sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+mkdir -p /etc/sudoers.d
+echo "$OS_USERNAME ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/99-$OS_USERNAME"
+chmod 0440 "/etc/sudoers.d/99-$OS_USERNAME"
+sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers 2>/dev/null || true
 
 echo "===== Bật NetworkManager + display manager ====="
-systemctl enable NetworkManager.service
-systemctl enable "\${DISPLAY_MANAGER}.service"
+systemctl enable NetworkManager.service 2>/dev/null || true
+if [ -n "\${DISPLAY_MANAGER:-}" ]; then
+  systemctl enable "\${DISPLAY_MANAGER}.service" 2>/dev/null || true
+fi
+systemctl set-default graphical.target 2>/dev/null || true
 
 echo "===== Autologin cho live session ====="
 case "\$DISPLAY_MANAGER" in
@@ -224,6 +239,8 @@ AutomaticLogin = $OS_USERNAME
 EOF
     ;;
   *)
+    groupadd -r autologin 2>/dev/null || true
+    gpasswd -a "$OS_USERNAME" autologin 2>/dev/null || true
     mkdir -p /etc/lightdm/lightdm.conf.d
     cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
 [Seat:*]
