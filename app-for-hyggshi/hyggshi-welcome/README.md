@@ -89,11 +89,11 @@ elsewhere in one consistent flow: the Calamares `locale` module at install
 and the desktop's Region & Language settings afterwards.
 
 
-## Tự động mở cho user mới
+## Autostart for new users
 
-Hyggshi Welcome được cài vào `/etc/xdg/autostart/hyggshi-welcome.desktop` và đồng thời vào `/etc/skel/.config/autostart/`. Vì vậy user live và user mới tạo sau khi cài OS đều tự mở Welcome ở lần đăng nhập đầu tiên.
+Hyggshi Welcome is installed to `/etc/xdg/autostart/hyggshi-welcome.desktop` and mirrored in `/etc/skel/.config/autostart/`. Both live users and newly created accounts automatically launch Welcome on their first login.
 
-Ứng dụng lưu marker tại `~/.config/hyggshi/welcome-shown` sau khi người dùng chọn hoàn tất thiết lập. Nếu marker đã tồn tại, chương trình tự thoát và không hiện lại. Có thể test lại bằng:
+The application writes a marker file at `~/.config/hyggshi/welcome-shown` upon completing setup. If this marker exists, Welcome exits silently and will not show again. You can test or re-trigger it with:
 
 ```bash
 HYGGSHI_WELCOME_FORCE=1 hyggshi-welcome

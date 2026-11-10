@@ -1,34 +1,36 @@
 # hyggshi-extensions-sound-shortcut
 
-**Daemon C++ xử lý phím tắt âm thanh cho Hyggshi OS / XFCE.**
+**C++ daemon for global audio hotkeys on Hyggshi OS / XFCE.**
 
-Bắt phím `Fn+Volume Up/Down/Mute` toàn cục (XGrabKey), điều khiển âm lượng, và hiện OSD popup dark-theme giống macOS/Windows.
+Captures `Fn+Volume Up/Down/Mute` system-wide via `XGrabKey`, controls audio levels, and displays a modern dark-themed OSD popup similar to macOS/Windows.
 
 ---
 
-## Tính năng
+## Features
 
-| Tính năng | Mô tả |
-|-----------|-------|
-| 🎹 Global hotkey | Bắt `XF86AudioRaiseVolume`, `XF86AudioLowerVolume`, `XF86AudioMute` qua XGrabKey |
-| 🔊 Multi-backend | Auto-detect PipeWire (`wpctl`) → PulseAudio (`pactl`) → ALSA (`amixer`) |
-| 🪟 OSD Popup | Qt popup dark-theme, fade-in/out, tự ẩn sau 1.5 giây |
-| 🔒 Single-instance | `flock` lock — không mở 2 daemon cùng lúc |
-| 🚀 XFCE autostart | Cài vào `/etc/xdg/autostart/` — tự chạy cùng session |
+| Feature | Description |
+|---------|-------------|
+| 🎹 Global Hotkey | Captures `XF86AudioRaiseVolume`, `XF86AudioLowerVolume`, `XF86AudioMute` via `XGrabKey` |
+| 🔊 Multi-backend | Auto-detects PipeWire (`wpctl`) → PulseAudio (`pactl`) → ALSA (`amixer`) |
+| 🪟 OSD Popup | Qt dark-themed popup, fade-in/out animations, auto-hides after 1.5 seconds |
+| 🔒 Single-instance | Enforces single instance via `flock` |
+| 🚀 XFCE Autostart | Installs to `/etc/xdg/autostart/` to start with user sessions |
 
 ## Dependencies
 
-```
-libqt6-dev (hoặc libqt5-dev)
+```text
+libqt6-base-dev (or qtbase5-dev)
 libx11-dev
-libxtst-dev    ← XGrabKey
+libxtst-dev    <-- XGrabKey
 ```
 
-Cài trên Debian/Ubuntu:
+Installation on Debian/Ubuntu:
 ```bash
-sudo apt-get install -y qtbase5-dev libx11-dev libxtst-dev cmake gcc g++
-# Hoặc cho Qt6:
+# For Qt6:
 sudo apt-get install -y qt6-base-dev libx11-dev libxtst-dev cmake gcc g++
+
+# Or for Qt5:
+sudo apt-get install -y qtbase5-dev libx11-dev libxtst-dev cmake gcc g++
 ```
 
 ## Build
@@ -38,35 +40,34 @@ cd app-for-hyggshi/hyggshi-extensions-sound-shortcut
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
-sudo make install   # cài vào /usr/local/bin/ + /etc/xdg/autostart/
+sudo make install   # Installs to /usr/local/bin/ and /etc/xdg/autostart/
 ```
 
-## Chạy thử
+## Testing
 
 ```bash
 ./build/hyggshi-sound-shortcut
-# Bấm Fn+Vol+ trên bàn phím → OSD popup hiện ở góc phải dưới màn hình
+# Press Fn+Vol+ / Fn+Vol- on your keyboard -> OSD popup appears at bottom-right
 ```
 
-## Cấu trúc source
+## Source Structure
 
-```
+```text
 src/
-  main.cpp           — entry point, single-instance guard, kết nối signals
-  KeyGrabber.h/.cpp  — XGrabKey global hotkey listener
-  AudioController.h/.cpp — PipeWire/PulseAudio/ALSA backend
-  OsdWindow.h/.cpp   — Qt OSD popup với animation
+  main.cpp           - Entry point, single-instance guard, signal connections
+  KeyGrabber.h/.cpp  - XGrabKey global hotkey listener
+  AudioController.h/.cpp - PipeWire/PulseAudio/ALSA backend controller
+  OsdWindow.h/.cpp   - Qt OSD popup window with animation
 resources/
   hyggshi-sound-shortcut.qrc
   icons/{volume-high,volume-low,volume-muted}.png
 packaging/
-  *-autostart.desktop → /etc/xdg/autostart/
-  *-app.desktop       → /usr/share/applications/
+  *-autostart.desktop -> /etc/xdg/autostart/
+  *-app.desktop       -> /usr/share/applications/
 ```
 
-## Tích hợp vào Hyggshi OS ISO
+## Integration into Hyggshi OS ISO
 
-Binary được pre-build bởi CI và stage vào `/tmp/hyggshi-sound-shortcut` trước khi
-`desktop.sh` chạy trong chroot. `desktop.sh` copy binary + ghi autostart.
+The binary is pre-built by CI and staged into `/tmp/hyggshi-sound-shortcut` before `desktop.sh` runs inside the chroot. `desktop.sh` installs the binary and configures autostart.
 
-Xem phần `===== Hyggshi Sound Shortcut =====` trong `scripts/desktop.sh`.
+See the `===== Hyggshi Sound Shortcut =====` section in `scripts/desktop.sh`.

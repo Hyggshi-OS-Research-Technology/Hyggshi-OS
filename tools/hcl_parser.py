@@ -2475,7 +2475,7 @@ def main():
 
         # 2. Base Distro Matrix
         if base_override == "all":
-            base_list = ["debian", "linuxmint"]
+            base_list = base_info.get("bases_to_build") or ["debian", "ubuntu", "linuxmint"]
         elif base_override and base_override not in ("auto", "none"):
             can = BASE_CANONICAL.get(base_override, base_override)
             base_list = [can]

@@ -1,12 +1,12 @@
 # hyggshi-theme (bash + systemd timer)
 
-Bản thay thế nhẹ cho `hyggshi-theme-daemon` (C++/libxfconf, xem
-`app-for-hyggshi/hyggshi-theme-daemon/`). Thay vì 1 daemon chạy nền liên
-tục, đây chỉ là 1 script bash được **systemd timer** gọi mỗi 5 phút rồi
-thoát — không cần build gì cả (không cần `libxfconf-0-dev`/`glib2.0-dev`),
-RAM lúc rảnh gần như bằng 0.
+A lightweight alternative to `hyggshi-theme-daemon` (C++/libxfconf, see
+`app-for-hyggshi/hyggshi-theme-daemon/`). Instead of a persistent daemon running in the
+background, this is a bash script triggered by a **systemd timer** every 5 minutes and
+exits immediately — requiring no compile steps (no `libxfconf-0-dev`/`glib2.0-dev`
+dependencies), with near-zero idle RAM consumption.
 
-## Cài tay (để test, không qua ISO build)
+## Manual Installation (for local testing, outside ISO build)
 
 ```bash
 sudo cp hyggshi-auto-theme /usr/local/bin/
@@ -19,38 +19,32 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now hyggshi-auto-theme.timer
 ```
 
-Kiểm tra:
+Verification:
 
 ```bash
 systemctl status hyggshi-auto-theme.timer
-sudo systemctl start hyggshi-auto-theme.service   # chạy thử ngay, không đợi timer
+sudo systemctl start hyggshi-auto-theme.service   # run immediately without waiting for timer
 journalctl -u hyggshi-auto-theme.service -f
 ```
 
-## Cấu hình
+## Configuration
 
-Sửa `/etc/hyggshi/theme.conf` (toàn hệ thống) hoặc tạo riêng
-`~/.config/hyggshi/theme.conf` (ghi đè cho từng user, không cần sudo):
+Edit `/etc/hyggshi/theme.conf` (system-wide) or create
+`~/.config/hyggshi/theme.conf` (per-user override, no sudo needed):
 
-```
+```ini
 MODE=auto
 LIGHT_START=06:00
 DARK_START=18:00
 ```
 
-`MODE=light`/`dark` để ép cứng 1 theme, bỏ qua khung giờ.
+Set `MODE=light` or `MODE=dark` to force a specific theme, ignoring time schedules.
 
-## Vì sao service chạy bằng root nhưng vẫn đổi được wallpaper?
+## How the system service changes user desktop wallpaper
 
-`hyggshi-auto-theme.service` là **system** service (không phải
-`--user`), nên tự nó không có `DISPLAY`/`DBUS_SESSION_BUS_ADDRESS` của
-phiên đồ hoạ — gọi thẳng `xfconf-query` sẽ fail âm thầm. Script
-`hyggshi-auto-theme` tự dò phiên đang active qua `loginctl`, rồi
-`sudo -u <user>` kèm đúng 2 biến môi trường đó để gọi lại
-`/usr/local/bin/hyggshi-set-wallpaper.sh` (cài bởi `scripts/branding.sh`)
-đúng như cách `hyggshi-welcome` đang làm.
+`hyggshi-auto-theme.service` runs as a **system** service (not `--user`), so by default
+it lacks the `DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` environment variables of active graphical sessions. Calling `xfconf-query` directly would fail silently.
 
-Script cũng lưu theme đã áp gần nhất vào
-`/var/lib/hyggshi-auto-theme/last-applied-<user>` để **không** gọi lại
-`hyggshi-set-wallpaper.sh` (restart xfdesktop) mỗi 5 phút nếu theme chưa
-đổi — tránh giật/nháy màn hình định kỳ.
+The `hyggshi-auto-theme` script automatically discovers active graphical user sessions via `loginctl`, then runs as `sudo -u <user>` with the corresponding session variables to invoke `/usr/local/bin/hyggshi-set-wallpaper.sh` (deployed by `scripts/branding.sh`), matching the behavior of `hyggshi-welcome`.
+
+The script also tracks the last applied theme in `/var/lib/hyggshi-auto-theme/last-applied-<user>` to **avoid** redundant calls to `hyggshi-set-wallpaper.sh` (restarting xfdesktop) every 5 minutes if the theme has not changed — preventing periodic screen flickers.

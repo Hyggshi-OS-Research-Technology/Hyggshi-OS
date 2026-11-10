@@ -37,7 +37,7 @@ on:
         description: "Phiên bản Linux Mint (chỉ áp dụng khi distro = linuxmint)"
         required: false
         type: choice
-        options: ["22", "21.3", "21.2"]
+        options: ["22.3", "22", "21.3", "21.2"]
         default: "22"
       wallpaper_url:
         description: "Link ảnh wallpaper (dán trực tiếp URL .png/.jpg, vd link raw GitHub) — để trống dùng ảnh mặc định trong repo"
