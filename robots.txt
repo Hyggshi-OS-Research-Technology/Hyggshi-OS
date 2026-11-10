@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://hyggshiosdeveloper.github.io/hyggshi-os-website/sitemap.xml
-
