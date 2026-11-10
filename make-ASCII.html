@@ -1,0 +1,1094 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Xưởng ASCII</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: tiêu đề phía trên, khung canvas lớn bên trái, thanh điều khiển hẹp bên phải (xếp xuống dưới khung trên điện thoại). */
+:root {
+  --bg: #e6ebee;
+  --panel: #f3f6f7;
+  --stage: #fafbfc;
+  --line: #c6d0d6;
+  --ink: #13202a;
+  --muted: #52636e;
+  --accent: #2540c8;
+  --accent-fg: #ffffff;
+  --font-ui: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0f13; --panel: #111a20; --stage: #06090c; --line: #24323b;
+    --ink: #d8e6ee; --muted: #8da1ae; --accent: #8ea6ff; --accent-fg: #08101a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0f13; --panel: #111a20; --stage: #06090c; --line: #24323b;
+  --ink: #d8e6ee; --muted: #8da1ae; --accent: #8ea6ff; --accent-fg: #08101a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+h1 { margin: 0; font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.main { min-width: 0; display: grid; gap: 10px; }
+
+.stagebox {
+  position: relative;
+  height: clamp(320px, 70vh, 760px);
+  background: var(--stage);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.stagebox.drag { outline: 2px dashed var(--accent); outline-offset: -8px; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: crosshair; }
+
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.readout { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toast { font-size: 12px; color: var(--accent); min-height: 1em; }
+
+.btn {
+  font: inherit; font-weight: 600; color: var(--ink); background: transparent;
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer;
+}
+.btn:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+
+.panel {
+  min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 14px; display: grid; gap: 16px;
+}
+.group { display: grid; gap: 6px; min-width: 0; }
+.lbl, .group > label {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.lbl output, .group > label output { text-transform: none; letter-spacing: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.fx { display: grid; gap: 2px; }
+.fx button {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%;
+  font: inherit; text-align: left; color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; padding: 6px 10px; cursor: pointer;
+}
+.fx button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.fx button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.fx button span:last-child { font-family: var(--font-mono); font-size: 11px; opacity: 0.65; }
+
+select, input[type="text"], input[type="number"] {
+  width: 100%; font: inherit; color: var(--ink); background: var(--stage);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 4px 0; }
+.ramp {
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.12em; white-space: pre;
+  overflow-x: auto; padding: 6px 9px; border: 1px dashed var(--line); border-radius: 6px; color: var(--ink);
+}
+.hint { margin: 0; font-size: 12px; color: var(--muted); }
+.group > label.check { display: flex; align-items: center; gap: 8px; font-size: 13px; text-transform: none; letter-spacing: 0; font-family: var(--font-ui); color: var(--ink); justify-content: flex-start; }
+.group > label.filebtn { display: block; font-family: var(--font-ui); font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.filebtn { display: inline-block; text-align: center; }
+.sr:focus-visible + .filebtn { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.export { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: grid; gap: 12px; }
+.export h2 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+.exrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+#xcode {
+  width: 100%; min-width: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--ink);
+  background: var(--stage); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+  resize: vertical; white-space: pre; overflow: auto;
+}
+#xcode:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .stagebox { height: clamp(300px, 62vh, 520px); }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Xưởng ASCII</h1>
+    <p>Chín hiệu ứng chữ động chạy ngay trong trình duyệt. Đổi bộ ký tự, màu, tốc độ, hoặc thả ảnh của bạn vào khung.</p>
+  </header>
+
+  <div class="layout">
+    <div class="main">
+      <div class="stagebox" id="stage" aria-label="Khung hiển thị ASCII động">
+        <canvas id="cv" role="img" aria-label="Hiệu ứng ASCII đang chạy"></canvas>
+      </div>
+      <div class="bar">
+        <span class="readout" id="readout">đang khởi tạo…</span>
+        <div class="actions">
+          <span class="toast" id="toast" role="status" aria-live="polite"></span>
+          <button class="btn" id="copy" type="button">Sao chép khung hình</button>
+          <button class="btn" id="xopen" type="button" aria-expanded="false" aria-controls="exportPanel">Xuất mã nhúng</button>
+          <button class="btn primary" id="play" type="button">Tạm dừng</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel" aria-label="Điều khiển">
+      <div class="group">
+        <span class="lbl" id="fxlbl">Hiệu ứng</span>
+        <div class="fx" id="fxlist" role="group" aria-labelledby="fxlbl"></div>
+      </div>
+
+      <div class="group" id="optText" hidden>
+        <label for="txt">Dòng chữ</label>
+        <input id="txt" type="text" maxlength="24" value="XIN CHÀO" autocomplete="off">
+      </div>
+
+      <div class="group" id="optImage" hidden>
+        <span class="lbl">Ảnh</span>
+        <input id="file" class="sr" type="file" accept="image/*">
+        <label for="file" class="btn filebtn">Chọn ảnh từ máy…</label>
+        <p class="hint" id="fileinfo">Đang dùng ảnh mẫu. Bạn cũng có thể kéo thả ảnh vào khung.</p>
+        <label class="check" for="inv"><input id="inv" type="checkbox"> Đảo sáng tối</label>
+      </div>
+
+      <div class="group">
+        <label for="cs">Bộ ký tự</label>
+        <select id="cs">
+          <option value="classic">Cổ điển</option>
+          <option value="detail">Chi tiết</option>
+          <option value="blocks">Khối</option>
+          <option value="binary">Nhị phân</option>
+          <option value="viet">Chữ Việt</option>
+          <option value="custom">Tự nhập</option>
+        </select>
+        <input id="custom" type="text" value=" .oO0@" maxlength="40" aria-label="Chuỗi ký tự từ nhạt đến đậm" hidden autocomplete="off">
+        <div class="ramp" id="ramp" aria-label="Thang ký tự từ nhạt đến đậm"></div>
+      </div>
+
+      <div class="group">
+        <label for="cm">Màu</label>
+        <select id="cm">
+          <option value="ink">Mực</option>
+          <option value="duo">Hai màu</option>
+          <option value="rainbow">Cầu vồng</option>
+          <option value="heat">Lửa</option>
+          <option value="photo">Màu gốc ảnh</option>
+        </select>
+      </div>
+
+      <div class="group">
+        <label for="ix">Tương tác</label>
+        <select id="ix">
+          <option value="all">Tất cả</option>
+          <option value="halo">Hào quang theo con trỏ</option>
+          <option value="ring">Gợn sóng khi nhấp</option>
+          <option value="spark">Tia lửa khi di chuyển</option>
+          <option value="off">Tắt</option>
+        </select>
+        <p class="hint">Rê chuột, nhấp, nhấn giữ hoặc chạm vào khung. Gõ phím chữ để thả ký tự bay lên. Lửa bốc cao dưới con trỏ, sao bay đổi hướng theo con trỏ, donut xoay theo con trỏ.</p>
+      </div>
+
+      <div class="group">
+        <label for="sp">Tốc độ <output id="spv">1.0×</output></label>
+        <input id="sp" type="range" min="0.2" max="3" step="0.1" value="1">
+      </div>
+
+      <div class="group">
+        <label for="sz">Cỡ chữ <output id="szv">12 px</output></label>
+        <input id="sz" type="range" min="8" max="24" step="1" value="12">
+      </div>
+
+      <p class="hint">Phím tắt: số 1 đến 9 để đổi hiệu ứng, phím cách để tạm dừng.</p>
+    </aside>
+  </div>
+
+  <section class="export" id="exportPanel" aria-labelledby="exTitle" hidden>
+    <h2 id="exTitle">Mã nhúng cho website</h2>
+    <div class="exrow">
+      <div class="group">
+        <label for="xkind">Kiểu nhúng</label>
+        <select id="xkind">
+          <option value="frame">Khung trong trang</option>
+          <option value="bg">Nền toàn trang</option>
+        </select>
+      </div>
+      <div class="group">
+        <label for="xtheme">Màu nền</label>
+        <select id="xtheme">
+          <option value="dark">Tối</option>
+          <option value="light">Sáng</option>
+        </select>
+      </div>
+      <div class="group" id="xhgrp">
+        <label for="xh">Chiều cao khung (px)</label>
+        <input id="xh" type="number" min="120" max="1600" step="10" value="420">
+      </div>
+    </div>
+    <textarea id="xcode" readonly spellcheck="false" rows="12" aria-label="Mã nhúng"></textarea>
+    <div class="bar">
+      <span class="readout" id="xinfo"></span>
+      <div class="actions">
+        <span class="toast" id="xtoast" role="status" aria-live="polite"></span>
+        <button class="btn primary" id="xcopy" type="button">Sao chép mã</button>
+      </div>
+    </div>
+    <p class="hint">Mã lấy đúng hiệu ứng, bộ ký tự, màu, tốc độ, cỡ chữ và kiểu tương tác đang chọn ở trên. Dán vào nơi bạn muốn trong HTML; trang cần dùng mã hóa UTF-8. Kiểu "Nền toàn trang" đặt hiệu ứng phía sau nội dung với độ mờ 40%, chỉnh opacity trong mã nếu cần, và nếu thẻ body có nền đặc thì đặt nền trong suốt để thấy hiệu ứng.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
+  var UIFONT = '"Be Vietnam Pro", system-ui, sans-serif';
+
+  var canvas = $('#cv'), ctx = canvas.getContext('2d');
+  var stageEl = $('#stage');
+
+  var reduceMotion = false;
+  try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  var state = {
+    effect: 'plasma', charset: 'classic', color: 'duo', colorTouched: false,
+    speed: 1, size: 12, text: 'XIN CHÀO', custom: ' .oO0@',
+    paused: reduceMotion, inv: false, img: null
+  };
+
+  /* ---------- Theme tokens ---------- */
+  var scratch = document.createElement('canvas').getContext('2d');
+  function rgbOf(v) {
+    scratch.fillStyle = '#000';
+    scratch.fillStyle = String(v).trim();
+    var s = scratch.fillStyle;
+    if (s.charAt(0) === '#') return [1, 3, 5].map(function (i) { return parseInt(s.slice(i, i + 2), 16); });
+    var m = s.match(/[\d.]+/g);
+    return m ? m.slice(0, 3).map(Number) : [0, 0, 0];
+  }
+  var T = { ink: [20, 32, 42], acc: [37, 64, 200], dark: false };
+  function readTheme() {
+    var cs = getComputedStyle(document.documentElement);
+    T.ink = rgbOf(cs.getPropertyValue('--ink'));
+    T.acc = rgbOf(cs.getPropertyValue('--accent'));
+    var st = rgbOf(cs.getPropertyValue('--stage'));
+    T.dark = (0.2126 * st[0] + 0.7152 * st[1] + 0.0722 * st[2]) < 128;
+    dirty = true;
+  }
+
+  /* ---------- Grid ---------- */
+  var W = 0, H = 0, dpr = 1, cols = 0, rows = 0, cw = 7, chh = 14, offX = 0, offY = 0;
+  var vals = new Float32Array(0), gl = [], og = [], dirty = true;
+  var IX = { mode: 'all', px: 0, py: 0, lx: -99, ly: -99, inside: false, down: false, cx: 0, cy: 0, ready: false, rings: [], sparks: [] };
+  var ramp = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'], rampN = 10;
+
+  var RAMPS = {
+    classic: ' .:-=+*#%@',
+    detail: ' .\'`^",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$',
+    blocks: ' ░▒▓█',
+    binary: ' .01',
+    viet: ' .,~ăâơưêôđĐỔỒ@'
+  };
+  function setRamp() {
+    var s = state.charset === 'custom' ? state.custom : RAMPS[state.charset];
+    var arr = Array.from(s || '');
+    if (arr.length < 2) arr = Array.from(RAMPS.classic);
+    ramp = arr; rampN = arr.length;
+    $('#ramp').textContent = '"' + arr.join('') + '"';
+    dirty = true;
+  }
+
+  function layout() {
+    var r = stageEl.getBoundingClientRect();
+    W = Math.max(50, Math.floor(r.width)); H = Math.max(50, Math.floor(r.height));
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(W * dpr); canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var fs = state.size;
+    ctx.font = fs + 'px ' + MONO;
+    cw = ctx.measureText('M').width || fs * 0.6;
+    chh = Math.round(fs * 1.2);
+    cols = Math.max(8, Math.floor(W / cw)); rows = Math.max(6, Math.floor(H / chh));
+    offX = (W - cols * cw) / 2; offY = (H - rows * chh) / 2;
+    vals = new Float32Array(cols * rows);
+    gl = new Array(cols * rows);
+    og = new Array(cols * rows).fill('');
+    if (!IX.ready) { IX.cx = W / 2; IX.cy = H / 2; IX.ready = true; }
+    textData = null; imgData = null; imgRGB = null;
+    initEffect();
+    dirty = true;
+  }
+
+  /* ---------- Offscreen sampling (text + image) ---------- */
+  var textData = null, imgData = null, imgAlpha = null, imgRGB = null;
+
+  function makeOff() {
+    var c = document.createElement('canvas'); c.width = cols; c.height = rows; return c;
+  }
+  function prepText() {
+    var oc = makeOff(), g = oc.getContext('2d', { willReadFrequently: true });
+    var txt = (state.text || ' ').slice(0, 24);
+    var ky = cw / chh;
+    g.setTransform(1, 0, 0, ky, 0, 0);
+    g.font = '800 100px ' + UIFONT;
+    var w = g.measureText(txt).width || 1;
+    var F = 100 * cols * 0.84 / w;
+    F = Math.min(F, (rows * chh / cw) * 0.5);
+    g.font = '800 ' + F + 'px ' + UIFONT;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+    g.fillText(txt, cols / 2, (rows * chh / cw) / 2);
+    var d = g.getImageData(0, 0, cols, rows).data;
+    textData = new Float32Array(cols * rows);
+    for (var i = 0; i < textData.length; i++) textData[i] = d[i * 4 + 3] / 255;
+  }
+
+  var sampleImg = (function () {
+    var c = document.createElement('canvas'); c.width = 480; c.height = 320;
+    var g = c.getContext('2d');
+    g.fillStyle = '#05070c'; g.fillRect(0, 0, 480, 320);
+    var rg = g.createRadialGradient(240, 150, 10, 240, 150, 120);
+    rg.addColorStop(0, '#ffffff'); rg.addColorStop(0.55, '#d9d9d9'); rg.addColorStop(1, '#5a5a5a');
+    g.fillStyle = rg; g.beginPath(); g.arc(240, 150, 118, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#05070c';
+    for (var i = 0; i < 6; i++) g.fillRect(100, 170 + i * 16, 280, 3 + i * 1.6);
+    g.fillStyle = '#7a7a7a';
+    g.beginPath(); g.moveTo(0, 320); g.lineTo(0, 260); g.lineTo(90, 215); g.lineTo(160, 255); g.lineTo(250, 200);
+    g.lineTo(340, 258); g.lineTo(410, 222); g.lineTo(480, 262); g.lineTo(480, 320); g.closePath(); g.fill();
+    g.strokeStyle = '#bdbdbd'; g.lineWidth = 2; g.beginPath(); g.arc(240, 150, 140, 0, Math.PI * 2); g.stroke();
+    return c;
+  })();
+
+  function prepImage() {
+    var src = state.img || sampleImg;
+    var iw = src.naturalWidth || src.width, ih = src.naturalHeight || src.height;
+    var oc = makeOff(), g = oc.getContext('2d', { willReadFrequently: true });
+    var f = Math.min((cols * cw) / iw, (rows * chh) / ih);
+    var dw = iw * f / cw, dh = ih * f / chh;
+    g.drawImage(src, (cols - dw) / 2, (rows - dh) / 2, dw, dh);
+    var d = g.getImageData(0, 0, cols, rows).data;
+    imgData = new Float32Array(cols * rows);
+    imgAlpha = new Float32Array(cols * rows);
+    imgRGB = new Uint8ClampedArray(cols * rows * 3);
+    for (var i = 0; i < imgData.length; i++) {
+      imgRGB[i * 3] = d[i * 4]; imgRGB[i * 3 + 1] = d[i * 4 + 1]; imgRGB[i * 3 + 2] = d[i * 4 + 2];
+      var a = d[i * 4 + 3] / 255;
+      var l = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+      var v = a * (state.inv ? 1 - l : l);
+      v = Math.max(0, Math.min(1, (v - 0.5) * 1.25 + 0.5)) * (a > 0 ? 1 : 0);
+      imgData[i] = v; imgAlpha[i] = a;
+    }
+  }
+
+  /* ---------- Effects ---------- */
+  var heat = null, mx = null, stars = null, zb = null;
+  var GLYPHS = 'ABCDEFXYZ0123456789ăâđêôơư<>=+*/';
+  function pickGlyph() { return GLYPHS.charAt((Math.random() * GLYPHS.length) | 0); }
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+
+  var FX = {
+    plasma: {
+      name: 'Plasma', color: 'rainbow',
+      run: function (t) {
+        var k = 7 / Math.min(W, H);
+        for (var r = 0; r < rows; r++) {
+          var py = r * chh * k;
+          for (var c = 0; c < cols; c++) {
+            var px = c * cw * k;
+            var v = Math.sin(px * 1.3 + t) + Math.sin(py * 1.7 - t * 1.2) +
+              Math.sin((px + py) * 1.1 + t * 0.7) +
+              Math.sin(Math.sqrt(px * px + py * py) * 1.5 - t);
+            vals[r * cols + c] = clamp01(v / 8 + 0.5 + 0.08);
+          }
+        }
+      }
+    },
+    ripple: {
+      name: 'Sóng nước', color: 'duo',
+      run: function (t) {
+        var S = Math.min(W, H);
+        var x1 = W / 2 + Math.cos(t * 0.6) * W * 0.28, y1 = H / 2 + Math.sin(t * 0.8) * H * 0.28;
+        var x2 = W / 2 + Math.cos(t * 0.5 + 3) * W * 0.3, y2 = H / 2 + Math.sin(t * 0.7 + 1) * H * 0.3;
+        for (var r = 0; r < rows; r++) {
+          var y = (r + 0.5) * chh;
+          for (var c = 0; c < cols; c++) {
+            var x = (c + 0.5) * cw;
+            var d1 = Math.hypot(x - x1, y - y1) / S * 22, d2 = Math.hypot(x - x2, y - y2) / S * 22;
+            var v = (Math.sin(d1 - t * 4) + Math.sin(d2 - t * 3.2)) / 4 + 0.5;
+            vals[r * cols + c] = Math.pow(clamp01(v), 1.4);
+          }
+        }
+      }
+    },
+    tunnel: {
+      name: 'Đường hầm', color: 'rainbow',
+      run: function (t) {
+        var S = Math.min(W, H);
+        for (var r = 0; r < rows; r++) {
+          var dy = ((r + 0.5) * chh - H / 2) / S;
+          for (var c = 0; c < cols; c++) {
+            var dx = ((c + 0.5) * cw - W / 2) / S;
+            var d = Math.sqrt(dx * dx + dy * dy) + 0.0001;
+            var a = Math.atan2(dy, dx);
+            var s = Math.sin((0.35 / d + t * 1.6) * 4) * Math.sin(a * 6 + t * 0.4);
+            var fade = clamp01(d * 2.6);
+            vals[r * cols + c] = clamp01((0.5 + 0.5 * s) * fade);
+          }
+        }
+      }
+    },
+    fire: {
+      name: 'Lửa', color: 'heat', warm: true,
+      init: function () { heat = new Float32Array(cols * rows); this.acc = 0; },
+      run: function (t, dt) {
+        this.acc += dt;
+        var decay = 1.7 / rows;
+        while (this.acc > 0.028) {
+          this.acc -= 0.028;
+          igniteAtPointer();
+          for (var x = 0; x < cols; x++) {
+            heat[(rows - 1) * cols + x] = 0.55 + Math.random() * 0.45;
+            heat[(rows - 2) * cols + x] = Math.max(heat[(rows - 2) * cols + x], Math.random() * 0.8);
+          }
+          for (var y = 0; y < rows - 2; y++) {
+            for (var c = 0; c < cols; c++) {
+              var sh = (Math.random() < 0.3) ? (Math.random() < 0.5 ? -1 : 1) : 0;
+              var cc = Math.max(0, Math.min(cols - 1, c + sh));
+              var l = Math.max(0, cc - 1), rr = Math.min(cols - 1, cc + 1);
+              var b = (y + 1) * cols, b2 = Math.min(rows - 1, y + 2) * cols;
+              var v = (heat[b + l] + heat[b + cc] + heat[b + rr] + heat[b2 + cc]) / 4 - decay;
+              heat[y * cols + c] = v > 0 ? v : 0;
+            }
+          }
+        }
+        for (var i = 0; i < vals.length; i++) vals[i] = clamp01(heat[i] * 1.15);
+      }
+    },
+    matrix: {
+      name: 'Mưa mã', color: 'duo', glyph: true, warm: true,
+      init: function () {
+        mx = { head: new Float32Array(cols), sp: new Float32Array(cols) };
+        for (var c = 0; c < cols; c++) {
+          mx.head[c] = -Math.random() * rows * 1.5;
+          mx.sp[c] = 6 + Math.random() * 16;
+        }
+        for (var i = 0; i < gl.length; i++) gl[i] = pickGlyph();
+      },
+      run: function (t, dt) {
+        var k = Math.exp(-dt / 0.3);
+        for (var i = 0; i < vals.length; i++) vals[i] *= k;
+        for (var c = 0; c < cols; c++) {
+          var prev = Math.floor(mx.head[c]);
+          mx.head[c] += mx.sp[c] * dt;
+          var cur = Math.floor(mx.head[c]);
+          for (var y = prev + 1; y <= cur; y++) {
+            if (y >= 0 && y < rows) { var j = y * cols + c; vals[j] = 1; gl[j] = pickGlyph(); }
+          }
+          if (mx.head[c] > rows + 10) { mx.head[c] = -Math.random() * rows * 0.6; mx.sp[c] = 6 + Math.random() * 16; }
+        }
+        for (var n = 0; n < 6; n++) gl[(Math.random() * gl.length) | 0] = pickGlyph();
+      }
+    },
+    donut: {
+      name: 'Bánh donut', color: 'duo',
+      run: function (t) {
+        if (!zb || zb.length !== vals.length) zb = new Float32Array(vals.length);
+        vals.fill(0); zb.fill(0);
+        var A = t * 1.1 + (IX.cy / H - 0.5) * 4, B = t * 0.6 + (IX.cx / W - 0.5) * 4;
+        var cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
+        var K2 = 5, K1 = Math.min(W, H) * 0.55;
+        for (var th = 0; th < 6.2832; th += 0.07) {
+          var ct = Math.cos(th), st = Math.sin(th);
+          for (var ph = 0; ph < 6.2832; ph += 0.025) {
+            var cp = Math.cos(ph), sp = Math.sin(ph);
+            var cx = 2 + ct, cy = st;
+            var x = cx * (cB * cp + sA * sB * sp) - cy * cA * sB;
+            var y = cx * (sB * cp - sA * cB * sp) + cy * cA * cB;
+            var z = K2 + cA * cx * sp + cy * sA;
+            var ooz = 1 / z;
+            var col = Math.floor((W / 2 + K1 * ooz * x - offX) / cw);
+            var row = Math.floor((H / 2 - K1 * ooz * y - offY) / chh);
+            if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
+            var L = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
+            var i = row * cols + col;
+            if (L > 0 && ooz > zb[i]) { zb[i] = ooz; vals[i] = clamp01(L / 1.42); }
+          }
+        }
+      }
+    },
+    stars: {
+      name: 'Sao bay', color: 'ink', warm: true,
+      init: function () {
+        var n = Math.max(80, Math.floor(cols * rows / 7));
+        stars = { x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n), n: n };
+        for (var i = 0; i < n; i++) this.spawn(i, true);
+      },
+      spawn: function (i, any) {
+        stars.x[i] = Math.random() * 2 - 1; stars.y[i] = Math.random() * 2 - 1;
+        stars.z[i] = any ? 0.05 + Math.random() * 0.95 : 1;
+      },
+      run: function (t, dt) {
+        vals.fill(0);
+        var S = Math.min(W, H);
+        for (var i = 0; i < stars.n; i++) {
+          stars.z[i] -= dt * 0.35 * (IX.down ? 3 : 1);
+          if (stars.z[i] <= 0.03) this.spawn(i, false);
+          var z = stars.z[i];
+          var col = Math.floor((IX.cx + stars.x[i] / z * S * 0.3 - offX) / cw);
+          var row = Math.floor((IX.cy + stars.y[i] / z * S * 0.3 - offY) / chh);
+          if (col < 0 || col >= cols || row < 0 || row >= rows) {
+            if (z < 0.6) this.spawn(i, false);
+            continue;
+          }
+          var v = Math.pow(1 - z, 1.1);
+          var j = row * cols + col;
+          if (v > vals[j]) vals[j] = Math.max(0.12, v);
+        }
+      }
+    },
+    text: {
+      name: 'Chữ gợn sóng', color: 'rainbow',
+      run: function (t) {
+        if (!textData) prepText();
+        for (var r = 0; r < rows; r++) {
+          var shift = Math.sin(r * 0.35 + t * 3) * cols * 0.025;
+          for (var c = 0; c < cols; c++) {
+            var dy = Math.sin(c * 0.2 + t * 2.5) * 1.4;
+            var sx = Math.round(c + shift), sy = Math.round(r + dy);
+            var v = 0;
+            if (sx >= 0 && sx < cols && sy >= 0 && sy < rows) v = textData[sy * cols + sx];
+            var bg = 0.09 + 0.07 * Math.sin(c * 0.3 + r * 0.5 + t * 2);
+            vals[r * cols + c] = v > 0.05 ? clamp01(0.72 + 0.28 * v) : bg;
+          }
+        }
+      }
+    },
+    image: {
+      name: 'Ảnh', color: 'photo',
+      run: function (t) {
+        if (!imgData) prepImage();
+        var photo = state.color === 'photo';
+        var y0 = ((t * 0.35) % 1.3) * rows - 0.15 * rows;
+        for (var r = 0; r < rows; r++) {
+          var scan = Math.exp(-((r - y0) * (r - y0)) / 5);
+          for (var c = 0; c < cols; c++) {
+            var i = r * cols + c;
+            var v = imgData[i];
+            v = v * (0.92 + 0.08 * Math.sin(t * 2.2 + c * 0.12));
+            v += scan * (v > 0.03 ? 0.4 : 0.14);
+            vals[i] = clamp01(v);
+            if (photo && imgAlpha[i] > 0.5 && vals[i] < 0.16) vals[i] = 0.16;
+          }
+        }
+      }
+    }
+  };
+  var ORDER = ['plasma', 'ripple', 'tunnel', 'fire', 'matrix', 'donut', 'stars', 'text', 'image'];
+  var clock = 0;
+
+  function initEffect() {
+    var fx = FX[state.effect];
+    vals.fill(0);
+    if (fx.init) fx.init();
+    if (fx.warm) { for (var i = 0; i < 120; i++) fx.run(i * 0.03, 0.03); }
+  }
+
+  /* ---------- Rendering ---------- */
+  function cellChar(i) {
+    var o = og[i];
+    if (o) return o;
+    var v = vals[i];
+    if (v <= 0.015) return '';
+    if (FX[state.effect].glyph) return gl[i] || '';
+    var k = Math.min(rampN - 1, Math.floor(v * rampN));
+    var ch = ramp[k];
+    return ch === ' ' ? '' : ch;
+  }
+
+  function render() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = state.size + 'px ' + MONO;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var mode = state.color;
+    var photo = mode === 'photo' && state.effect === 'image' && !!imgRGB;
+    if (mode === 'photo' && !photo) mode = 'duo';
+    if (photo) { ctx.fillStyle = '#06090c'; ctx.fillRect(offX, offY, cols * cw, rows * chh); }
+    var inkStyle = 'rgb(' + T.ink[0] + ',' + T.ink[1] + ',' + T.ink[2] + ')';
+    ctx.fillStyle = inkStyle;
+    for (var r = 0; r < rows; r++) {
+      var y = offY + (r + 0.5) * chh;
+      for (var c = 0; c < cols; c++) {
+        var i = r * cols + c;
+        var ch = cellChar(i);
+        if (!ch) continue;
+        var v = vals[i];
+        ctx.globalAlpha = 0.35 + 0.65 * v;
+        if (mode === 'duo') {
+          ctx.fillStyle = 'rgb(' + ((T.acc[0] * (1 - v) + T.ink[0] * v) | 0) + ',' +
+            ((T.acc[1] * (1 - v) + T.ink[1] * v) | 0) + ',' + ((T.acc[2] * (1 - v) + T.ink[2] * v) | 0) + ')';
+        } else if (mode === 'rainbow') {
+          ctx.fillStyle = 'hsl(' + (((c / cols) * 220 + r * 3 + clock * 50 + v * 90) % 360 | 0) + ' 85% ' + (T.dark ? 66 : 40) + '%)';
+        } else if (mode === 'heat') {
+          ctx.fillStyle = 'hsl(' + (6 + v * 50 | 0) + ' 95% ' + (T.dark ? 34 + v * 36 : 52 - v * 16 | 0) + '%)';
+        } else if (photo) {
+          ctx.globalAlpha = 0.6 + 0.4 * v;
+          ctx.fillStyle = 'rgb(' + (Math.min(255, imgRGB[i * 3] * 1.1 + 22) | 0) + ',' +
+            (Math.min(255, imgRGB[i * 3 + 1] * 1.1 + 22) | 0) + ',' +
+            (Math.min(255, imgRGB[i * 3 + 2] * 1.1 + 22) | 0) + ')';
+        }
+        ctx.fillText(ch, offX + (c + 0.5) * cw, y);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function frameText() {
+    var out = [];
+    for (var r = 0; r < rows; r++) {
+      var line = '';
+      for (var c = 0; c < cols; c++) line += cellChar(r * cols + c) || ' ';
+      out.push(line.replace(/\s+$/, ''));
+    }
+    return out.join('\n');
+  }
+
+  /* ---------- Interaction: pointer, touch, keyboard ---------- */
+  function igniteAtPointer() {
+    if (IX.mode === 'off' || !IX.inside || state.paused || !heat) return;
+    var c0 = Math.floor((IX.px - offX) / cw), r0 = Math.floor((IX.py - offY) / chh);
+    var rad = IX.down ? 6 : 4;
+    for (var dr = -rad; dr <= rad; dr++) {
+      for (var dc = -rad * 2; dc <= rad * 2; dc++) {
+        var d = Math.hypot(dc / 2, dr) / rad;
+        var rr = r0 + dr, cc = c0 + dc;
+        if (d >= 1 || rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+        var j = rr * cols + cc, h = 1 - d * 0.4;
+        if (h > heat[j]) heat[j] = h;
+      }
+    }
+  }
+
+  function addSpark(x, y, vx, vy, g, life, ch) {
+    if (IX.sparks.length > 400) IX.sparks.shift();
+    IX.sparks.push({ x: x, y: y, vx: vx, vy: vy, g: g, life: life, max: life, ch: ch || '' });
+  }
+  function burst(x, y, n) {
+    for (var i = 0; i < n; i++) {
+      var a = Math.random() * Math.PI * 2, sp = 80 + Math.random() * 180;
+      addSpark(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 220, 0.7 + Math.random() * 0.6);
+    }
+  }
+  function typeKey(ch) {
+    if (state.paused || IX.mode === 'off' || /\s/.test(ch)) return;
+    var x = IX.inside ? IX.px : W * (0.15 + Math.random() * 0.7);
+    var y = IX.inside ? IX.py : H * 0.8;
+    addSpark(x, y, (Math.random() - 0.5) * 40, -90, 0, 1.8, ch);
+    if (IX.mode === 'all' || IX.mode === 'spark') burst(x, y, 6);
+  }
+
+  function stepInteraction(dt) {
+    var active = IX.mode !== 'off';
+    var tx = (active && IX.inside) ? IX.px : W / 2;
+    var ty = (active && IX.inside) ? IX.py : H / 2;
+    var k = Math.min(1, dt * 4);
+    IX.cx += (tx - IX.cx) * k; IX.cy += (ty - IX.cy) * k;
+    og.fill('');
+    if (!active) return;
+    var m = IX.mode, S = Math.min(W, H), r, c, i, d;
+
+    if (IX.inside && (m === 'all' || m === 'halo')) {
+      var R = Math.max(54, S * 0.11) * (IX.down ? 1.7 : 1);
+      var c0 = Math.floor((IX.px - offX) / cw), r0 = Math.floor((IX.py - offY) / chh);
+      var rc = Math.ceil(R / cw), rr = Math.ceil(R / chh);
+      for (r = Math.max(0, r0 - rr); r <= Math.min(rows - 1, r0 + rr); r++) {
+        for (c = Math.max(0, c0 - rc); c <= Math.min(cols - 1, c0 + rc); c++) {
+          d = Math.hypot(offX + (c + 0.5) * cw - IX.px, offY + (r + 0.5) * chh - IX.py) / R;
+          if (d < 1) {
+            var hv = 0.2 + 0.8 * (1 - d) * (1 - d);
+            i = r * cols + c;
+            if (hv > vals[i]) vals[i] = hv;
+          }
+        }
+      }
+    }
+
+    for (var q = IX.rings.length - 1; q >= 0; q--) {
+      var ring = IX.rings[q];
+      ring.age += dt;
+      if (ring.age > 1.3) { IX.rings.splice(q, 1); continue; }
+      var Rr = ring.age * S * 0.85, th = 16, fade = 1 - ring.age / 1.3;
+      for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+          d = Math.abs(Math.hypot(offX + (c + 0.5) * cw - ring.x, offY + (r + 0.5) * chh - ring.y) - Rr);
+          if (d < th) {
+            var w = (1 - d / th) * fade;
+            i = r * cols + c;
+            if (w > vals[i]) vals[i] = w;
+          }
+        }
+      }
+    }
+
+    for (var n = IX.sparks.length - 1; n >= 0; n--) {
+      var s = IX.sparks[n];
+      s.life -= dt;
+      if (s.life <= 0) { IX.sparks.splice(n, 1); continue; }
+      s.x += s.vx * dt; s.y += s.vy * dt; s.vy += s.g * dt; s.vx *= Math.pow(0.35, dt);
+      var cc = Math.floor((s.x - offX) / cw), rw = Math.floor((s.y - offY) / chh);
+      if (cc < 0 || cc >= cols || rw < 0 || rw >= rows) continue;
+      var ratio = s.life / s.max;
+      i = rw * cols + cc;
+      vals[i] = Math.max(vals[i], 0.35 + 0.65 * ratio);
+      og[i] = s.ch || (ratio > 0.66 ? '*' : ratio > 0.33 ? '+' : '·');
+    }
+  }
+
+  function setPointer(e) {
+    var b = stageEl.getBoundingClientRect();
+    IX.px = e.clientX - b.left; IX.py = e.clientY - b.top;
+  }
+  function onPointerMove(e) {
+    if (state.paused || IX.mode === 'off') return;
+    setPointer(e); IX.inside = true;
+    if ((IX.mode === 'all' || IX.mode === 'spark') && Math.hypot(IX.px - IX.lx, IX.py - IX.ly) > 12) {
+      IX.lx = IX.px; IX.ly = IX.py;
+      var cnt = IX.down ? 3 : 1;
+      for (var i = 0; i < cnt; i++) {
+        var a = Math.random() * Math.PI * 2, sp = 20 + Math.random() * 60;
+        addSpark(IX.px, IX.py, Math.cos(a) * sp, Math.sin(a) * sp, 60, 0.5 + Math.random() * 0.4);
+      }
+    }
+  }
+  function onPointerDown(e) {
+    if (state.paused || IX.mode === 'off') return;
+    setPointer(e); IX.inside = true; IX.down = true;
+    try { if (e.currentTarget && e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+    if (IX.mode === 'all' || IX.mode === 'ring') IX.rings.push({ x: IX.px, y: IX.py, age: 0 });
+    if (IX.mode === 'all' || IX.mode === 'spark') burst(IX.px, IX.py, 22);
+  }
+  function pointerEnd(e) {
+    IX.down = false;
+    if (e.pointerType !== 'mouse') IX.inside = false;
+  }
+  function onPointerLeave() { IX.inside = false; IX.down = false; }
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointerup', pointerEnd);
+  canvas.addEventListener('pointercancel', pointerEnd);
+  canvas.addEventListener('pointerleave', onPointerLeave);
+  $('#ix').addEventListener('change', function (e) {
+    IX.mode = e.target.value;
+    if (IX.mode === 'off') { IX.rings.length = 0; IX.sparks.length = 0; og.fill(''); dirty = true; }
+  });
+
+  /* ---------- Export: mã nhúng tự chứa ---------- */
+  var exOpen = false;
+
+  // Thu nhỏ ảnh để nhúng: lưới ASCII chỉ cần vài trăm điểm ảnh mỗi cạnh.
+  function shrinkImage(im) {
+    if (im._xurl) return im._xurl;
+    var iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
+    var s = Math.min(1, 720 / Math.max(iw, ih));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(iw * s)); c.height = Math.max(1, Math.round(ih * s));
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    var u = c.toDataURL('image/webp', 0.85);
+    if (u.indexOf('data:image/webp') !== 0) u = c.toDataURL('image/jpeg', 0.82);
+    im._xurl = u;
+    return u;
+  }
+
+  function buildExport(kind, themeKey, height) {
+    var key = state.effect, fx = FX[key];
+    var tok = themeKey === 'light'
+      ? { ink: [19, 32, 42], acc: [37, 64, 200], dark: false, bg: '#fafbfc' }
+      : { ink: [216, 230, 238], acc: [142, 166, 255], dark: true, bg: '#06090c' };
+    var imgUrl = '';
+    if (key === 'image') {
+      imgUrl = state.img ? shrinkImage(state.img) : sampleImg.toDataURL('image/png');
+      if (imgUrl.length > 400000) {
+        return { error: 'Ảnh này quá lớn để nhúng thẳng vào mã (' + Math.round(imgUrl.length / 1024) + ' KB). Hãy chọn ảnh nhỏ hơn rồi mở lại bảng này.' };
+      }
+    }
+    var fxSrc = '{' + Object.keys(fx).map(function (k) {
+      var v = fx[k];
+      return JSON.stringify(k) + ':' + (typeof v === 'function' ? v.toString() : JSON.stringify(v));
+    }).join(',') + '}';
+    var st = { effect: key, color: state.color, speed: state.speed, size: state.size, text: state.text, paused: false, inv: state.inv, img: null };
+
+    var L = [];
+    L.push('(function(){');
+    L.push('"use strict";');
+    L.push('var MONO=' + JSON.stringify(MONO) + ',UIFONT=' + JSON.stringify(UIFONT) + ';');
+    L.push('var stageEl=document.getElementById("ascii-fx"),canvas=document.getElementById("ascii-fx-cv"),ctx=canvas.getContext("2d");');
+    L.push('var state=' + JSON.stringify(st) + ';');
+    L.push('var T=' + JSON.stringify({ ink: tok.ink, acc: tok.acc, dark: tok.dark }) + ';');
+    L.push('var W=0,H=0,dpr=1,cols=0,rows=0,cw=7,chh=14,offX=0,offY=0,vals=new Float32Array(0),gl=[],og=[],dirty=true,clock=0;');
+    L.push('var ramp=' + JSON.stringify(ramp) + ',rampN=ramp.length;');
+    L.push('var IX={mode:' + JSON.stringify(IX.mode) + ',px:0,py:0,lx:-99,ly:-99,inside:false,down:false,cx:0,cy:0,ready:false,rings:[],sparks:[]};');
+    L.push('var heat=null,mx=null,stars=null,zb=null,textData=null,imgData=null,imgAlpha=null,imgRGB=null,sampleImg=null;');
+    L.push('var GLYPHS=' + JSON.stringify(GLYPHS) + ';');
+    [pickGlyph, clamp01].forEach(function (f) { L.push(f.toString()); });
+    L.push('var FX={' + JSON.stringify(key) + ':' + fxSrc + '};');
+    [layout, initEffect, cellChar, render, stepInteraction, addSpark, burst, typeKey, igniteAtPointer,
+      setPointer, onPointerMove, onPointerDown, pointerEnd, onPointerLeave, makeOff, prepText, prepImage
+    ].forEach(function (f) { L.push(f.toString()); });
+
+    L.push('var last=performance.now();');
+    L.push('function frame(now){var dt=Math.min(0.05,(now-last)/1000);last=now;if(!state.paused){var sdt=dt*state.speed;clock+=sdt;FX[state.effect].run(clock,sdt);stepInteraction(dt);}else{FX[state.effect].run(clock,0);}render();requestAnimationFrame(frame);}');
+    L.push('function boot(){layout();try{if(window.matchMedia("(prefers-reduced-motion: reduce)").matches){state.paused=true;}}catch(e){}requestAnimationFrame(frame);}');
+    if (IX.mode !== 'off') {
+      if (kind === 'bg') {
+        L.push('window.addEventListener("pointermove",onPointerMove);window.addEventListener("pointerdown",onPointerDown);window.addEventListener("pointerup",pointerEnd);window.addEventListener("pointercancel",pointerEnd);document.addEventListener("mouseleave",onPointerLeave);');
+      } else {
+        L.push('canvas.addEventListener("pointermove",onPointerMove);canvas.addEventListener("pointerdown",onPointerDown);canvas.addEventListener("pointerup",pointerEnd);canvas.addEventListener("pointercancel",pointerEnd);canvas.addEventListener("pointerleave",onPointerLeave);');
+      }
+      L.push('document.addEventListener("keydown",function(e){if(e.target&&e.target.closest&&e.target.closest("input,select,textarea,button,[contenteditable]"))return;if(e.metaKey||e.ctrlKey||e.altKey||!e.key||e.key.length!==1)return;' +
+        (kind === 'frame' ? 'if(!IX.inside)return;' : '') + 'typeKey(e.key);});');
+    }
+    L.push('var rs=0;new ResizeObserver(function(){cancelAnimationFrame(rs);rs=requestAnimationFrame(function(){var r=stageEl.getBoundingClientRect();if(Math.floor(r.width)!==W||Math.floor(r.height)!==H)layout();});}).observe(stageEl);');
+    L.push('if(document.fonts&&document.fonts.load){Promise.race([Promise.all([document.fonts.load(\'12px "JetBrains Mono"\'),document.fonts.load(\'800 40px "Be Vietnam Pro"\',"ÀẦỔ")]),new Promise(function(r){setTimeout(r,2500)})]).then(function(){layout();}).catch(function(){});}');
+    if (key === 'image') {
+      L.push('var im=new Image();im.onload=function(){state.img=im;boot();};im.src=' + JSON.stringify(imgUrl) + ';');
+    } else {
+      L.push('boot();');
+    }
+    L.push('})();');
+
+    var fonts = '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+      '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">';
+    var box = kind === 'bg'
+      ? 'position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.4;background:' + tok.bg + ';overflow:hidden'
+      : 'position:relative;width:100%;height:' + height + 'px;background:' + tok.bg + ';overflow:hidden';
+    var cvStyle = 'position:absolute;inset:0;width:100%;height:100%;display:block' + (kind === 'bg' ? '' : ';touch-action:pan-y;cursor:crosshair');
+    var code = '<!-- Xưởng ASCII: ' + fx.name + ' (cần trang HTML dùng UTF-8) -->\n' + fonts + '\n' +
+      '<div id="ascii-fx" style="' + box + '"><canvas id="ascii-fx-cv" style="' + cvStyle + '"></canvas></div>\n' +
+      '<' + 'script>\n' + L.join('\n') + '\n</' + 'script>\n';
+    return { code: code };
+  }
+
+  function refreshExport() {
+    if (!exOpen) return;
+    var kind = $('#xkind').value || 'frame';
+    var h = Math.max(120, Math.min(1600, parseInt($('#xh').value, 10) || 420));
+    $('#xhgrp').hidden = kind === 'bg';
+    var res = buildExport(kind, $('#xtheme').value || 'dark', h);
+    if (res.error) {
+      $('#xcode').value = res.error; $('#xinfo').textContent = ''; $('#xcopy').disabled = true;
+      return;
+    }
+    $('#xcode').value = res.code;
+    $('#xcopy').disabled = false;
+    $('#xinfo').textContent = FX[state.effect].name + ' · ' + (res.code.length / 1024).toFixed(1) + ' KB';
+  }
+
+  var xToastTimer = 0;
+  function toastX(msg) {
+    $('#xtoast').textContent = msg;
+    clearTimeout(xToastTimer);
+    xToastTimer = setTimeout(function () { $('#xtoast').textContent = ''; }, 2400);
+  }
+  $('#xopen').addEventListener('click', function () {
+    exOpen = !exOpen;
+    $('#exportPanel').hidden = !exOpen;
+    $('#xopen').setAttribute('aria-expanded', String(exOpen));
+    if (exOpen) {
+      refreshExport();
+      try { $('#exportPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+    }
+  });
+  ['xkind', 'xtheme', 'xh'].forEach(function (id) { $('#' + id).addEventListener('input', refreshExport); });
+  ['input', 'change'].forEach(function (ev) {
+    document.querySelector('.panel').addEventListener(ev, function () { setTimeout(refreshExport, 0); });
+  });
+  $('#xcode').addEventListener('focus', function (e) { e.target.select(); });
+  $('#xcopy').addEventListener('click', function () {
+    var text = $('#xcode').value;
+    var done = function () { toastX('Đã sao chép mã'); };
+    var fail = function () { if (legacyCopy(text)) done(); else toastX('Không sao chép được, hãy bấm vào khung mã và nhấn Ctrl+C'); };
+    try { navigator.clipboard.writeText(text).then(done, fail); } catch (e) { fail(); }
+  });
+
+  /* ---------- Loop ---------- */
+  var last = performance.now(), fpsN = 0, fpsT = 0, fps = 0;
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!state.paused) {
+      var sdt = dt * state.speed;
+      clock += sdt;
+      FX[state.effect].run(clock, sdt);
+      stepInteraction(dt);
+      dirty = true;
+      fpsN++; fpsT += dt;
+      if (fpsT >= 0.5) { fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0; updateReadout(); }
+    }
+    if (dirty) {
+      if (state.paused) FX[state.effect].run(clock, 0);
+      render(); dirty = false;
+    }
+    requestAnimationFrame(frame);
+  }
+  function updateReadout() {
+    $('#readout').textContent = cols + ' × ' + rows + ' ô · ' + (state.paused ? 'đang dừng' : fps + ' khung/giây');
+  }
+
+  /* ---------- UI ---------- */
+  var fxList = $('#fxlist');
+  ORDER.forEach(function (key, idx) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.dataset.fx = key;
+    b.innerHTML = '<span></span><span>' + (idx + 1) + '</span>';
+    b.firstChild.textContent = FX[key].name;
+    b.addEventListener('click', function () { setEffect(key); });
+    fxList.appendChild(b);
+  });
+
+  function setEffect(key) {
+    state.effect = key;
+    Array.prototype.forEach.call(fxList.children, function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.fx === key));
+    });
+    $('#optText').hidden = key !== 'text';
+    $('#optImage').hidden = key !== 'image';
+    if (!state.colorTouched) { state.color = FX[key].color; $('#cm').value = state.color; }
+    initEffect();
+    dirty = true; updateReadout(); refreshExport();
+  }
+
+  $('#cs').addEventListener('change', function (e) {
+    state.charset = e.target.value;
+    $('#custom').hidden = state.charset !== 'custom';
+    setRamp();
+  });
+  $('#custom').addEventListener('input', function (e) { state.custom = e.target.value; setRamp(); });
+  $('#cm').addEventListener('change', function (e) { state.color = e.target.value; state.colorTouched = true; dirty = true; });
+  $('#sp').addEventListener('input', function (e) {
+    state.speed = parseFloat(e.target.value); $('#spv').textContent = state.speed.toFixed(1) + '×';
+  });
+  $('#sz').addEventListener('input', function (e) {
+    state.size = parseInt(e.target.value, 10); $('#szv').textContent = state.size + ' px'; layout();
+  });
+  $('#txt').addEventListener('input', function (e) { state.text = e.target.value; textData = null; dirty = true; });
+  $('#inv').addEventListener('change', function (e) { state.inv = e.target.checked; imgData = null; dirty = true; });
+
+  function loadImageFile(file) {
+    if (!file || !/^image\//.test(file.type)) { $('#fileinfo').textContent = 'Tệp này không phải ảnh.'; return; }
+    var fr = new FileReader();
+    fr.onload = function () {
+      var im = new Image();
+      im.onload = function () {
+        state.img = im; imgData = null;
+        state.color = 'photo'; $('#cm').value = 'photo';
+        $('#fileinfo').textContent = 'Đang dùng: ' + file.name;
+        if (state.effect !== 'image') setEffect('image');
+        dirty = true; refreshExport();
+      };
+      im.onerror = function () { $('#fileinfo').textContent = 'Không đọc được ảnh này.'; };
+      im.src = fr.result;
+    };
+    fr.onerror = function () { $('#fileinfo').textContent = 'Không đọc được tệp này.'; };
+    fr.readAsDataURL(file);
+  }
+  $('#file').addEventListener('change', function (e) { loadImageFile(e.target.files && e.target.files[0]); });
+  stageEl.addEventListener('dragover', function (e) { e.preventDefault(); stageEl.classList.add('drag'); });
+  stageEl.addEventListener('dragleave', function () { stageEl.classList.remove('drag'); });
+  stageEl.addEventListener('drop', function (e) {
+    e.preventDefault(); stageEl.classList.remove('drag');
+    loadImageFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+
+  function setPaused(p) {
+    state.paused = p; $('#play').textContent = p ? 'Phát tiếp' : 'Tạm dừng';
+    last = performance.now(); dirty = true; updateReadout();
+  }
+  $('#play').addEventListener('click', function () { setPaused(!state.paused); });
+
+  var toastTimer = 0;
+  function toast(msg) {
+    $('#toast').textContent = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { $('#toast').textContent = ''; }, 2200);
+  }
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    return ok;
+  }
+  $('#copy').addEventListener('click', function () {
+    var text = frameText();
+    var done = function () { toast('Đã sao chép khung hình'); };
+    var fail = function () { if (legacyCopy(text)) done(); else toast('Không sao chép được trên trình duyệt này'); };
+    try { navigator.clipboard.writeText(text).then(done, fail); } catch (e) { fail(); }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.target.closest && e.target.closest('input,select,textarea,button')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === ' ') { e.preventDefault(); setPaused(!state.paused); return; }
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= ORDER.length) setEffect(ORDER[n - 1]);
+    else if (e.key.length === 1) typeKey(e.key);
+  });
+
+  /* ---------- Theme + resize ---------- */
+  try {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    (mq.addEventListener ? mq.addEventListener('change', readTheme) : mq.addListener(readTheme));
+  } catch (e) {}
+  new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  var rsRaf = 0;
+  new ResizeObserver(function () {
+    cancelAnimationFrame(rsRaf);
+    rsRaf = requestAnimationFrame(function () {
+      var r = stageEl.getBoundingClientRect();
+      if (Math.floor(r.width) !== W || Math.floor(r.height) !== H) layout();
+    });
+  }).observe(stageEl);
+
+  /* ---------- Boot ---------- */
+  readTheme();
+  setRamp();
+  $('#play').textContent = state.paused ? 'Phát tiếp' : 'Tạm dừng';
+  layout();
+  setEffect('plasma');
+  requestAnimationFrame(frame);
+
+  if (document.fonts && document.fonts.load) {
+    Promise.race([
+      Promise.all([
+        document.fonts.load('12px "JetBrains Mono"'),
+        document.fonts.load('800 40px "Be Vietnam Pro"', 'ÀẦỔ')
+      ]),
+      new Promise(function (res) { setTimeout(res, 2500); })
+    ]).then(function () { layout(); setEffect(state.effect); }).catch(function () {});
+  }
+})();
+</script>
+
+</body></html>

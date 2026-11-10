@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NexCode IDE – Fast, Lightweight, Extensible Code Editor | Hyggshi OS</title>
+  <meta name="description"
+    content="NexCode IDE: a fast, lightweight and extensible code editor built on Electron, TypeScript, Vite and Monaco. Integrated terminal, Git, debugger, AI agent, Markdown preview and first-class HOSC/HOSC++ support.">
+  <meta name="keywords"
+    content="NexCode, NexCode IDE, Hyggshi OS, code editor, Electron, Monaco Editor, TypeScript, HOSC, HOSC++, IDE">
+  <link rel="icon" href="Resources/favicon.ico">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ---------- NexCode page-specific styles (built on the Hyggshi design tokens) ---------- */
+    .nc-hero-shot { max-width: 980px; margin: var(--space-2xl) auto 0 auto; }
+    .nc-window {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg, 0 20px 50px rgba(0, 0, 0, .35)), var(--shadow-glow);
+    }
+    .nc-window-bar {
+      display: flex; align-items: center; gap: 7px;
+      padding: 11px 14px; background: rgba(0, 0, 0, .25);
+      border-bottom: 1px solid var(--c-border);
+    }
+    .nc-dot { width: 11px; height: 11px; border-radius: 50%; }
+    .nc-dot.r { background: #ef4444; } .nc-dot.y { background: #f59e0b; } .nc-dot.g { background: #10b981; }
+    .nc-window-title { margin-left: 10px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--c-text-muted); }
+    .nc-window img { display: block; width: 100%; height: auto; }
+
+    .nc-badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: var(--space-lg) auto 0 auto; max-width: 760px; }
+    .nc-chip {
+      font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600;
+      padding: .3rem .7rem; border-radius: var(--radius-full);
+      background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-text-secondary);
+    }
+    .nc-chip b { color: var(--c-primary-light); font-weight: 700; }
+
+    .nc-sub { color: var(--c-text-secondary); max-width: 680px; margin: var(--space-sm) auto 0 auto; line-height: 1.6; }
+    .nc-feature-card ul { margin: 0; padding-left: 1.1rem; color: var(--c-text-secondary); font-size: var(--text-sm); line-height: 1.7; }
+    .nc-feature-card p { margin: 0; color: var(--c-text-secondary); font-size: var(--text-sm); line-height: 1.65; }
+    .nc-feature-card code, .nc-inline {
+      font-family: var(--font-mono); font-size: .85em; padding: .1rem .4rem;
+      background: var(--c-bg-tertiary); border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+    }
+
+    .nc-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-lg); margin-top: var(--space-lg); }
+    .nc-step-num {
+      width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+      background: var(--c-primary); color: #fff; font-weight: 700; font-size: var(--text-sm); margin-right: 8px;
+    }
+    .nc-step-title { font-weight: 700; color: var(--c-text); margin-bottom: var(--space-sm); display: flex; align-items: center; }
+    .nc-prereq { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-md); }
+
+    .nc-table-wrap { overflow-x: auto; border: 1px solid var(--c-border); border-radius: var(--radius-xl); background: var(--c-surface); }
+    .nc-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+    .nc-table th {
+      text-align: left; padding: 12px 18px; font-size: var(--text-xs); text-transform: uppercase;
+      letter-spacing: .08em; color: var(--c-text-muted); border-bottom: 1px solid var(--c-border); background: rgba(0, 0, 0, .12);
+    }
+    .nc-table td { padding: 12px 18px; border-bottom: 1px solid var(--c-border); color: var(--c-text-secondary); vertical-align: middle; }
+    .nc-table tr:last-child td { border-bottom: none; }
+    .nc-table tr:hover td { background: var(--c-surface-hover); }
+    .nc-table td:first-child { white-space: nowrap; }
+    .nc-cmd {
+      font-family: var(--font-mono); font-size: 12.5px; color: #7dd3fc; background: #080d16;
+      border: 1px solid var(--c-border); padding: .2rem .55rem; border-radius: var(--radius-sm); cursor: pointer;
+    }
+    .nc-cmd:hover { border-color: var(--c-primary-light); }
+    kbd {
+      font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--c-text);
+      background: var(--c-bg-tertiary); border: 1px solid var(--c-border-hover);
+      border-bottom-width: 2px; border-radius: 6px; padding: .12rem .45rem; margin: 0 1px;
+    }
+
+    .nc-arch { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); }
+    .nc-arch-col { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-xl); padding: var(--space-xl); }
+    .nc-arch-col h3 { margin: 0 0 4px 0; font-size: var(--text-lg); color: var(--c-text); }
+    .nc-arch-col .nc-arch-sub { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--c-primary-light); margin-bottom: var(--space-md); display: block; }
+    .nc-arch-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .nc-arch-col li { color: var(--c-text-secondary); font-size: var(--text-sm); padding-left: 18px; position: relative; }
+    .nc-arch-col li::before { content: ""; position: absolute; left: 0; top: .6em; width: 7px; height: 7px; border-radius: 50%; background: var(--c-primary-light); }
+    .nc-arch-bridge {
+      grid-column: 1 / -1; text-align: center; font-family: var(--font-mono); font-size: var(--text-xs);
+      color: var(--c-text-muted); border: 1px dashed var(--c-border-hover); border-radius: var(--radius-lg); padding: 10px;
+    }
+
+    .nc-related { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-lg); }
+    .nc-related a { text-decoration: none; color: inherit; }
+    .nc-related .feature-card h3 { margin: 0; }
+
+    .nc-toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+      background: var(--c-success); color: #fff; font-weight: 600; font-size: var(--text-sm);
+      padding: .65rem 1.2rem; border-radius: var(--radius-md); transition: all .25s ease; z-index: 1000;
+    }
+    .nc-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 760px) { .nc-arch { grid-template-columns: 1fr; } }
+  </style>
+</head>
+
+<body>
+  <!-- Header / Navigation -->
+  <header class="flat-header">
+    <div class="flat-nav-container">
+      <a href="index.html" class="flat-logo">
+        <img src="Resources/upscalemedia-transformed.png" alt="Hyggshi OS Logo">
+        <span>Hyggshi OS <span style="opacity: 0.5; font-weight: 400;">| NexCode IDE</span></span>
+      </a>
+
+      <div class="flat-nav-center">
+        <ul class="flat-nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="About.html">About</a></li>
+          <li><a href="projects.html" class="active">Projects</a></li>
+          <li><a href="HyggshiOSLinux.html">Linux Edition</a></li>
+          <li><a href="HyggshiOSWeb.html">Web Edition</a></li>
+          <li><a href="History.html">History</a></li>
+          <li><a href="news.html">News</a></li>
+          <li><a href="download.html">Download</a></li>
+        </ul>
+      </div>
+
+      <div class="flat-nav-actions">
+        <button class="theme-toggle" title="Toggle theme">
+          <span class="toggle-icon"></span>
+        </button>
+        <a href="https://github.com/Hyggshi-OS-project-center/NexCode/releases" target="_blank" rel="noopener"
+          class="btn-flat-download">
+          <span>Download</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== HERO ==================== -->
+    <section class="section" style="padding-top: var(--space-xl); text-align: center;">
+      <div class="hero-badge" style="margin: 0 auto var(--space-md) auto;">
+        <span class="status-dot"></span>
+        <span>v4.2.0 · Test Local · Part of Hyggshi OS</span>
+      </div>
+
+      <h1 class="hero-title" style="margin: 0 auto var(--space-md) auto; max-width: 840px;">
+        NexCode IDE.<br>
+        <span class="title-accent">Fast. Lightweight. Extensible.</span>
+      </h1>
+
+      <p class="hero-description" style="margin: 0 auto var(--space-xl) auto; max-width: 740px;">
+        A modern, hackable desktop code editor built on Electron, TypeScript, Vite and Monaco Editor. The familiar
+        VS Code experience with super-fast startup, ultra-low resource usage and first-class support for the
+        HOSC/HOSC++ language and the Hyggshi OS ecosystem.
+      </p>
+
+      <div class="hero-actions" style="justify-content: center; margin-bottom: var(--space-lg);">
+        <a href="https://github.com/Hyggshi-OS-project-center/NexCode/releases" target="_blank" rel="noopener"
+          class="btn btn-primary btn-large">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Download NexCode</span>
+        </a>
+        <a href="#getting-started" class="btn btn-secondary btn-large">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          <span>Run from Source</span>
+        </a>
+      </div>
+
+      <div class="nc-badges">
+        <span class="nc-chip">License <b>MIT</b></span>
+        <span class="nc-chip">HOSL <b>1.3</b></span>
+        <span class="nc-chip">Platform <b>Windows | Linux</b></span>
+        <span class="nc-chip"><b>Electron</b></span>
+        <span class="nc-chip"><b>TypeScript</b></span>
+        <span class="nc-chip"><b>Vite</b></span>
+        <span class="nc-chip"><b>Monaco</b> Editor</span>
+      </div>
+
+      <!-- Screenshot -->
+      <div class="nc-hero-shot">
+        <div class="nc-window">
+          <div class="nc-window-bar">
+            <span class="nc-dot r"></span><span class="nc-dot y"></span><span class="nc-dot g"></span>
+            <span class="nc-window-title">NexCode IDE</span>
+          </div>
+          <img src="Resources/Screenshot%202026-09-03.png" alt="NexCode IDE Screenshot" loading="lazy"
+            onerror="this.closest('.nc-hero-shot').style.display='none'">
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== OVERVIEW STATS ==================== -->
+    <section class="section" style="padding-top: 0;">
+      <div class="features-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+        <div class="feature-card" style="text-align: center; align-items: center;">
+          <div style="font-size: var(--text-3xl); font-weight: 800; color: var(--c-primary-light);">Monaco</div>
+          <p style="margin: 0; color: var(--c-text-secondary); font-size: var(--text-sm);">Same editing core as VS Code</p>
+        </div>
+        <div class="feature-card" style="text-align: center; align-items: center;">
+          <div style="font-size: var(--text-3xl); font-weight: 800; color: var(--c-primary-light);">12+</div>
+          <p style="margin: 0; color: var(--c-text-secondary); font-size: var(--text-sm);">Languages incl. HOSC/HOSC++</p>
+        </div>
+        <div class="feature-card" style="text-align: center; align-items: center;">
+          <div style="font-size: var(--text-3xl); font-weight: 800; color: var(--c-primary-light);">F5</div>
+          <p style="margin: 0; color: var(--c-text-secondary); font-size: var(--text-sm);">One-click run &amp; debug</p>
+        </div>
+        <div class="feature-card" style="text-align: center; align-items: center;">
+          <div style="font-size: var(--text-3xl); font-weight: 800; color: var(--c-primary-light);">MIT</div>
+          <p style="margin: 0; color: var(--c-text-secondary); font-size: var(--text-sm);">Open source on GitHub</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== FEATURES ==================== -->
+    <section class="section" id="features">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Features</span>
+        </div>
+        <h2 class="section-title">Everything you need, <span class="title-accent">nothing you don't</span></h2>
+        <p class="nc-sub">A complete development environment in a single lightweight desktop app.</p>
+      </div>
+
+      <div class="features-grid">
+        <!-- Editor -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg></div>
+          <h3>Monaco-powered Editor</h3>
+          <ul>
+            <li>Syntax highlighting, IntelliSense, parameter hints, folding, multi-cursor</li>
+            <li>TypeScript, JavaScript, Python, C/C++, HTML, CSS, JSON, Markdown, Lua, Go, Rust and <b>HOSC/HOSC++</b></li>
+            <li>Split editor, drag-and-drop tabs, regex find &amp; replace</li>
+            <li>Invisible Unicode detector against Trojan Source attacks</li>
+          </ul>
+        </div>
+
+        <!-- Markdown -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
+          <h3>Markdown Live Preview</h3>
+          <ul>
+            <li>Full-width preview with instant synchronization</li>
+            <li>LaTeX math, Mermaid diagrams, GFM task lists and tables</li>
+            <li>Syntax-highlighted code blocks with one-click copy</li>
+            <li>Quick switch between source and preview</li>
+          </ul>
+        </div>
+
+        <!-- Terminal -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></div>
+          <h3>Integrated Terminal</h3>
+          <ul>
+            <li>Multi-session xterm.js terminal: <code>bash</code>, <code>zsh</code>, <code>cmd</code>, <code>PowerShell</code></li>
+            <li>Ligatures, Unicode 11, Fit and Clipboard addons, clickable URLs</li>
+            <li>Shell quick-switcher and toggleable panel</li>
+          </ul>
+        </div>
+
+        <!-- AI -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg></div>
+          <h3>AI Assistant &amp; IDE Agent</h3>
+          <ul>
+            <li>Dedicated AI agent panel with chat interface for interactive coding help</li>
+            <li>Gemini AI diff review: inline reviews, explanations and refactoring suggestions</li>
+          </ul>
+        </div>
+
+        <!-- Git -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg></div>
+          <h3>Git &amp; Source Control</h3>
+          <p>Built-in Git panel: unstaged/staged changes, inline diff viewer, stage/unstage files, commit messages and branch status.</p>
+        </div>
+
+        <!-- Debugger -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div>
+          <h3>Run &amp; Debugger</h3>
+          <ul>
+            <li>One-click run with <kbd>F5</kbd> directly in the terminal</li>
+            <li>Breakpoints, step execution, call stack and live variable watch</li>
+          </ul>
+        </div>
+
+        <!-- Extensions -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>
+          <h3>Extensions &amp; Themes</h3>
+          <ul>
+            <li>Extension marketplace via the <b>Open VSX</b> registry</li>
+            <li><b>HSIXET</b> theme engine with the custom <code>.hsiext</code> format for UI palettes and editor color schemes</li>
+          </ul>
+        </div>
+
+        <!-- Viewers -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
+          <h3>Built-in Viewers &amp; Web Preview</h3>
+          <ul>
+            <li><b>PDF viewer</b> with no external dependencies</li>
+            <li><b>Browser preview</b> in an iframe with responsive simulation</li>
+            <li><b>Media viewer</b> for images, video and audio</li>
+          </ul>
+        </div>
+
+        <!-- Easter eggs -->
+        <div class="feature-card nc-feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></div>
+          <h3>Easter Eggs &amp; Moments</h3>
+          <p>Interactive chibi characters (Shiroko, Hoshino, Momoi) and audio moments that bring personality to your coding sessions.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== GETTING STARTED ==================== -->
+    <section class="section" id="getting-started">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Getting Started</span>
+        </div>
+        <h2 class="section-title">Run from <span class="title-accent">source</span></h2>
+        <p class="nc-sub">Three commands from clone to a running editor with hot reload.</p>
+      </div>
+
+      <div class="ota-card">
+        <div class="nc-prereq">
+          <span class="nc-chip">Requires <b>Node.js 20.x+</b></span>
+          <span class="nc-chip"><b>npm</b> (bundled with Node.js)</span>
+          <span class="nc-chip"><b>git</b></span>
+        </div>
+
+        <div class="nc-steps">
+          <div>
+            <div class="nc-step-title"><span class="nc-step-num">1</span>Clone the repository</div>
+            <div class="ota-code-bar" style="margin: 0;">
+              <div class="ota-code-text" id="cmd1">git clone https://github.com/Hyggshi-OS-project-center/NexCode.git &amp;&amp; cd NexCode</div>
+              <button class="btn-copy" onclick="copyText('cmd1', this)">Copy</button>
+            </div>
+          </div>
+          <div>
+            <div class="nc-step-title"><span class="nc-step-num">2</span>Install dependencies</div>
+            <div class="ota-code-bar" style="margin: 0;">
+              <div class="ota-code-text" id="cmd2">npm install</div>
+              <button class="btn-copy" onclick="copyText('cmd2', this)">Copy</button>
+            </div>
+          </div>
+          <div>
+            <div class="nc-step-title"><span class="nc-step-num">3</span>Start development mode</div>
+            <div class="ota-code-bar" style="margin: 0;">
+              <div class="ota-code-text" id="cmd3">npm run dev</div>
+              <button class="btn-copy" onclick="copyText('cmd3', this)">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin: var(--space-lg) 0 0 0; color: var(--c-text-muted); font-size: var(--text-sm);">
+          <code class="nc-inline">npm run dev</code> launches the Vite renderer server together with Electron. Need
+          hardware recommendations or troubleshooting? See
+          <a href="https://github.com/Hyggshi-OS-project-center/NexCode/blob/main/BUILD.md" target="_blank"
+            rel="noopener" style="color: var(--c-primary-light);">BUILD.md</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== BUILD COMMANDS ==================== -->
+    <section class="section" id="build">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Build &amp; Package</span>
+        </div>
+        <h2 class="section-title">Build <span class="title-accent">commands</span></h2>
+        <p class="nc-sub">Click any command to copy it.</p>
+      </div>
+
+      <div class="nc-table-wrap">
+        <table class="nc-table">
+          <thead>
+            <tr><th>Command</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run dev</code></td><td>Run Vite renderer server and Electron with hot reload</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run dev:renderer</code></td><td>Run only the Vite development server</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run dev:electron</code></td><td>Build main process and start Electron</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run build</code></td><td>Full production build (icons + main + renderer + agent)</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run buildfast</code></td><td>Quick build without regenerating icons</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run build:main</code></td><td>Compile main process TypeScript to <code class="nc-inline">dist/main</code></td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run build:renderer</code></td><td>Build renderer bundle with Vite to <code class="nc-inline">dist/renderer</code></td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run typecheck</code></td><td>Run TypeScript type checks on main and renderer</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run check</code></td><td>Run typecheck + build:main + build:renderer</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run icons</code></td><td>Regenerate app and file association icons</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run pack</code></td><td>Build Windows NSIS installer (<code class="nc-inline">.exe</code>)</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run pack:portable</code></td><td>Build Windows portable executable</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run pack:linux</code></td><td>Build Linux package set (AppImage, <code class="nc-inline">.deb</code>, <code class="nc-inline">.tar.gz</code>, <code class="nc-inline">.zip</code>)</td></tr>
+            <tr><td><code class="nc-cmd" onclick="copyInline(this)">npm run pack:portable:linux</code></td><td>Build Linux standalone AppImage</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== ARCHITECTURE ==================== -->
+    <section class="section" id="architecture">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Architecture</span>
+        </div>
+        <h2 class="section-title">Tech stack &amp; <span class="title-accent">architecture</span></h2>
+        <p class="nc-sub">A clean split between the Electron main process and a Vite-powered renderer.</p>
+      </div>
+
+      <div class="nc-arch">
+        <div class="nc-arch-col">
+          <h3>Main Process</h3>
+          <span class="nc-arch-sub">Node.js + Electron API</span>
+          <ul>
+            <li>App lifecycle &amp; window management</li>
+            <li>IPC handlers &amp; PTY (<code class="nc-inline">node-pty</code>)</li>
+            <li>File system &amp; dialogs</li>
+            <li>Auto-update service</li>
+            <li>External protocol safety</li>
+          </ul>
+        </div>
+        <div class="nc-arch-col">
+          <h3>Renderer Process</h3>
+          <span class="nc-arch-sub">Vite + TypeScript + DOM</span>
+          <ul>
+            <li>Monaco Editor engine</li>
+            <li>UI shell &amp; tabs system</li>
+            <li>xterm.js terminal panel</li>
+            <li>Markdown &amp; PDF viewers</li>
+            <li>AI agent &amp; Git panels</li>
+          </ul>
+        </div>
+        <div class="nc-arch-bridge">⇄ IPC bridge between main and renderer</div>
+      </div>
+
+      <div class="nc-badges" style="margin-top: var(--space-xl);">
+        <span class="nc-chip">Desktop shell <b>Electron</b></span>
+        <span class="nc-chip">Language <b>TypeScript</b></span>
+        <span class="nc-chip">Bundler <b>Vite</b></span>
+        <span class="nc-chip">Editor <b>Monaco Editor</b></span>
+        <span class="nc-chip">Terminal <b>xterm.js + node-pty</b></span>
+        <span class="nc-chip">Packaging <b>electron-builder</b></span>
+      </div>
+    </section>
+
+    <!-- ==================== SHORTCUTS ==================== -->
+    <section class="section" id="shortcuts">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Shortcuts</span>
+        </div>
+        <h2 class="section-title">Common keyboard <span class="title-accent">shortcuts</span></h2>
+      </div>
+
+      <div class="nc-table-wrap" style="max-width: 720px; margin: 0 auto;">
+        <table class="nc-table">
+          <thead>
+            <tr><th>Shortcut</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd> / <kbd>Cmd</kbd> + <kbd>S</kbd></td><td>Save current file</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td><td>Save As</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>W</kbd></td><td>Close active tab</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>`</kbd></td><td>Toggle integrated terminal</td></tr>
+            <tr><td><kbd>F5</kbd></td><td>Run active file</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>Find in editor</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>H</kbd></td><td>Replace in editor</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>B</kbd></td><td>Toggle primary sidebar</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd></td><td>Command palette</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== RELATED PROJECTS ==================== -->
+    <section class="section" id="related">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Ecosystem</span>
+        </div>
+        <h2 class="section-title">Related <span class="title-accent">projects</span></h2>
+        <p class="nc-sub">NexCode IDE is an integral component of the Hyggshi OS project ecosystem.</p>
+      </div>
+
+      <div class="nc-related">
+        <a href="https://github.com/Hyggshi-OS-project-center" target="_blank" rel="noopener">
+          <div class="feature-card nc-feature-card">
+            <h3>🌌 Hyggshi OS</h3>
+            <p>The primary OS project and simulator.</p>
+          </div>
+        </a>
+        <a href="https://github.com/Hyggshi-OS-project-center/HOSC-Language" target="_blank" rel="noopener">
+          <div class="feature-card nc-feature-card">
+            <h3>⚡ HOSC Language</h3>
+            <p>Custom programming language and bytecode virtual machine.</p>
+          </div>
+        </a>
+        <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" rel="noopener">
+          <div class="feature-card nc-feature-card">
+            <h3>🌐 Hyggshi OS Web Edition</h3>
+            <p>Progressive Web App version.</p>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <!-- ==================== CONTRIBUTING ==================== -->
+    <section class="section" id="contributing">
+      <div class="ota-card" style="text-align: center;">
+        <h2 class="section-title" style="font-size: var(--text-3xl);">Contributions are <span class="title-accent">warmly welcomed</span></h2>
+        <p class="nc-sub">
+          Please read the
+          <a href="https://github.com/Hyggshi-OS-project-center/NexCode/blob/main/docs/CORE_FEATURES.md" target="_blank" rel="noopener" style="color: var(--c-primary-light);">Core Feature Set</a>
+          and
+          <a href="https://github.com/Hyggshi-OS-project-center/NexCode/blob/main/docs/EXTENSION_DEVELOPMENT.md" target="_blank" rel="noopener" style="color: var(--c-primary-light);">Extension Development</a>
+          documents when proposing major architectural additions.
+        </p>
+        <div class="hero-actions" style="justify-content: center; margin-top: var(--space-lg);">
+          <a href="https://github.com/Hyggshi-OS-project-center/NexCode/issues" target="_blank" rel="noopener" class="btn btn-secondary">🐛 Report a bug</a>
+          <a href="https://github.com/Hyggshi-OS-project-center/NexCode/issues/new" target="_blank" rel="noopener" class="btn btn-secondary">💡 Feature request</a>
+          <a href="https://github.com/Hyggshi-OS-project-center/NexCode/pulls" target="_blank" rel="noopener" class="btn btn-primary">🔀 Pull requests</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="flat-footer">
+    <div class="footer-inner-flat">
+      <div class="footer-top-flat">
+        <img src="Resources/upscalemedia-transformed.png" alt="Hyggshi OS Logo" style="width: 24px; height: 24px;">
+        <span style="font-weight: 700; color: var(--f-text);">Hyggshi OS</span>
+        <span style="color: var(--f-text-dim); font-size: var(--text-xs);">— Next-Generation Operating System
+          Ecosystem</span>
+      </div>
+
+      <div class="footer-columns-grid">
+        <div>
+          <div class="footer-col-title">Ecosystem</div>
+          <ul class="footer-col-links">
+            <li><a href="About.html">About Hyggshi OS</a></li>
+            <li><a href="projects.html">All Projects</a></li>
+            <li><a href="History.html">Release History</a></li>
+            <li><a href="NexCode.html">NexCode IDE</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Editions &amp; Products</div>
+          <ul class="footer-col-links">
+            <li><a href="HyggshiOSWeb.html">Hyggshi OS Web Edition</a></li>
+            <li><a href="HyggshiOSLinux.html">Hyggshi OS Linux</a></li>
+            <li><a href="download.html">Roblox Edition</a></li>
+            <li><a href="HOSRT.html">HOSRT Runtime</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Community &amp; Code</div>
+          <ul class="footer-col-links">
+            <li><a href="https://github.com/Hyggshi-OS-project-center/NexCode" target="_blank" rel="noopener">NexCode on GitHub</a></li>
+            <li><a href="https://github.com/Hyggshi-OS-project-center/NexCode/releases" target="_blank" rel="noopener">NexCode Releases</a></li>
+            <li><a href="https://open-vsx.org" target="_blank" rel="noopener">Open VSX Registry</a></li>
+            <li><a href="https://discord.gg/PZuDkFzJtc" target="_blank" rel="noopener">Discord Community</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom-flat">
+        © 2024 – 2026 Hyggshi OS Research &amp; Technology. NexCode IDE is open source under the MIT License.
+      </div>
+    </div>
+  </footer>
+
+  <div class="nc-toast" id="ncToast">Copied to clipboard</div>
+
+  <script type="module" src="/src/theme.ts"></script>
+  <script>
+    function fallbackCopy(text, cb) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); if (cb) cb(); } catch (e) { console.error(e); }
+      document.body.removeChild(ta);
+    }
+
+    function copyRaw(text, cb) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(cb).catch(() => fallbackCopy(text, cb));
+      } else {
+        fallbackCopy(text, cb);
+      }
+    }
+
+    function toast(msg) {
+      const t = document.getElementById('ncToast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2200);
+    }
+
+    function copyText(id, btn) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      copyRaw(el.textContent.trim(), () => {
+        if (btn) {
+          const old = btn.textContent;
+          btn.textContent = 'Copied!';
+          btn.classList.add('copied');
+          setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 2000);
+        }
+      });
+    }
+
+    function copyInline(el) {
+      copyRaw(el.textContent.trim(), () => toast('Copied: ' + el.textContent.trim()));
+    }
+  </script>
+</body>
+
+</html>

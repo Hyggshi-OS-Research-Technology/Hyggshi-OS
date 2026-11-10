@@ -1,66 +1,66 @@
-# Hyggshi OS
+🌐 Hyggshi OS Web Edition
 
-A custom Debian-based Linux distribution built with a `debootstrap` +
-`mksquashfs` + `xorriso` pipeline (no `live-build`).
+Hyggshi OS Web Edition is a browser-based, OS-inspired creative platform that integrates AI generation tools powered by Pollinations AI. It provides a lightweight “operating system experience” where users can explore creative tools, generate images, and interact with AI-driven utilities in a structured desktop-like environment.
 
-## Build Requirements
-- Linux host (or the supplied `Dockerfile` for a containerized build)
-- root / sudo
-- ~5GB free disk space
+✨ Features
+🖥️ Web-based OS-like interface
+🎨 AI image generation using Pollinations API
+⚡ Fast, serverless AI requests
+🧠 Experimental creative workflows
+📁 Modular app-like system inside the OS UI
+🌍 Multilingual support (English / Vietnamese)
+🧠 AI Integration
 
-## Build
+This project integrates with the Pollinations AI API to enable:
 
+Text-to-image generation
+Fast inference without API keys for end users
+Scalable serverless AI workflows
+
+Powered by: Pollinations
+
+🚀 Live Demo
+
+👉 https://hyggshi-os-website.pages.dev/OSmain
+
+📦 Repository
+
+👉 https://github.com/HyggshiOSDeveloper/hyggshi-os-website
+
+🎯 Goal of the Project
+
+The goal of Hyggshi OS is to explore how a browser-based operating system can be combined with AI generation tools to create a unified creative environment. It focuses on:
+
+Accessibility (runs in browser)
+Creativity (AI-powered tools)
+Experimentation (OS-like modular UI)
+🛠️ Tech Stack
+HTML / CSS / JavaScript
+Pollinations AI API
+Cloudflare Pages (deployment)
+
+## Run locally (Vite + TypeScript)
+
+1. Cài đặt các gói phụ thuộc:
 ```bash
-sudo bash scripts/local-build.sh
+npm install
 ```
 
-Configuration is passed via environment variables (see the defaults at the
-top of `scripts/local-build.sh`), e.g.:
-
-`HYGGSHI_VERSION_ID` is the **Hyggshi OS version riêng**, independent of the
-base distro version. In GitHub Actions it is editable directly through the
-`hyggshi_version` input; locally it defaults to `1.0`.
-
-
+2. Chạy môi trường phát triển (Dev server):
 ```bash
-BASE_DISTRO=debian DEBIAN_VERSION=trixie DE=xfce \
-sudo -E bash scripts/local-build.sh
+npm run dev
 ```
 
-GitHub Actions builds the same pipeline (`scripts/build.sh` +
-`scripts/desktop.sh` + `scripts/iso.sh`) for `debian`, `ubuntu`, and
-`linuxmint` base distros — see `.github/workflows`.
+3. Build cho môi trường production:
+```bash
+npm run build
+```
+Thư mục xuất ra sẽ nằm ở `dist/`. Trên Cloudflare Pages, cấu hình Build command là `npm run build` và Build output directory là `dist`.
+📄 License
 
-## Stack
-- Base: Debian Trixie (13) by default — Ubuntu Noble and Linux Mint 22 also supported via `BASE_DISTRO`
-- Desktop: XFCE (default; `kde`, `lxqt`, `gnome`, `mate`, `cinnamon` also selectable via `DE`)
-- Display/Login Manager: LightDM (autologin on the live session only — see "Autologin" below)
-- Installer: Calamares
-- Architecture: amd64
+Open-source project for educational and experimental use.
 
-## Autologin: Live vs Installed
-The live ISO session autologs into LightDM/XFCE so the user lands on the
-desktop immediately. Once Calamares finishes installing to disk, a
-`shellprocess@removeautologin` job strips the live-session autologin config
-from the installed system, so the real machine boots to a LightDM login
-prompt (username + password).
+🤝 Credits
 
-## Links
-- Website: https://hyggshi-os-website.pages.dev
-
-## GRUB background branding
-
-Để áp dụng nền GRUB riêng, đặt hai file branding tại đúng đường dẫn:
-
-- `iso-config/branding/desktop-grub.png` — file được GRUB render làm background.
-- `iso-config/branding/desktop-grub.svg` — bản vector được đóng gói kèm làm source branding.
-
-`./scripts/iso.sh` sẽ tự copy hai file vào ISO và dùng `desktop-grub.png` làm nền GRUB. Nếu thiếu PNG, ISO vẫn build và GRUB dùng nền mặc định.
-
-### Cinnamon / Tela icon persistence
-
-Hyggshi OS installs Tela as the Cinnamon icon theme. Because Calamares may
-create a new user's dconf database from the live session, a one-time first-login
-guard applies Tela (and the Hyggshi Orchis theme/cursor defaults) to the newly
-installed user. It writes a per-user marker and never reapplies the defaults on
-later logins, so manual theme changes remain intact.
+Built with Pollinations AI
+https://pollinations.ai

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyggshi OS | Web Edition – The Desktop Operating System in Your Browser</title>
+  <meta name="description"
+    content="Hyggshi OS Web Edition: A modern browser-based desktop operating system. Window management, Virtual File System, integrated Pollinations & Gemini AI tools, NexCode IDE, and live wallpaper engine without installation.">
+  <meta name="keywords"
+    content="Hyggshi OS, Web Edition, Web OS, Browser OS, Pollinations AI, Virtual File System, NexCode, Cloudflare Pages, Open Source Web OS">
+  <link rel="icon" href="Resources/favicon.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <!-- Header / Navigation (Flat Design System) -->
+  <header class="flat-header">
+    <div class="flat-nav-container">
+      <a href="index.html" class="flat-logo">
+        <img src="Resources/upscalemedia-transformed.png" alt="Hyggshi OS Logo">
+        <span>Hyggshi OS <span style="opacity: 0.5; font-weight: 400;">| Web Edition</span></span>
+      </a>
+
+      <div class="flat-nav-center">
+        <ul class="flat-nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="About.html">About</a></li>
+          <li><a href="projects.html">Projects</a></li>
+          <li><a href="HyggshiOSLinux.html">Linux Edition</a></li>
+          <li><a href="HyggshiOSWeb.html" class="active">Web Edition</a></li>
+          <li><a href="History.html">History</a></li>
+          <li><a href="news.html">News</a></li>
+          <li><a href="download.html">Download</a></li>
+        </ul>
+      </div>
+
+      <div class="flat-nav-actions">
+        <button class="theme-toggle" title="Toggle theme">
+          <span class="toggle-icon"></span>
+        </button>
+        <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" rel="noopener noreferrer"
+          class="btn-flat-download">
+          <span>Launch Web OS</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== HERO SECTION ==================== -->
+    <section class="section" style="padding-top: var(--space-xl); text-align: center;">
+      <!-- Hero Window & Logo Graphic -->
+      <div class="hero-linux-wrap">
+        <img src="Resources/2Web.png" alt="Hyggshi OS Web Edition" class="hero-web-graphic" width="794" height="446">
+      </div>
+
+      <!-- Main Headline -->
+      <h1 class="hero-title" style="margin: 0 auto var(--space-md) auto; max-width: 860px;">
+        One Operating System.<br>
+        <span class="title-accent">Directly in Your Web Browser.</span>
+      </h1>
+
+      <!-- Description -->
+      <p class="hero-description" style="margin: 0 auto var(--space-xl) auto; max-width: 740px;">
+        Experience a complete desktop environment without installation. Hyggshi OS Web Edition combines window
+        management, a virtual file system, integrated Pollinations &amp; Gemini AI creative tools, and live wallpaper
+        engine into a serverless, high-speed browser experience.
+      </p>
+
+      <!-- Action Buttons -->
+      <div class="hero-actions" style="justify-content: center; margin-bottom: var(--space-lg);">
+        <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" rel="noopener noreferrer"
+          class="btn btn-primary btn-large">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Launch Web Edition Live</span>
+        </a>
+        <a href="#features" class="btn btn-secondary btn-large">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="3" y1="9" x2="21" y2="9"></line>
+            <line x1="9" y1="21" x2="9" y2="9"></line>
+          </svg>
+          <span>Explore Features</span>
+        </a>
+      </div>
+
+      <!-- Color Swatch Palette Indicator -->
+      <div class="color-palette-bar" title="Web Edition accent palette">
+        <span class="color-swatch" style="background: #06b6d4;" title="Cyan - Window Manager"></span>
+        <span class="color-swatch" style="background: #3b82f6;" title="Blue - AI Engine"></span>
+        <span class="color-swatch" style="background: #10b981;" title="Emerald - Virtual VFS"></span>
+        <span class="color-swatch" style="background: #8b5cf6;" title="Purple - NexCode Studio"></span>
+        <span class="color-swatch" style="background: #f43f5e;" title="Rose - Media Player"></span>
+        <span class="color-swatch" style="background: #f59e0b;" title="Amber - Glassmorphism"></span>
+      </div>
+
+      <!-- Live Browser Mockup Preview Frame -->
+      <div class="browser-frame">
+        <div class="browser-bar">
+          <div style="display: flex; gap: 6px;">
+            <span class="window-dot red"></span>
+            <span class="window-dot yellow"></span>
+            <span class="window-dot green"></span>
+          </div>
+          <div class="browser-address">
+            <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>https://hyggshi-os-website.pages.dev/OSmain</span>
+          </div>
+          <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" rel="noopener noreferrer"
+            class="btn btn-primary btn-small" style="font-size: 11px; padding: 4px 10px;">
+            Open ↗
+          </a>
+        </div>
+        <div class="browser-content" onclick="window.open('https://hyggshi-os-website.pages.dev/OSmain', '_blank')"
+          style="cursor: pointer;">
+          <img src="Resources/background.png" alt="Hyggshi OS Web Edition Desktop Preview" loading="lazy">
+          <div class="zoom-hint" style="opacity: 1; background: rgba(0, 0, 0, 0.45);">
+            <span class="zoom-pill" style="font-size: var(--text-sm); padding: 8px 18px;">
+              ▶ Click to launch live session at OSmain
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CORE WEB APPS & FEATURES ==================== -->
+    <section class="section" id="features">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Web Desktop Architecture</span>
+        </div>
+        <h2 class="section-title">Core Web <span class="title-accent">Capabilities</span></h2>
+        <p
+          style="color: var(--c-text-secondary); max-width: 650px; margin: var(--space-sm) auto 0 auto; line-height: 1.6;">
+          Engineered entirely with standard web technologies — zero plugins, zero downloads, and zero setup required.
+        </p>
+      </div>
+
+      <div class="editions-grid">
+        <!-- Feature 1: Window Management -->
+        <div class="linux-edition-card border-cyan">
+          <div class="window-frame" onclick="openLightbox(0)">
+            <div class="window-bar">
+              <span class="window-dot red"></span>
+              <span class="window-dot yellow"></span>
+              <span class="window-dot green"></span>
+            </div>
+            <img src="Resources/Window Management & Multitasking.png" alt="Window Management System" loading="lazy">
+            <div class="zoom-hint"><span class="zoom-pill">Click to expand preview</span></div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Desktop Core • Multitasking</span>
+              <h3 class="edition-card-title">Window Management System</h3>
+              <p class="edition-card-desc">
+                True multi-window multitasking inside your browser. Drag, resize, snap, minimize, and maximize floating
+                app windows with hardware-accelerated transitions.
+              </p>
+            </div>
+            <div>
+              <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" class="edition-card-link">Test
+                Window Manager →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 2: AI Generation Engine -->
+        <div class="linux-edition-card border-blue">
+          <div class="window-frame" onclick="openLightbox(1)">
+            <div class="window-bar">
+              <span class="window-dot red"></span>
+              <span class="window-dot yellow"></span>
+              <span class="window-dot green"></span>
+            </div>
+            <img src="Resources/Chat AI & Text-to-Image Studio.png" alt="Chat AI & Image Studio" loading="lazy">
+            <div class="zoom-hint"><span class="zoom-pill">Click to expand preview</span></div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">AI Powered • Pollinations &amp; Gemini</span>
+              <h3 class="edition-card-title">Chat AI &amp; Image Studio</h3>
+              <p class="edition-card-desc">
+                Built-in artificial intelligence assistant powered by Pollinations AI and Google Gemini API. Generate
+                stunning text-to-image artwork and converse directly from your desktop.
+              </p>
+            </div>
+            <div>
+              <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" class="edition-card-link">Open AI
+                Assistant →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 3: Virtual File System (VFS) -->
+        <div class="linux-edition-card border-emerald">
+          <div class="window-frame" onclick="openLightbox(2)">
+            <div class="window-bar">
+              <span class="window-dot red"></span>
+              <span class="window-dot yellow"></span>
+              <span class="window-dot green"></span>
+            </div>
+            <img src="Resources/Explorer.png" alt="Virtual File System" loading="lazy">
+            <div class="zoom-hint"><span class="zoom-pill">Click to expand preview</span></div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Persistence • LocalStorage &amp; VFS</span>
+              <h3 class="edition-card-title">Virtual File System (VFS)</h3>
+              <p class="edition-card-desc">
+                Organize your documents, code, images, and notes with an intuitive File Manager. Persistent virtual
+                storage
+                ensures your files remain safe across sessions.
+              </p>
+            </div>
+            <div>
+              <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" class="edition-card-link">Explore
+                Virtual Storage →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 4: NexCode Web IDE -->
+        <div class="linux-edition-card border-purple">
+          <div class="window-frame" onclick="openLightbox(3)">
+            <div class="window-bar">
+              <span class="window-dot red"></span>
+              <span class="window-dot yellow"></span>
+              <span class="window-dot green"></span>
+            </div>
+            <img src="Resources/IDE.png" alt="NexCode Web IDE" loading="lazy">
+            <div class="zoom-hint"><span class="zoom-pill">Click to expand preview</span></div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Code Editor • Multi-Language</span>
+              <h3 class="edition-card-title">NexCode Web Studio</h3>
+              <p class="edition-card-desc">
+                Lightweight coding editor right in your browser with syntax highlighting, multi-tab buffer management,
+                and direct terminal integration for fast scripting.
+              </p>
+            </div>
+            <div>
+              <a href="HyggshiOSCodeMini.html" class="edition-card-link">Learn About NexCode →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 5: Media & YouTube Center -->
+        <div class="linux-edition-card border-rose">
+          <div class="window-frame" onclick="openLightbox(4)">
+            <div class="window-bar">
+              <span class="window-dot red"></span>
+              <span class="window-dot yellow"></span>
+              <span class="window-dot green"></span>
+            </div>
+            <img src="Resources/Music1.png" alt="Media & YouTube Player" loading="lazy">
+            <div class="zoom-hint"><span class="zoom-pill">Click to expand preview</span></div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Entertainment • In-Browser Media</span>
+              <h3 class="edition-card-title">Music &amp; YouTube Player</h3>
+              <p class="edition-card-desc">
+                Integrated audio player with queue management, playlist imports, and floating YouTube viewer. Enjoy your
+                favorite tracks and background media while you work.
+              </p>
+            </div>
+            <div>
+              <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" class="edition-card-link">Launch
+                Media Center →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 6: Wallpaper Engine & UI Customization -->
+        <div class="linux-edition-card border-amber">
+          <div class="window-frame" onclick="openLightbox(5)">
+            <div class="window-bar">
+              <span class="window-dot red"></span>
+              <span class="window-dot yellow"></span>
+              <span class="window-dot green"></span>
+            </div>
+            <img src="Resources/Wallpaper-Engine.png" alt="Wallpaper Engine & UI" loading="lazy">
+            <div class="zoom-hint"><span class="zoom-pill">Click to expand preview</span></div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Personalization • Dynamic Engine</span>
+              <h3 class="edition-card-title">Live Wallpaper Engine</h3>
+              <p class="edition-card-desc">
+                Tailor your desktop with presets, custom wallpaper URLs, or high-definition video backgrounds. Complete
+                with customizable taskbar, cursor styles, and frosted glass dock.
+              </p>
+            </div>
+            <div>
+              <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" class="edition-card-link">Customize
+                Appearance →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ECOSYSTEM & APPS ==================== -->
+    <section class="section" id="ecosystem">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Connected Community</span>
+        </div>
+        <h2 class="section-title">Social &amp; <span class="title-accent">Ecosystem</span></h2>
+        <p
+          style="color: var(--c-text-secondary); max-width: 650px; margin: var(--space-sm) auto 0 auto; line-height: 1.6;">
+          Built-in messaging, community rooms, and modular applications extending your web desktop.
+        </p>
+      </div>
+
+      <div class="ecosystem-grid">
+        <!-- Zashi Messaging -->
+        <div class="linux-edition-card border-emerald">
+          <div class="window-bar" style="position: static; height: 32px;">
+            <span class="window-dot red"></span>
+            <span class="window-dot yellow"></span>
+            <span class="window-dot green"></span>
+            <span style="font-size: 11px; font-family: var(--font-mono); color: var(--c-text-muted); margin-left: 8px;">
+              Zashi Messaging — #general
+            </span>
+          </div>
+          <div class="ecosystem-window-mockup">
+            <div style="color: #10b981; font-weight: 700;">● Zashi Community Network Connected</div>
+            <div style="color: var(--c-text-muted); margin: 6px 0;">Channel: #general-chat • Room ID: public-hub</div>
+            <div style="margin-top: 10px;">
+              <span style="color: #38bdf8;">[DevAlex]:</span> Hyggshi OS Web Edition v1.4.0 is super smooth!
+            </div>
+            <div>
+              <span style="color: #fbbf24;">[CreativeAI]:</span> Just rendered a 4K wallpaper with Pollinations!
+            </div>
+            <div>
+              <span style="color: #c084fc;">[System]:</span> New user connected to the session.
+            </div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Chat &amp; Social • Discord Bridge</span>
+              <h3 class="edition-card-title">Zashi Messaging</h3>
+              <p class="edition-card-desc">
+                Chat with fellow Hyggshi OS users, create custom group channels, or connect directly with our Discord
+                community right from the desktop interface.
+              </p>
+            </div>
+            <div>
+              <a href="https://discord.gg/C2wnU8Vz6U" target="_blank" class="edition-card-link">Join Discord Hub →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- App Store & Extensions -->
+        <div class="linux-edition-card border-purple">
+          <div class="window-bar" style="position: static; height: 32px;">
+            <span class="window-dot red"></span>
+            <span class="window-dot yellow"></span>
+            <span class="window-dot green"></span>
+            <span style="font-size: 11px; font-family: var(--font-mono); color: var(--c-text-muted); margin-left: 8px;">
+              Hyggshi App Store — Catalog
+            </span>
+          </div>
+          <div class="ecosystem-window-mockup">
+            <div style="color: #c084fc; font-weight: 700;">// Hyggshi Web App Registry</div>
+            <div style="color: #38bdf8; margin: 4px 0;">✓ File Explorer [v1.4] • Installed</div>
+            <div style="color: #38bdf8;">✓ NexCode IDE [v1.4] • Installed</div>
+            <div style="color: #38bdf8;">✓ YouTube Player [v1.2] • Installed</div>
+            <div style="color: #38bdf8;">✓ Weather &amp; Clock Widget • Installed</div>
+            <div style="color: #fbbf24; margin-top: 6px;">+ 12 Community Apps Available in Store</div>
+          </div>
+          <div class="edition-card-body">
+            <div>
+              <span class="edition-spec-tag">Modular Apps • Extensibility</span>
+              <h3 class="edition-card-title">App Store &amp; Widgets</h3>
+              <p class="edition-card-desc">
+                Install new web applications, weather widgets, calculator tools, and utilities with a single click.
+                Developers can publish modular web apps for the entire community.
+              </p>
+            </div>
+            <div>
+              <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" class="edition-card-link">Explore
+                Web App Store →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== RUN ANYWHERE / INSTANT LAUNCH SECTION ==================== -->
+    <section class="section" id="launch">
+      <div class="ota-card">
+        <div class="hero-badge" style="margin-bottom: var(--space-md);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            style="width: 14px; height: 14px;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <span>Serverless Cloudflare CDN</span>
+        </div>
+
+        <h2 class="section-title" style="text-align: left; font-size: var(--text-3xl); margin-bottom: var(--space-xs);">
+          Run Instantly. Zero Installation Required.
+        </h2>
+        <p style="color: var(--c-text-secondary); line-height: 1.65; margin: 0 0 var(--space-md) 0; max-width: 820px;">
+          Hyggshi OS Web Edition runs 100% on the client side with global edge acceleration by Cloudflare Pages.
+          Accessible from any device with a modern web browser — laptops, desktop PCs, Chromebooks, and tablets.
+        </p>
+
+        <!-- Copyable Web Link Bar -->
+        <div class="ota-code-bar">
+          <div class="ota-code-text" id="webUrlStr">https://hyggshi-os-website.pages.dev/OSmain</div>
+          <button class="btn-copy" id="copyUrlBtn" onclick="copyWebUrl()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              style="width: 14px; height: 14px;" id="copyIcon">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span id="copyLabel">Copy URL</span>
+          </button>
+        </div>
+
+        <!-- Instant Launch CTA -->
+        <div style="display: flex; gap: var(--space-md); flex-wrap: wrap; margin-top: var(--space-lg);">
+          <a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank" rel="noopener noreferrer"
+            class="btn btn-primary btn-large">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Launch Web Edition (OSmain)</span>
+          </a>
+          <a href="https://github.com/HyggshiOSDeveloper/hyggshi-os-website" target="_blank" rel="noopener noreferrer"
+            class="btn btn-secondary btn-large">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path
+                d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22">
+              </path>
+            </svg>
+            <span>View Source on GitHub</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== PLATFORM SPECS & BENCHMARKS ==================== -->
+    <section class="section">
+      <div class="spectrum-card">
+        <div class="section-header" style="margin-bottom: var(--space-lg);">
+          <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+            <span class="status-dot"></span>
+            <span>Technical Specifications</span>
+          </div>
+          <h2 class="section-title">Web Architecture <span class="title-accent">&amp; Performance</span></h2>
+          <p
+            style="color: var(--c-text-secondary); max-width: 650px; margin: var(--space-sm) auto 0 auto; line-height: 1.6;">
+            Built with pure HTML5, CSS3, and JavaScript — delivering sub-second boot times and near-zero memory
+            footprint.
+          </p>
+        </div>
+
+        <div class="spectrum-items-grid">
+          <div class="spectrum-item-box">
+            <div class="spectrum-item-name" style="color: #10b981;">Boot Time</div>
+            <div class="spectrum-item-ram">&lt; 0.8s Cold Start</div>
+          </div>
+          <div class="spectrum-item-box">
+            <div class="spectrum-item-name" style="color: #3b82f6;">Memory Usage</div>
+            <div class="spectrum-item-ram">~ 45MB Idle RAM</div>
+          </div>
+          <div class="spectrum-item-box">
+            <div class="spectrum-item-name" style="color: #8b5cf6;">AI Inference</div>
+            <div class="spectrum-item-ram">Serverless API</div>
+          </div>
+          <div class="spectrum-item-box">
+            <div class="spectrum-item-name" style="color: #06b6d4;">Storage</div>
+            <div class="spectrum-item-ram">IndexedDB VFS</div>
+          </div>
+          <div class="spectrum-item-box">
+            <div class="spectrum-item-name" style="color: #f43f5e;">Browser Support</div>
+            <div class="spectrum-item-ram">All Modern Browsers</div>
+          </div>
+          <div class="spectrum-item-box">
+            <div class="spectrum-item-name" style="color: #f59e0b;">License</div>
+            <div class="spectrum-item-ram">Open Source (MIT)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== PARTNERS & INTEGRATIONS MARQUEE ==================== -->
+    <section class="section" style="padding-top: var(--space-md); padding-bottom: var(--space-2xl);">
+      <p
+        style="text-align: center; color: var(--c-text-muted); margin-bottom: 2rem; font-weight: 600; font-size: var(--text-xs); letter-spacing: 3px; text-transform: uppercase;">
+        Powered By &amp; Integrated Technologies
+      </p>
+      <div class="marquee">
+        <div class="marquee-track">
+          <div class="partner-item"><img src="https://cloudflare.com/favicon.ico" alt="Cloudflare Pages"> Cloudflare
+            Pages</div>
+          <div class="partner-item"><img src="https://pollinations.ai/favicon.ico" alt="Pollinations AI"> Pollinations
+            AI</div>
+          <div class="partner-item"><img src="https://github.com/favicon.ico" alt="GitHub"> GitHub</div>
+          <div class="partner-item"><img
+              src="https://thumb.wikimedia.org/wikipedia/commons/thumb/7/77/Google_AI_Studio_icon_%28May_2026%29.svg/1280px-Google_AI_Studio_icon_%28May_2026%29.svg.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=thumbnail"
+              alt="Google AI Studio"> Google AI Studio</div>
+          <div class="partner-item"><img
+              src="https://cdn.aptoide.com/imgs/0/8/d/08db5492269601fc55ad99d881fea933_icon.png" alt="Discord"> Discord
+            Community</div>
+          <div class="partner-item"><img src="https://avatars.githubusercontent.com/u/295374959?s=400"
+              alt="Hyggshi OS Research Technology"> Hyggshi OS Research Technology</div>
+          <!-- Duplicated for seamless loop -->
+          <div class="partner-item"><img src="https://cloudflare.com/favicon.ico" alt="Cloudflare Pages"> Cloudflare
+            Pages</div>
+          <div class="partner-item"><img src="https://pollinations.ai/favicon.ico" alt="Pollinations AI"> Pollinations
+            AI</div>
+          <div class="partner-item"><img src="https://github.com/favicon.ico" alt="GitHub"> GitHub</div>
+          <div class="partner-item"><img
+              src="https://thumb.wikimedia.org/wikipedia/commons/thumb/7/77/Google_AI_Studio_icon_%28May_2026%29.svg/1280px-Google_AI_Studio_icon_%28May_2026%29.svg.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=thumbnail"
+              alt="Google AI Studio"> Google AI Studio</div>
+          <div class="partner-item"><img
+              src="https://cdn.aptoide.com/imgs/0/8/d/08db5492269601fc55ad99d881fea933_icon.png" alt="Discord"> Discord
+            Community</div>
+          <div class="partner-item"><img src="https://avatars.githubusercontent.com/u/295374959?s=400"
+              alt="Hyggshi OS Research Technology"> Hyggshi OS Research Technology</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== LIGHTBOX MODAL ==================== -->
+  <div class="lightbox-modal" id="lightboxModal" onclick="closeLightboxOnBackdrop(event)">
+    <div class="lightbox-box">
+      <div class="lightbox-bar">
+        <span class="lightbox-title" id="lightboxTitle">Feature Preview</span>
+        <button class="lightbox-close" onclick="closeLightbox()" title="Close preview">✕</button>
+      </div>
+      <div class="lightbox-img-wrap">
+        <img id="lightboxImg" src="" alt="Feature Full View">
+      </div>
+      <div class="lightbox-footer">
+        <span id="lightboxCaption">Description</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary btn-small" onclick="prevLightbox()">← Prev</button>
+          <button class="btn btn-secondary btn-small" onclick="nextLightbox()">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-notification" id="toastBox">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+      style="width: 16px; height: 16px; color: var(--c-success);">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    <span id="toastMsg">Copied to clipboard!</span>
+  </div>
+
+  <!-- ==================== FLAT FOOTER ==================== -->
+  <footer class="flat-footer">
+    <div class="footer-inner-flat">
+      <div class="footer-top-flat">
+        <img src="Resources/upscalemedia-transformed.png" alt="Hyggshi OS Logo" style="width: 24px; height: 24px;">
+        <span style="font-weight: 700; color: var(--f-text);">Hyggshi OS Web Edition</span>
+        <span style="color: var(--f-text-dim); font-size: var(--text-xs);">— Next-Generation Operating System
+          Ecosystem</span>
+      </div>
+
+      <div class="footer-columns-grid">
+        <div>
+          <div class="footer-col-title">Ecosystem</div>
+          <ul class="footer-col-links">
+            <li><a href="About.html">About Hyggshi OS</a></li>
+            <li><a href="projects.html">All Projects</a></li>
+            <li><a href="History.html">Release History</a></li>
+            <li><a href="NexCode.html">NexCode IDE</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Editions &amp; Products</div>
+          <ul class="footer-col-links">
+            <li><a href="HyggshiOSWeb.html">Hyggshi OS Web Edition</a></li>
+            <li><a href="HyggshiOSLinux.html">Hyggshi OS Linux</a></li>
+            <li><a href="download.html">Roblox Edition</a></li>
+            <li><a href="HOSRT.html">HOSRT Runtime</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Community &amp; Code</div>
+          <ul class="footer-col-links">
+            <li><a href="https://hyggshi-os-website.pages.dev/OSmain" target="_blank">Launch Web OS (OSmain)</a></li>
+            <li><a href="https://github.com/HyggshiOSDeveloper/hyggshi-os-website" target="_blank">Web Edition
+                Repository</a></li>
+            <li><a href="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS" target="_blank">GitHub
+                Organization</a></li>
+            <li><a href="https://discord.gg/C2wnU8Vz6U" target="_blank">Discord Community</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom-flat">
+        © 2024 – 2026 Hyggshi OS Research &amp; Technology. All rights reserved. Open source under MIT license.
+      </div>
+    </div>
+  </footer>
+
+  <!-- Theme Script -->
+  <script type="module" src="/src/theme.ts"></script>
+
+  <!-- Interactive Lightbox & Copy Script -->
+  <script>
+    // Gallery Data
+    const galleryItems = [
+      {
+        src: 'Resources/Window Management & Multitasking.png',
+        title: 'Window Management & Multitasking',
+        caption: 'Draggable, snappable, and resizable window system with smooth hardware-accelerated animations.'
+      },
+      {
+        src: 'Resources/Chat AI & Text-to-Image Studio.png',
+        title: 'Chat AI & Text-to-Image Studio',
+        caption: 'AI generation suite integrated into the desktop, powered by Pollinations AI and Gemini API.'
+      },
+      {
+        src: 'Resources/Explorer.png',
+        title: 'Virtual File System & Explorer',
+        caption: 'Persistent in-browser VFS supporting folders, drag-and-drop file imports, and quick search.'
+      },
+      {
+        src: 'Resources/IDE.png',
+        title: 'NexCode Web IDE',
+        caption: 'Fast in-browser code editor with syntax highlighting, multi-tab buffer, and scripting tools.'
+      },
+      {
+        src: 'Resources/Music1.png',
+        title: 'Music Player & YouTube Center',
+        caption: 'Rich multimedia center with playback queues and picture-in-picture YouTube streaming.'
+      },
+      {
+        src: 'Resources/Wallpaper-Engine.png',
+        title: 'Wallpaper Engine & Customization',
+        caption: 'Personalize with high-res wallpapers, dynamic video loops, and glassmorphism styling.'
+      }
+    ];
+
+    let currentLightboxIdx = 0;
+
+    function openLightbox(index) {
+      currentLightboxIdx = index;
+      const modal = document.getElementById('lightboxModal');
+      const img = document.getElementById('lightboxImg');
+      const title = document.getElementById('lightboxTitle');
+      const caption = document.getElementById('lightboxCaption');
+
+      const item = galleryItems[index];
+      img.src = item.src;
+      img.alt = item.title;
+      title.textContent = item.title;
+      caption.textContent = item.caption;
+
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeLightbox() {
+      const modal = document.getElementById('lightboxModal');
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    function closeLightboxOnBackdrop(e) {
+      if (e.target.id === 'lightboxModal') closeLightbox();
+    }
+
+    function prevLightbox() {
+      currentLightboxIdx = (currentLightboxIdx - 1 + galleryItems.length) % galleryItems.length;
+      openLightbox(currentLightboxIdx);
+    }
+
+    function nextLightbox() {
+      currentLightboxIdx = (currentLightboxIdx + 1) % galleryItems.length;
+      openLightbox(currentLightboxIdx);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const modal = document.getElementById('lightboxModal');
+      if (!modal || !modal.classList.contains('active')) return;
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') prevLightbox();
+      if (e.key === 'ArrowRight') nextLightbox();
+    });
+
+    // Copy Web URL Logic
+    const WEB_OS_URL = "https://hyggshi-os-website.pages.dev/OSmain";
+
+    function copyWebUrl() {
+      const onDone = () => {
+        const btn = document.getElementById('copyUrlBtn');
+        const label = document.getElementById('copyLabel');
+        const icon = document.getElementById('copyIcon');
+
+        if (btn) btn.classList.add('copied');
+        if (label) label.textContent = 'Copied!';
+        if (icon) icon.innerHTML = `<polyline points="20 6 9 17 4 12"></polyline>`;
+
+        showToast('🔗 Web Edition link copied to clipboard!');
+
+        setTimeout(() => {
+          if (btn) btn.classList.remove('copied');
+          if (label) label.textContent = 'Copy URL';
+          if (icon) icon.innerHTML = `<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>`;
+        }, 3000);
+      };
+
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(WEB_OS_URL).then(onDone).catch(() => {
+          fallbackCopy(WEB_OS_URL, onDone);
+        });
+      } else {
+        fallbackCopy(WEB_OS_URL, onDone);
+      }
+    }
+
+    function fallbackCopy(text, callback) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        document.execCommand('copy');
+        if (callback) callback();
+      } catch (err) {
+        console.error(err);
+      }
+      document.body.removeChild(ta);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastBox');
+      const text = document.getElementById('toastMsg');
+      if (text) text.textContent = msg;
+      if (toast) {
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3500);
+      }
+    }
+  </script>
+</body>
+
+</html>

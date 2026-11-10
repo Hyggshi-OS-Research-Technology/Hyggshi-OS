@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NexKey – Vietnamese Input Method for Linux (Fcitx5 &amp; IBus)</title>
+  <meta name="description"
+    content="NexKey is a Vietnamese input method for Linux in the spirit of UniKey: dependency-free C++23 engine, Fcitx5 and IBus integration, Qt6 tray app, direct typing, per-app rules, macros and emoji picker.">
+  <meta name="keywords"
+    content="NexKey, Vietnamese input method, Linux, Fcitx5, IBus, Telex, VNI, VIQR, UniKey, Wayland, X11, Hyggshi OS">
+  <link rel="icon" href="Resources/favicon.ico">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* NexKey page extras – built only from the site's existing design tokens */
+    .nk-lead {
+      color: var(--c-text-secondary);
+      max-width: 720px;
+      margin: 0 auto var(--space-xl) auto;
+      line-height: 1.7;
+      font-size: var(--text-lg);
+    }
+
+    .nk-sub {
+      color: var(--c-text-secondary);
+      max-width: 650px;
+      margin: var(--space-sm) auto 0 auto;
+      line-height: 1.6;
+    }
+
+    .nk-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--space-lg);
+    }
+
+    .nk-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-xl);
+      padding: var(--space-xl);
+      transition: border-color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .nk-card:hover {
+      border-color: var(--c-border-hover);
+      background: var(--c-surface-hover);
+    }
+
+    .nk-card h3 {
+      font-size: var(--text-lg);
+      font-weight: 700;
+      color: var(--c-text);
+      margin: 0 0 var(--space-sm) 0;
+    }
+
+    .nk-card p {
+      color: var(--c-text-secondary);
+      font-size: var(--text-sm);
+      line-height: 1.65;
+      margin: 0;
+    }
+
+    .nk-card code,
+    .nk-table code,
+    .nk-sub code,
+    p code {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      background: rgba(67, 85, 185, 0.14);
+      color: var(--c-primary-light);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    .nk-tag {
+      display: inline-block;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-sm);
+    }
+
+    .nk-cyan {
+      border-top: 3px solid #06b6d4;
+    }
+
+    .nk-cyan .nk-tag {
+      color: #06b6d4;
+    }
+
+    .nk-blue {
+      border-top: 3px solid #3b82f6;
+    }
+
+    .nk-blue .nk-tag {
+      color: #3b82f6;
+    }
+
+    .nk-emerald {
+      border-top: 3px solid #10b981;
+    }
+
+    .nk-emerald .nk-tag {
+      color: #10b981;
+    }
+
+    .nk-amber {
+      border-top: 3px solid #f59e0b;
+    }
+
+    .nk-amber .nk-tag {
+      color: #f59e0b;
+    }
+
+    .nk-rose {
+      border-top: 3px solid #f43f5e;
+    }
+
+    .nk-rose .nk-tag {
+      color: #f43f5e;
+    }
+
+    .nk-purple {
+      border-top: 3px solid #8b5cf6;
+    }
+
+    .nk-purple .nk-tag {
+      color: #8b5cf6;
+    }
+
+    .nk-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg);
+      background: var(--c-surface);
+    }
+
+    .nk-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--text-sm);
+    }
+
+    .nk-table th {
+      text-align: left;
+      padding: 12px 16px;
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--c-text-muted);
+      border-bottom: 1px solid var(--c-border);
+      background: var(--c-bg-secondary);
+      white-space: nowrap;
+    }
+
+    .nk-table td {
+      padding: 12px 16px;
+      color: var(--c-text-secondary);
+      border-bottom: 1px solid var(--c-border);
+      vertical-align: top;
+      line-height: 1.55;
+    }
+
+    .nk-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .nk-table td:first-child {
+      color: var(--c-text);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .nk-on {
+      color: var(--c-success);
+      font-weight: 600;
+    }
+
+    .nk-off {
+      color: var(--c-text-muted);
+      font-weight: 600;
+    }
+
+    .nk-arch {
+      background: #080d16;
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+      overflow-x: auto;
+    }
+
+    .nk-arch pre {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: #cbd5e1;
+    }
+
+    .nk-cmd {
+      position: relative;
+      background: #080d16;
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-md) var(--space-lg);
+      padding-right: 56px;
+      margin-top: var(--space-md);
+      overflow-x: auto;
+    }
+
+    .nk-cmd pre {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: #38bdf8;
+      white-space: pre;
+    }
+
+    .nk-cmd .nk-copy {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      color: var(--c-text-secondary);
+      border-radius: var(--radius-sm);
+      padding: 5px 8px;
+      cursor: pointer;
+      font-size: var(--text-xs);
+      transition: all var(--transition-fast);
+    }
+
+    .nk-cmd .nk-copy:hover {
+      color: var(--c-text);
+      border-color: var(--c-border-hover);
+    }
+
+    .nk-two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-lg);
+    }
+
+    .nk-note {
+      border-left: 3px solid var(--c-primary-light);
+      background: rgba(67, 85, 185, 0.1);
+      padding: var(--space-md) var(--space-lg);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      color: var(--c-text-secondary);
+      font-size: var(--text-sm);
+      line-height: 1.65;
+      margin-top: var(--space-lg);
+    }
+
+    .nk-h3 {
+      font-size: var(--text-xl);
+      font-weight: 700;
+      color: var(--c-text);
+      margin: var(--space-2xl) 0 var(--space-md) 0;
+    }
+
+    .nk-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nk-list li {
+      color: var(--c-text-secondary);
+      font-size: var(--text-sm);
+      line-height: 1.6;
+      padding-left: 20px;
+      position: relative;
+    }
+
+    .nk-list li::before {
+      content: "›";
+      position: absolute;
+      left: 4px;
+      color: var(--c-primary-light);
+      font-weight: 700;
+    }
+
+    @media (max-width: 800px) {
+      .nk-two {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Header / Navigation -->
+  <header class="flat-header">
+    <div class="flat-nav-container">
+      <a href="index.html" class="flat-logo">
+        <img src="Resources/upscalemedia-transformed.png" alt="Hyggshi OS Logo">
+        <span>Hyggshi OS <span style="opacity: 0.5; font-weight: 400;">| NexKey</span></span>
+      </a>
+
+      <div class="flat-nav-center">
+        <ul class="flat-nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="About.html">About</a></li>
+          <li><a href="projects.html" class="active">Projects</a></li>
+          <li><a href="HyggshiOSLinux.html">Linux Edition</a></li>
+          <li><a href="HyggshiOSWeb.html">Web Edition</a></li>
+          <li><a href="History.html">History</a></li>
+          <li><a href="news.html">News</a></li>
+          <li><a href="download.html">Download</a></li>
+        </ul>
+      </div>
+
+      <div class="flat-nav-actions">
+        <button class="theme-toggle" title="Toggle theme">
+          <span class="toggle-icon"></span>
+        </button>
+        <a href="#install" class="btn-flat-download">
+          <span>Install</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== HERO ==================== -->
+    <section class="section" style="padding-top: var(--space-xl); text-align: center;">
+      <div class="hero-badge" style="margin: 0 auto var(--space-md) auto;">
+        <span class="status-dot"></span>
+        <span>Version 2.0 • MIT License</span>
+      </div>
+
+      <h1 class="hero-title" style="margin: 0 auto var(--space-md) auto; max-width: 840px;">
+        Type Vietnamese on Linux.<br>
+        <span class="title-accent">Fast, native.</span>
+      </h1>
+
+      <p class="nk-lead">
+        NexKey is a Vietnamese input method for Linux in the spirit of UniKey. A dependency-free C++23 engine,
+        integration for both <strong>Fcitx5</strong> and <strong>IBus</strong>, and a small Qt6 app for the tray icon
+        and settings.
+      </p>
+
+      <div class="hero-actions" style="justify-content: center; margin-bottom: var(--space-lg);">
+        <a href="#install" class="btn btn-primary btn-large">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Install NexKey</span>
+        </a>
+        <a href="#cli" class="btn btn-secondary btn-large">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          <span>Command Line</span>
+        </a>
+      </div>
+
+      <div class="color-palette-bar" title="Supported input methods and backends">
+        <span class="color-swatch" style="background: #06b6d4;" title="Telex"></span>
+        <span class="color-swatch" style="background: #3b82f6;" title="Simple Telex"></span>
+        <span class="color-swatch" style="background: #10b981;" title="VNI"></span>
+        <span class="color-swatch" style="background: #f59e0b;" title="VIQR"></span>
+        <span class="color-swatch" style="background: #8b5cf6;" title="Microsoft layout"></span>
+      </div>
+    </section>
+
+    <!-- ==================== FEATURES ==================== -->
+    <section class="section" id="features">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Features</span>
+        </div>
+        <h2 class="section-title">Built for <span class="title-accent">everyday typing</span></h2>
+        <p class="nk-sub">Everything you expect from a modern Vietnamese keyboard, tuned for X11 and Wayland.</p>
+      </div>
+
+      <div class="nk-grid">
+        <div class="nk-card nk-cyan">
+          <span class="nk-tag">Direct typing</span>
+          <h3>100% Native, Non-preedit</h3>
+          <p>No annoying while typing. Characters appear directly in VS Code, Chrome, terminals and
+            LibreOffice, avoiding input latency and visual clutter.</p>
+        </div>
+        <div class="nk-card nk-blue">
+          <span class="nk-tag">Performance</span>
+          <h3>Ultra High Performance</h3>
+          <p>Instant SurroundingText and key forwarding, optimized for high-speed Linux applications across X11 and
+            Wayland.</p>
+        </div>
+        <div class="nk-card nk-emerald">
+          <span class="nk-tag">Tray</span>
+          <h3>Quick Settings</h3>
+          <p>Right-click the tray icon to toggle charset, spell check, macros, capitalized macro, non-Vietnamese
+            auto-restore, custom dictionary and the emoji picker.</p>
+        </div>
+        <div class="nk-card nk-amber">
+          <span class="nk-tag">App Rules</span>
+          <h3>Per-Application Rules</h3>
+          <p>Assign an input mode per application or window, for example <code>code</code> → <code>telex</code>,
+            <code>gnome-terminal</code> → <code>off</code>, <code>firefox</code> → <code>vni</code>.
+          </p>
+        </div>
+        <div class="nk-card nk-rose">
+          <span class="nk-tag">Backup</span>
+          <h3>Backup &amp; Restore</h3>
+          <p>Export and import your full configuration as JSON, with selective filtering: Main Settings, Macros, Custom
+            Keymaps, App Rules and Custom Dictionary.</p>
+        </div>
+        <div class="nk-card nk-purple">
+          <span class="nk-tag">Macros</span>
+          <h3>Dynamic <code>$TIME</code> / <code>$DATE</code></h3>
+          <p>Macro expansions support dynamic placeholders, e.g. <code>kg</code> → <code>khô gà $TIME</code>,
+            customizable through Time Format and Date Format.</p>
+        </div>
+        <div class="nk-card nk-cyan">
+          <span class="nk-tag">Layouts</span>
+          <h3>Keyboard Presets</h3>
+          <p>Built-in Telex, Simple Telex, VNI, VIQR and Microsoft layout with one-click preset switching.</p>
+        </div>
+        <div class="nk-card nk-blue">
+          <span class="nk-tag">Emoji</span>
+          <h3>Smart Emoji Picker</h3>
+          <p>Fast emoji search with fuzzy matching, a row of the 9 most recent emojis and instant clipboard copying.</p>
+        </div>
+        <div class="nk-card nk-emerald">
+          <span class="nk-tag">Safety net</span>
+          <h3>Intelligent Error Correction</h3>
+          <p>Auto Non-VN Restore keeps foreign and English words such as <code>windows</code> or <code>jazz</code>
+            from being corrupted.</p>
+        </div>
+        <div class="nk-card nk-amber">
+          <span class="nk-tag">Compatibility</span>
+          <h3>Linux Native &amp; Stable</h3>
+          <p>Works with Wayland, X11, Chromium, Electron and Wine. Zero character loss on space or window focus
+            changes.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ARCHITECTURE ==================== -->
+    <section class="section" id="architecture">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Architecture</span>
+        </div>
+        <h2 class="section-title">One engine, <span class="title-accent">two backends</span></h2>
+        <p class="nk-sub">Everything is built, tested and packaged with CMake. Both backends and the tray app share the
+          same <code>nexkey.conf</code>.</p>
+      </div>
+
+      <div class="nk-arch">
+        <pre>        +----------------------+      +---------------------+
+        |  nexkey-gui (Qt6)    |      |  nexkey-cli         |
+        |  tray + settings     |      |  test + convert     |
+        +----------+-----------+      +----------+----------+
+                   |                             |
+                   +------------+----------------+
+                                |
+                      nexkey.conf (XDG config)
+                                |
+              +-----------------+------------------+
+              |                                    |
+   +----------+-----------+            +-----------+----------+
+   |  nexkey (fcitx5)     |            |  nexkey-ibus         |
+   |  Fcitx5 InputMethod  |            |  IBus engine         |
+   +----------+-----------+            +-----------+----------+
+              |                                    |
+              +-----------------+------------------+
+                                |
+                   +------------+------------+
+                   |   nexkey-core (C++23)   |
+                   |   engine + charsets     |
+                   +-------------------------+</pre>
+      </div>
+    </section>
+
+    <!-- ==================== TRAY ==================== -->
+    <section class="section" id="tray">
+      <div class="section-header">
+        <h2 class="section-title">Quick Settings <span class="title-accent">(System Tray)</span></h2>
+        <p class="nk-sub">Right-click the NexKey tray icon to reach these options.</p>
+      </div>
+
+      <div class="nk-table-wrap">
+        <table class="nk-table">
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Function</th>
+              <th>Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Output Charset</td>
+              <td>Choose output encoding (Unicode, Unicode NFD, TCVN3, VIQR)</td>
+              <td><code>Unicode</code></td>
+            </tr>
+            <tr>
+              <td>Spell Check</td>
+              <td>Dictionary-based spell checking and plausibility</td>
+              <td class="nk-on">On</td>
+            </tr>
+            <tr>
+              <td>Macro</td>
+              <td>Enable/disable macro shorthand expansion</td>
+              <td class="nk-on">On</td>
+            </tr>
+            <tr>
+              <td>Capitalize Macro</td>
+              <td>Auto-capitalize macro expansions when the shorthand is capitalized</td>
+              <td class="nk-on">On</td>
+            </tr>
+            <tr>
+              <td>Auto Non-VN Restore</td>
+              <td>Automatically restore non-Vietnamese words</td>
+              <td class="nk-on">On</td>
+            </tr>
+            <tr>
+              <td>Custom Dictionary</td>
+              <td>Use a personal custom dictionary</td>
+              <td class="nk-off">Off</td>
+            </tr>
+            <tr>
+              <td>Direct Typing</td>
+              <td>Direct typing without preedit (Non-preedit)</td>
+              <td class="nk-on">On</td>
+            </tr>
+            <tr>
+              <td>Emoji Picker…</td>
+              <td>Open the smart emoji picker dialog</td>
+              <td>—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== INSTALL ==================== -->
+    <section class="section" id="install">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>Get started</span>
+        </div>
+        <h2 class="section-title">Build &amp; <span class="title-accent">Install</span></h2>
+        <p class="nk-sub">Every optional component is detected at configure time. A plain build with no Qt and no
+          Fcitx5 still produces the library, the CLI and the test suite.</p>
+      </div>
+
+      <div class="terminal-simulator">
+        <div class="terminal-tabs-bar">
+          <button class="terminal-tab-btn active" onclick="showTab('deb', this)">1. .deb package</button>
+          <button class="terminal-tab-btn" onclick="showTab('source', this)">2. Source install</button>
+          <button class="terminal-tab-btn" onclick="showTab('appimage', this)">3. AppImage</button>
+          <button class="terminal-tab-btn" onclick="showTab('manual', this)">4. Manual CMake</button>
+        </div>
+        <div class="terminal-output-body" id="installOutput"></div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top: var(--space-md);">
+        <button class="btn btn-secondary btn-small" onclick="copyActiveTab()">Copy commands</button>
+      </div>
+
+      <div class="nk-two" style="margin-top: var(--space-xl);">
+        <div class="nk-card nk-blue">
+          <span class="nk-tag">Fcitx5</span>
+          <h3>Enable in Fcitx5</h3>
+          <p>Restart Fcitx5, open <code>fcitx5-configtool</code>, add <strong>NexKey</strong> to the input method list
+            and switch to it. See <code>docs/FCITX5.md</code> for step-by-step instructions and troubleshooting.</p>
+        </div>
+        <div class="nk-card nk-emerald">
+          <span class="nk-tag">IBus</span>
+          <h3>Enable in IBus</h3>
+          <p>Run <code>ibus write-cache --system</code>, restart IBus, then add <strong>NexKey</strong> in
+            <code>ibus-setup</code>. See <code>docs/IBUS.md</code> for details and troubleshooting.
+          </p>
+        </div>
+      </div>
+
+      <div class="nk-note">
+        Both backends read <code>~/.config/nexkey/nexkey.conf</code> and reload it as soon as the tray application or
+        <code>nexkey config set</code> rewrites the file. The default toggle key is <code>Control+Shift</code>; the
+        Fcitx5 panel icon shows <code>VN</code> in Vietnamese mode and <code>EN</code> in English mode.
+      </div>
+
+      <div class="nk-cmd">
+        <pre>nexkey config set ui.toggle_key Ctrl+Shift+space</pre>
+        <button class="nk-copy" onclick="copyText('nexkey config set ui.toggle_key Ctrl+Shift+space')"
+          title="Copy">Copy</button>
+      </div>
+
+      <div class="nk-note">
+        A <code>.deb</code> from the CI artifacts is built on Ubuntu 24.04 and targets that release. On an older
+        release build locally with <code>./scripts/package-deb.sh</code>, which links against the host libraries. The
+        AppImage carries the Fcitx5 addon and the tray application and has the same limitation. It is self-contained
+        apart from FUSE: on Ubuntu 24.04 install <code>libfuse2t64</code>, or extract it once with
+        <code>--appimage-extract</code>.
+      </div>
+
+      <h3 class="nk-h3">Requirements</h3>
+      <div class="nk-table-wrap">
+        <table class="nk-table">
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Requirement</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Compiler</td>
+              <td>GCC 12+, Clang 15+ (C++23)</td>
+            </tr>
+            <tr>
+              <td>Build system</td>
+              <td>CMake 3.21+</td>
+            </tr>
+            <tr>
+              <td>Core and CLI</td>
+              <td>none</td>
+            </tr>
+            <tr>
+              <td>Tray application</td>
+              <td>Qt 6.2+ (Core, Gui, Widgets, DBus)</td>
+            </tr>
+            <tr>
+              <td>Fcitx5 addon</td>
+              <td>Fcitx5 5.0+ development files</td>
+            </tr>
+            <tr>
+              <td>IBus engine</td>
+              <td>IBus 1.5+ development files</td>
+            </tr>
+            <tr>
+              <td>Tests</td>
+              <td>none</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="nk-h3">CMake options</h3>
+      <div class="nk-table-wrap">
+        <table class="nk-table">
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Default</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>NEXKEY_BUILD_CLI</code></td>
+              <td><code>ON</code></td>
+              <td>Build the <code>nexkey</code> command line tool</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_BUILD_TESTS</code></td>
+              <td><code>ON</code></td>
+              <td>Build and register the unit tests</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_BUILD_GUI</code></td>
+              <td><code>ON</code></td>
+              <td>Build the Qt6 tray application when Qt6 is found</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_BUILD_FCITX5</code></td>
+              <td><code>ON</code></td>
+              <td>Build the Fcitx5 addon when Fcitx5 is found</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_BUILD_IBUS</code></td>
+              <td><code>ON</code></td>
+              <td>Build the IBus engine when IBus is found</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_WARNINGS_AS_ERRORS</code></td>
+              <td><code>OFF</code></td>
+              <td>Turn compiler warnings into errors</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_INSTALL_DOCS</code></td>
+              <td><code>ON</code></td>
+              <td>Install the documentation</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_INSTALL_AUTOSTART</code></td>
+              <td><code>ON</code></td>
+              <td>Ship the system-wide autostart template</td>
+            </tr>
+            <tr>
+              <td><code>NEXKEY_PACKAGING_SHLIBDEPS</code></td>
+              <td><code>OFF</code></td>
+              <td>Let <code>dpkg-shlibdeps</code> name the dependencies for this release only, instead of the portable
+                list</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== CLI ==================== -->
+    <section class="section" id="cli">
+      <div class="section-header">
+        <div class="hero-badge" style="margin: 0 auto var(--space-sm) auto;">
+          <span class="status-dot"></span>
+          <span>CLI</span>
+        </div>
+        <h2 class="section-title">Command <span class="title-accent">Line</span></h2>
+        <p class="nk-sub"><code>nexkey test</code> prints the composed text for every input line.
+          <code>nexkey help</code>
+          lists every option; <code>nexkey methods</code> and <code>nexkey encodings</code> list the accepted names.</p>
+      </div>
+
+      <div class="terminal-simulator">
+        <div class="terminal-output-body">
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey test "tieengs"</span> <span
+              class="term-dim"> # one word, composed</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey test --method vni "tie6ng1"</span> <span
+              class="term-dim"> # the same word typed in VNI</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey test --tone-style traditional
+              "hoaf"</span> <span class="term-dim"> # compare the two tone styles</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey test --trace "vieetj"</span> <span
+              class="term-dim"> # composition per keystroke</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey test</span> <span class="term-dim"> #
+              read lines from standard input</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey convert --from unicode --to tcvn3 &lt;
+              in.txt &gt; out.txt</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey status</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey toggle</span></div>
+          <div><span class="term-prompt">$</span><span class="term-cyan">nexkey config set output.encoding
+              unicode-decomposed</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CONFIG & CHARSETS ==================== -->
+    <section class="section" id="config">
+      <div class="section-header">
+        <h2 class="section-title">Configuration &amp; <span class="title-accent">Character sets</span></h2>
+        <p class="nk-sub">The configuration lives in <code>$XDG_CONFIG_HOME/nexkey/nexkey.conf</code>, by default
+          <code>~/.config/nexkey/nexkey.conf</code>. See <code>docs/CONFIGURATION.md</code> for every key, the file
+          format and the D-Bus interface.
+        </p>
+      </div>
+
+      <div class="nk-table-wrap">
+        <table class="nk-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>unicode</code></td>
+              <td>Precomposed UTF-8, the default</td>
+            </tr>
+            <tr>
+              <td><code>unicode-decomposed</code></td>
+              <td>UTF-8 in Unicode NFD</td>
+            </tr>
+            <tr>
+              <td><code>tcvn3</code></td>
+              <td>Legacy TCVN3 (ABC) single-byte charset</td>
+            </tr>
+            <tr>
+              <td><code>viqr</code></td>
+              <td>Pure ASCII VIQR notation</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="nk-note">
+        Conversion works in both directions, so <code>nexkey convert</code> can migrate old documents from TCVN3 to
+        Unicode and back.
+      </div>
+    </section>
+
+    <!-- ==================== LAYOUT / TESTING / MIGRATION ==================== -->
+    <section class="section" id="project">
+      <div class="section-header">
+        <h2 class="section-title">Project <span class="title-accent">layout</span></h2>
+      </div>
+
+      <div class="nk-table-wrap">
+        <table class="nk-table">
+          <tbody>
+            <tr>
+              <td><code>core/</code></td>
+              <td>C++23 engine, charsets, settings (no dependencies)</td>
+            </tr>
+            <tr>
+              <td><code>cli/</code></td>
+              <td><code>nexkey</code> command line tool</td>
+            </tr>
+            <tr>
+              <td><code>gui/</code></td>
+              <td>Qt6 tray application and D-Bus service</td>
+            </tr>
+            <tr>
+              <td><code>integrations/fcitx5/</code></td>
+              <td>Fcitx5 input method addon</td>
+            </tr>
+            <tr>
+              <td><code>integrations/ibus/</code></td>
+              <td>IBus input method engine and component file</td>
+            </tr>
+            <tr>
+              <td><code>tests/</code></td>
+              <td>Unit tests with a tiny built-in harness</td>
+            </tr>
+            <tr>
+              <td><code>packaging/</code></td>
+              <td>Desktop entry, Debian maintainer scripts</td>
+            </tr>
+            <tr>
+              <td><code>scripts/</code></td>
+              <td>Build, test and packaging helpers</td>
+            </tr>
+            <tr>
+              <td><code>docs/</code></td>
+              <td>Usage, configuration and architecture notes</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="nk-two" style="margin-top: var(--space-xl);">
+        <div class="nk-card nk-cyan">
+          <span class="nk-tag">Testing</span>
+          <h3>Tested end to end</h3>
+          <p>The suite covers tone placement rules, Telex, VNI and VIQR parsing, escape sequences, the fallback for
+            non-Vietnamese words, the engine state machine, charset conversion, configuration handling and the UTF-8
+            helpers.</p>
+          <div class="nk-cmd" style="margin-top: var(--space-md);">
+            <pre>ctest --test-dir build --output-on-failure</pre>
+            <button class="nk-copy" onclick="copyText('ctest --test-dir build --output-on-failure')"
+              title="Copy">Copy</button>
+          </div>
+        </div>
+        <div class="nk-card nk-purple">
+          <span class="nk-tag">Upgrading</span>
+          <h3>Migrating from NexKey 1.x</h3>
+          <p style="margin-bottom: var(--space-sm);">Version 2.0 is a full rewrite:</p>
+          <ul class="nk-list">
+            <li>The engine moved to <code>core/</code>, is written in modern C++ and has no dependencies outside the
+              standard library.</li>
+            <li>The placeholder IBus binary was replaced by a real IBus engine running next to the Fcitx5 addon.</li>
+            <li>The config file is now <code>~/.config/nexkey/nexkey.conf</code> with documented keys.</li>
+            <li>The CLI gained <code>convert</code>, <code>config</code>, <code>status</code> and <code>toggle</code>,
+              and prints English messages only.</li>
+            <li>TCVN3, VIQR and Unicode NFD are supported output charsets; the incomplete VNI Windows table was removed
+              rather than kept half working.</li>
+          </ul>
+        </div>
+      </div>
+
+      <p style="text-align:center; color: var(--c-text-muted); font-size: var(--text-xs); margin-top: var(--space-xl);">
+        MIT License. NexKey is not affiliated with UniKey or with any of the input methods that inspired it.
+      </p>
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div class="toast-notification" id="toastBox">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+      style="width: 16px; height: 16px; color: var(--c-success);">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    <span id="toastMsg">Copied to clipboard!</span>
+  </div>
+
+  <!-- Footer -->
+  <footer class="flat-footer">
+    <div class="footer-inner-flat">
+      <div class="footer-top-flat">
+        <img src="Resources/upscalemedia-transformed.png" alt="Hyggshi OS Logo" style="width: 24px; height: 24px;">
+        <span style="font-weight: 700; color: var(--f-text);">Hyggshi OS</span>
+        <span style="color: var(--f-text-dim); font-size: var(--text-xs);">— Next-Generation Operating System
+          Ecosystem</span>
+      </div>
+
+      <div class="footer-columns-grid">
+        <div>
+          <div class="footer-col-title">Ecosystem</div>
+          <ul class="footer-col-links">
+            <li><a href="About.html">About Hyggshi OS</a></li>
+            <li><a href="projects.html">All Projects</a></li>
+            <li><a href="History.html">Release History</a></li>
+            <li><a href="HyggshiOSCodeMini.html">NexCode IDE</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Editions &amp; Products</div>
+          <ul class="footer-col-links">
+            <li><a href="HyggshiOSWeb.html">Hyggshi OS Web Edition</a></li>
+            <li><a href="HyggshiOSLinux.html">Hyggshi OS Linux</a></li>
+            <li><a href="NexKey.html">NexKey Input Method</a></li>
+            <li><a href="HOSRT.html">HOSRT Runtime</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Community &amp; Code</div>
+          <ul class="footer-col-links">
+            <li><a href="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS" target="_blank">GitHub
+                Repository</a></li>
+            <li><a href="https://discord.gg/PZuDkFzJtc" target="_blank">Discord Community</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom-flat">
+        © 2024 – 2026 Hyggshi OS Research &amp; Technology. All rights reserved. NexKey is open source under the MIT
+        license.
+      </div>
+    </div>
+  </footer>
+
+  <!-- Theme Script -->
+  <script type="module" src="/src/theme.ts"></script>
+
+  <script>
+    const tabs = {
+      deb: {
+        raw: "sudo apt install build-essential cmake ninja-build pkg-config \\\n     qt6-base-dev libfcitx5core-dev libibus-1.0-dev\n./scripts/package-deb.sh\nsudo apt install ./build-deb/nexkey_*.deb",
+        html: `
+<div class="term-dim"># 1. build dependencies</div>
+<div><span class="term-prompt">$</span><span class="term-cyan">sudo apt install build-essential cmake ninja-build pkg-config \\</span></div>
+<div>       <span class="term-cyan">qt6-base-dev libfcitx5core-dev libibus-1.0-dev</span></div>
+<div class="term-dim"># 2. build the Debian package -&gt; build-deb/*.deb</div>
+<div><span class="term-prompt">$</span><span class="term-cyan">./scripts/package-deb.sh</span></div>
+<div class="term-dim"># 3. install it</div>
+<div><span class="term-prompt">$</span><span class="term-cyan">sudo apt install ./build-deb/nexkey_*.deb</span></div>
+<div>&nbsp;</div>
+<div class="term-dim">./scripts/install-build-deps.sh does the dependency step for apt, dnf, pacman and zypper.</div>`
+      },
+      source: {
+        raw: "./scripts/install-local.sh\n./scripts/check-install.sh",
+        html: `
+<div class="term-dim"># reliable path on a distribution the prebuilt package was not built for</div>
+<div><span class="term-prompt">$</span><span class="term-cyan">./scripts/install-local.sh</span>  <span class="term-dim"># build and install into /usr/local</span></div>
+<div><span class="term-prompt">$</span><span class="term-cyan">./scripts/check-install.sh</span>  <span class="term-dim"># verify what Fcitx5 needs</span></div>`
+      },
+      appimage: {
+        raw: "./scripts/package-appimage.sh\n./dist/NexKey-2.0.0-x86_64.AppImage\n./dist/NexKey-2.0.0-x86_64.AppImage --settings",
+        html: `
+<div><span class="term-prompt">$</span><span class="term-cyan">./scripts/package-appimage.sh</span></div>
+<div><span class="term-prompt">$</span><span class="term-cyan">./dist/NexKey-2.0.0-x86_64.AppImage</span>  <span class="term-dim"># tray icon and settings window</span></div>
+<div><span class="term-prompt">$</span><span class="term-cyan">./dist/NexKey-2.0.0-x86_64.AppImage --settings</span>  <span class="term-dim"># open the settings window</span></div>
+<div>&nbsp;</div>
+<div class="term-dim">Bundles Qt and the Fcitx5 addon with linuxdeploy and prints the size and SHA-256 of the image.</div>`
+      },
+      manual: {
+        raw: "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release\ncmake --build build --parallel\nctest --test-dir build --output-on-failure",
+        html: `
+<div><span class="term-prompt">$</span><span class="term-cyan">cmake -S . -B build -DCMAKE_BUILD_TYPE=Release</span></div>
+<div><span class="term-prompt">$</span><span class="term-cyan">cmake --build build --parallel</span></div>
+<div><span class="term-prompt">$</span><span class="term-cyan">ctest --test-dir build --output-on-failure</span></div>
+<div>&nbsp;</div>
+<div class="term-dim">Shortcuts: ./scripts/build.sh (Debug build in ./build) and ./scripts/test.sh.</div>`
+      }
+    };
+    let activeTab = 'deb';
+
+    function showTab(key, btn) {
+      activeTab = key;
+      document.querySelectorAll('.terminal-tab-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      document.getElementById('installOutput').innerHTML = tabs[key].html;
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastBox');
+      document.getElementById('toastMsg').textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    function copyText(text) {
+      const done = () => showToast('Copied to clipboard!');
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+      } else {
+        fallbackCopy(text, done);
+      }
+    }
+
+    function copyActiveTab() { copyText(tabs[activeTab].raw); }
+
+    function fallbackCopy(text, cb) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); if (cb) cb(); } catch (e) { console.error(e); }
+      document.body.removeChild(ta);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      showTab('deb', document.querySelector('.terminal-tab-btn'));
+    });
+  </script>
+</body>
+
+</html>

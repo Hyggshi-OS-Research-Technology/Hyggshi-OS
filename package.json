@@ -1,0 +1,23 @@
+{
+  "name": "hyggshi-os-website-main",
+  "version": "1.0.0",
+  "description": "🌐 Hyggshi OS Web Edition",
+  "main": "aurora.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.68.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "wrangler": "^4.159.0"
+  }
+}
