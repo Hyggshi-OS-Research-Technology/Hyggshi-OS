@@ -58,7 +58,8 @@ echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
 echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
 
 echo "===== Cài archiso + công cụ build trên container archlinux:latest ====="
-pacman -Sy --noconfirm --needed archiso git openssl >/dev/null
+pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
+pacman -S --noconfirm --needed archiso git openssl >/dev/null
 
 echo "===== Copy profile 'releng' gốc của archiso làm nền ====="
 PROFILE_DIR="$REPO_ROOT/archlive"
@@ -245,7 +246,8 @@ if [ -z "$OUT_ISO" ]; then
   exit 1
 fi
 mv "$OUT_ISO" "$REPO_ROOT/$ISO_FILENAME"
-ls -lh "$REPO_ROOT/$ISO_FILENAME"
+sha256sum "$REPO_ROOT/$ISO_FILENAME" > "$REPO_ROOT/$ISO_FILENAME.sha256"
+ls -lh "$REPO_ROOT/$ISO_FILENAME" "$REPO_ROOT/$ISO_FILENAME.sha256"
 
 echo "===== build-arch-iso.sh xong ====="
 echo "LƯU Ý: bỏ qua fcitx5-unikey (gõ tiếng Việt) và calamares (graphical"

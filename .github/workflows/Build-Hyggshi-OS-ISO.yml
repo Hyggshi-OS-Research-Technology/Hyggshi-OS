@@ -981,8 +981,10 @@ jobs:
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-iso
-          path: ${{ env.ISO_FILENAME }}
+          name: hyggshi-os-arch-iso
+          path: |
+            ${{ env.ISO_FILENAME }}
+            ${{ env.ISO_FILENAME }}.sha256
           retention-days: 14
 
       - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)
@@ -1057,8 +1059,10 @@ jobs:
       - name: Upload ISO as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hyggshi-os-iso
-          path: ${{ env.ISO_FILENAME }}
+          name: hyggshi-os-fedora-iso
+          path: |
+            ${{ env.ISO_FILENAME }}
+            ${{ env.ISO_FILENAME }}.sha256
           retention-days: 14
 
       - name: Upload ISO to SourceForge (khi có SOURCEFORGE_SSH_KEY)

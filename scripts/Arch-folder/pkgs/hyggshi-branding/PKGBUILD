@@ -4,7 +4,7 @@ pkgver=2.0.0
 pkgrel=1
 pkgdesc="Branding assets, color schemes, KDE Look-and-Feel, wallpapers and splash for Hyggshi OS"
 arch=('any')
-url="https://github.com/Hyggshi-OS-project-center"
+url="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/tree/main/scripts/Arch-folder"
 license=('GPL-3.0-or-later' 'CC-BY-SA-4.0')
 depends=('plasma-workspace' 'breeze' 'breeze-icons')
 

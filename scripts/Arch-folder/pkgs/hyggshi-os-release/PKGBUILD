@@ -4,7 +4,7 @@ pkgver=2.0.0
 pkgrel=1
 pkgdesc="Hyggshi OS Arch Edition release identification and metadata"
 arch=('any')
-url="https://github.com/Hyggshi-OS-project-center"
+url="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/tree/main/scripts/Arch-folder"
 license=('GPL-3.0-or-later')
 provides=('hyggshi-release')
 conflicts=('hyggshi-release')
@@ -19,13 +19,13 @@ ID=hyggshi
 ID_LIKE=arch
 VERSION="2.0.0"
 VERSION_ID="2.0.0"
-VERSION_CODENAME="tokyo"
+VERSION_CODENAME="Pyramid Playing Cards"
 BUILD_ID="rolling"
 ANSI_COLOR="38;2;122;162;247"
-HOME_URL="https://github.com/Hyggshi-OS-project-center"
-DOCUMENTATION_URL="https://github.com/Hyggshi-OS-project-center"
-SUPPORT_URL="https://github.com/Hyggshi-OS-project-center"
-BUG_REPORT_URL="https://github.com/Hyggshi-OS-project-center"
+HOME_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS"
+DOCUMENTATION_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS"
+SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS"
+BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
 LOGO=hyggshi-logo
 EOF
 

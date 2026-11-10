@@ -147,13 +147,29 @@ python3 tools/hcl_debug_viewer.py iso-config/config/config.ini
 
 | Desktop Environment | Supported Bases | Display Manager | Default Configuration & Notes |
 |---|---|---|---|
-| **XFCE** | Debian, Ubuntu, Mint | LightDM | Windows 10 style taskbar, Whisker Menu, Papirus/Tela icons, Skeuos dark theme |
-| **KDE Plasma** | Debian, Ubuntu | SDDM | Modern Plasma workspace with optimized session defaults |
-| **LXQt** | Debian, Ubuntu | SDDM | Ultra-lightweight Qt desktop with clean memory footprint |
-| **GNOME** | Debian, Ubuntu | GDM3 | Modern GNOME Shell with automated first-login extension installer |
-| **MATE** | Debian, Ubuntu | LightDM | Traditional desktop experience with Caja and customized panel |
-| **Cinnamon** | Debian, Ubuntu, Mint | LightDM | Tela icon suite, Orchis theme, and 4 pre-configured virtual workspaces |
+| **XFCE** | Debian, Ubuntu, Mint, Arch | LightDM | Windows 10 style taskbar, Whisker Menu, Papirus/Tela icons, Skeuos dark theme |
+| **KDE Plasma** | Debian, Ubuntu, Arch | SDDM | Modern Plasma workspace with optimized session defaults (Plasma 6 on Arch) |
+| **LXQt** | Debian, Ubuntu, Arch | SDDM | Ultra-lightweight Qt desktop with clean memory footprint |
+| **GNOME** | Debian, Ubuntu, Arch | GDM3 / GDM | Modern GNOME Shell with automated first-login extension installer |
+| **MATE** | Debian, Ubuntu, Arch | LightDM | Traditional desktop experience with Caja and customized panel |
+| **Cinnamon** | Debian, Ubuntu, Mint, Arch | LightDM | Tela icon suite, Orchis theme, and 4 pre-configured virtual workspaces |
 | **HDE (NexWM)** | Debian | LightDM | Custom lightweight Hyggshi Desktop Environment built directly from source |
+
+---
+
+## Arch Linux Edition
+
+Hyggshi OS includes first-class support for **Arch Linux**:
+
+- **GitHub Actions Native Container**: Built in an `archlinux:latest` container using official `mkarchiso` with `--privileged` capabilities.
+- **Dynamic DE Selection**: Automatically builds the chosen desktop environment (KDE Plasma, XFCE, GNOME, LXQt, MATE, Cinnamon) with customized branding, user session, and `zram-generator` swap.
+- **Dedicated Archiso Profile (`scripts/Arch-folder/`)**:
+  - **KDE Plasma 6 + SDDM**: Tokyo Night aesthetic with Hyggshi Dark / Light color schemes.
+  - **Custom PKGBUILDs**: Pre-packaged `hyggshi-branding`, `hyggshi-os-release`, `hyggshi-tools`, and `hyggshi-welcome`.
+  - **Calamares Installer**: Full GUI installer integration.
+  - **Hardware Diagnostics**: `hyggshi-hardware` script for automated CPU microcode, GPU, audio, and network detection.
+  - **Secure Boot Pipeline**: Standalone toolset for signing with Microsoft-signed `shim`, injecting keys, automated `sbverify`, and QEMU test harness.
+  - See [`scripts/Arch-folder/README.md`](scripts/Arch-folder/README.md) for architecture and local build details.
 
 ---
 

@@ -3,7 +3,7 @@
 
 iso_name="hyggshi-os-arch"
 iso_label="HYGGSHI_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
-iso_publisher="Hyggshi OS <https://github.com/Hyggshi-OS-project-center>"
+iso_publisher="Hyggshi OS <https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/tree/main/scripts/Arch-folder>"
 iso_application="Hyggshi OS Arch Live/Install DVD"
 iso_version="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m.%d)"
 install_dir="arch"
