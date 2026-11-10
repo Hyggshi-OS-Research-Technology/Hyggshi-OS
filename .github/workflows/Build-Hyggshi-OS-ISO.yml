@@ -184,13 +184,17 @@ jobs:
   matrix-prep:
     name: "Chuẩn bị Desktop & Base Matrix"
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       is_matrix: ${{ steps.set-matrix.outputs.is_matrix }}
       base_matrix: ${{ steps.set-matrix.outputs.base_matrix }}
+      has_debootstrap_bases: ${{ steps.set-matrix.outputs.has_debootstrap_bases }}
       is_base_matrix: ${{ steps.set-matrix.outputs.is_base_matrix }}
       matrix_exclude: ${{ steps.set-matrix.outputs.matrix_exclude }}
+      build_arch: ${{ steps.set-matrix.outputs.build_arch }}
+      arch_de: ${{ steps.set-matrix.outputs.arch_de }}
+      build_fedora: ${{ steps.set-matrix.outputs.build_fedora }}
+      build_alpine: ${{ steps.set-matrix.outputs.build_alpine }}
       oem_matrix: ${{ steps.set-matrix.outputs.oem_matrix }}
       is_oem_matrix: ${{ steps.set-matrix.outputs.is_oem_matrix }}
       version: ${{ steps.set-matrix.outputs.version }}
@@ -214,7 +218,7 @@ jobs:
     needs: matrix-prep
     runs-on: ubuntu-latest
     
-    if: ${{ github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
+    if: ${{ needs.matrix-prep.outputs.has_debootstrap_bases == 'true' && github.event.inputs.distro != 'alpine' && github.event.inputs.distro != 'arch' && github.event.inputs.distro != 'fedora' }}
     strategy:
       fail-fast: false
       matrix:
@@ -913,8 +917,9 @@ jobs:
   # Alpine (xem ghi chú trong scripts/distros/build-alpine.sh).
   # ============================================================
   build-alpine:
+    needs: matrix-prep
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro == 'alpine' }}
+    if: ${{ always() && (github.event.inputs.distro == 'alpine' || github.event.inputs.distro == 'all' || needs.matrix-prep.outputs.build_alpine == 'true') }}
     container:
       image: ${{ (github.event.inputs.alpine_version == 'v3.19' && 'alpine:3.19') || (github.event.inputs.alpine_version == 'edge' && 'alpine:edge') || 'alpine:3.20' }}
     steps:
@@ -957,8 +962,9 @@ jobs:
   # scripts/distros/build-arch-iso.sh.
   # ============================================================
   build-arch:
+    needs: matrix-prep
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro == 'arch' }}
+    if: ${{ always() && (github.event.inputs.distro == 'arch' || github.event.inputs.distro == 'all' || needs.matrix-prep.outputs.build_arch == 'true') }}
     container:
       image: archlinux:latest
       # mkarchiso (giống pacstrap) tự mount /proc, /sys, /dev bind vào bên
@@ -968,6 +974,8 @@ jobs:
       # denied" / "ERROR: failed to setup chroot". --privileged cấp lại đủ
       # quyền để mkarchiso tự mount được.
       options: --privileged
+    env:
+      DE: ${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || needs.matrix-prep.outputs.arch_de || 'kde' }}
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
@@ -1028,8 +1036,9 @@ jobs:
   # chi tiết + cảnh báo EXPERIMENTAL trong scripts/distros/build-fedora.sh.
   # ============================================================
   build-fedora:
+    needs: matrix-prep
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.distro == 'fedora' }}
+    if: ${{ always() && (github.event.inputs.distro == 'fedora' || github.event.inputs.distro == 'all' || needs.matrix-prep.outputs.build_fedora == 'true') }}
     container:
       image: ${{ (github.event.inputs.fedora_version == '40' && 'fedora:40') || (github.event.inputs.fedora_version == 'rawhide' && 'fedora:rawhide') || 'fedora:41' }}
       options: --privileged

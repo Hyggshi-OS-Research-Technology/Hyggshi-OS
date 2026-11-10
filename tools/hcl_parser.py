@@ -450,9 +450,12 @@ BASE_CANONICAL = {
     "ubuntu": "ubuntu",
     "mint": "linuxmint",
     "linuxmint": "linuxmint",
+    "linux-mint": "linuxmint",
     "fedora": "fedora",
     "alpine": "alpine",
     "arch": "arch",
+    "archlinux": "arch",
+    "arch-linux": "arch",
 }
 
 class Resolver:
@@ -722,15 +725,17 @@ class Resolver:
                 out["active_desktop"] = true_desktops[0]
                 out["desktops_to_build"] = true_desktops
 
-        for key, raw, _group in self._entries("Desktop-Environment"):
-            pv = classify(key, raw)
-            if pv.type != "FUNCTION" or pv.value.get("name") != "customDE":
-                continue
-            custom = self.resolve_function(pv.value)
-            target = str(custom.get("target", "")).strip().lower().replace("-", "")
-            desktop = str(custom.get("object") or custom.get("DE-target") or custom.get("de-target") or "").strip().lower()
-            if target and desktop:
-                out["custom_desktops"][target] = desktop
+        for s in self.sections:
+            for key, raw, _group in self._entries(s):
+                pv = classify(key, raw)
+                if pv.type != "FUNCTION" or pv.value.get("name") != "customDE":
+                    continue
+                custom = self.resolve_function(pv.value)
+                target = str(custom.get("target", "")).strip().lower().replace("-", "").replace("_", "")
+                target_can = BASE_CANONICAL.get(target, target)
+                desktop = str(custom.get("object") or custom.get("DE-target") or custom.get("de-target") or "").strip().lower()
+                if target_can and desktop:
+                    out["custom_desktops"][target_can] = desktop
 
         return out
 
@@ -855,7 +860,8 @@ class Resolver:
         kwargs = fn["kwargs"]
         result = {"call": name, **kwargs}
         if name == "customDE":
-            target = str(kwargs.get("target", "")).strip().lower().replace("-", "")
+            target_raw = str(kwargs.get("target", "")).strip().lower().replace("-", "").replace("_", "")
+            target = BASE_CANONICAL.get(target_raw, target_raw)
             desktop = str(kwargs.get("object") or kwargs.get("DE-target") or kwargs.get("de-target") or "").strip().lower()
             if not target:
                 self.diags.append(Diagnostic(
@@ -2484,21 +2490,29 @@ def main():
         else:
             base_list = base_info.get("bases_to_build") or ["debian"]
 
-        # Expand the Cartesian DE/base matrix, then exclude combinations
-        # overridden by customDE(target=..., object=...). Keep other bases'
-        # regular DE matrix unchanged.
-        matrix_exclude = []
+        # Container bases (arch, fedora, alpine) have their own dedicated container jobs.
+        # build-iso only supports debootstrap-compatible bases (debian, ubuntu, linuxmint).
+        debootstrap_bases = [b for b in base_list if b in ("debian", "ubuntu", "linuxmint")]
+        has_arch = "arch" in base_list or base_override in ("arch", "all")
+        has_fedora = "fedora" in base_list or base_override in ("fedora", "all")
+        has_alpine = "alpine" in base_list or base_override in ("alpine", "all")
+
         custom_desktops = de_info.get("custom_desktops") or {}
+        arch_de = custom_desktops.get("arch") or (matrix_list[0] if matrix_list else "kde")
+
+        # Expand the Cartesian DE/base matrix for debootstrap bases only, then exclude combinations
+        # overridden by customDE(target=..., object=...).
+        matrix_exclude = []
         original_matrix_list = list(matrix_list)
         for target, desktop in custom_desktops.items():
-            if target not in base_list:
+            if target not in debootstrap_bases:
                 continue
             if desktop not in matrix_list:
                 matrix_list.append(desktop)
             for matrix_desktop in matrix_list:
                 if matrix_desktop != desktop:
                     matrix_exclude.append({"distro": target, "desktop": matrix_desktop})
-            for other_base in base_list:
+            for other_base in debootstrap_bases:
                 if other_base == target:
                     continue
                 for matrix_desktop in matrix_list:
@@ -2506,7 +2520,7 @@ def main():
                         matrix_exclude.append({"distro": other_base, "desktop": matrix_desktop})
 
         matrix_json = json.dumps(matrix_list)
-        base_matrix_json = json.dumps(base_list)
+        base_matrix_json = json.dumps(debootstrap_bases)
         print(matrix_json)
         gh_output = os.environ.get("GITHUB_OUTPUT")
         if gh_output:
@@ -2515,8 +2529,13 @@ def main():
                     f.write(f"matrix={matrix_json}\n")
                     f.write(f"is_matrix={'true' if len(matrix_list) > 1 else 'false'}\n")
                     f.write(f"base_matrix={base_matrix_json}\n")
+                    f.write(f"has_debootstrap_bases={'true' if len(debootstrap_bases) > 0 else 'false'}\n")
                     f.write(f"matrix_exclude={json.dumps(matrix_exclude)}\n")
-                    f.write(f"is_base_matrix={'true' if len(base_list) > 1 else 'false'}\n")
+                    f.write(f"is_base_matrix={'true' if len(debootstrap_bases) > 1 else 'false'}\n")
+                    f.write(f"build_arch={'true' if has_arch else 'false'}\n")
+                    f.write(f"arch_de={arch_de}\n")
+                    f.write(f"build_fedora={'true' if has_fedora else 'false'}\n")
+                    f.write(f"build_alpine={'true' if has_alpine else 'false'}\n")
                     oem_variants = oem_info.get("oem_variants_to_build") or ["no"]
                     f.write(f"oem_matrix={json.dumps(oem_variants)}\n")
                     f.write(f"is_oem_matrix={'true' if len(oem_variants) > 1 else 'false'}\n")
