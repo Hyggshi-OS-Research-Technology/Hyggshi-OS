@@ -57,9 +57,11 @@ echo "===== Biến build đang dùng ====="
 echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
 echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
 
-echo "===== Cài archiso + công cụ build trên container archlinux:latest ====="
-pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
-pacman -S --noconfirm --needed archiso git openssl >/dev/null
+echo "===== Khởi tạo pacman keyring và cài archiso + công cụ build ====="
+pacman-key --init
+pacman-key --populate archlinux
+pacman -Sy --noconfirm archlinux-keyring
+pacman -Syu --noconfirm --needed archiso git openssl
 
 echo "===== Copy profile 'releng' gốc của archiso làm nền ====="
 PROFILE_DIR="$REPO_ROOT/archlive"

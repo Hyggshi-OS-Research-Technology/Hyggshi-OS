@@ -976,9 +976,17 @@ jobs:
       options: --privileged
     env:
       DE: ${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || needs.matrix-prep.outputs.arch_de || 'kde' }}
+      ISO_FILENAME: "hyggshi-os-${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || needs.matrix-prep.outputs.arch_de || 'kde' }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-arch.iso"
     steps:
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
+
+      - name: Initialize pacman keyring and install archiso
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm --needed archiso git openssl
 
       - name: Chmod +x cho scripts/distros/build-arch-iso.sh
         run: chmod +x scripts/distros/build-arch-iso.sh
@@ -1042,6 +1050,9 @@ jobs:
     container:
       image: ${{ (github.event.inputs.fedora_version == '40' && 'fedora:40') || (github.event.inputs.fedora_version == 'rawhide' && 'fedora:rawhide') || 'fedora:41' }}
       options: --privileged
+    env:
+      DE: ${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || 'xfce' }}
+      ISO_FILENAME: "hyggshi-os-${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || 'xfce' }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-fedora.iso"
     steps:
       - name: "Cài build tools trên HOST (container fedora — build-fedora.sh chỉ cài vào --installroot, không tự cài công cụ cho chính host)"
         run: |

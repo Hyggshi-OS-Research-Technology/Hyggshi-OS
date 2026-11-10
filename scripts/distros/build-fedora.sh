@@ -357,7 +357,8 @@ menuentry "$DISTRO_NAME Live" {
 EOF
 
 grub2-mkrescue -o "$ISO_FILENAME" live-build/image --compress=xz -- -volid "HYGGSHI_OS"
-ls -lh "$ISO_FILENAME"
+sha256sum "$ISO_FILENAME" > "$ISO_FILENAME.sha256"
+ls -lh "$ISO_FILENAME" "$ISO_FILENAME.sha256"
 
 echo "===== build-fedora.sh xong ====="
 echo "LƯU Ý: dùng dmsquash-live (dracut) — cùng công nghệ Fedora Live chính"

@@ -1,188 +1,187 @@
-# Hướng Dẫn & Chuẩn Hoá UEFI Secure Boot — Hyggshi OS
+# UEFI Secure Boot Guide & Standardization — Hyggshi OS
 
-Tài liệu này giải thích chi tiết về kiến trúc **UEFI Secure Boot**, quy trình ký số với **shim được Microsoft chứng thực**, cách khắc phục triệt để lỗi Secure Boot trên máy tính người dùng (điển hình như Dell Vostro 3400), và các quy tắc bảo mật khóa riêng tư (Private Keys).
+This document explains in detail the **UEFI Secure Boot** architecture, the code signing workflow with **Microsoft-authenticated shim**, methods to permanently resolve Secure Boot errors on user machines (e.g., Dell Vostro 3400), and security policies for Private Key management.
 
 ---
 
-## 1. Phân Tích Sự Cố: Dell SupportAssist Báo Lỗi Secure Boot
+## 1. Incident Analysis: Dell SupportAssist Reports Secure Boot Error
 
-### Hiện tượng
-Khi người dùng cắm USB Live hoặc khởi động sau khi cài đặt Hyggshi OS trên laptop (ví dụ: Dell Vostro 3400) có bật Secure Boot trong BIOS, màn hình Dell SupportAssist On-board Diagnostics xuất hiện cảnh báo:
+### Symptoms
+When a user boots a Live USB or boots after installing Hyggshi OS on a laptop (e.g., Dell Vostro 3400) with Secure Boot enabled in BIOS, the Dell SupportAssist On-board Diagnostics screen displays the error:
 
 > **⚠️ Operating System Loader has no signature. Incompatible with SecureBoot. All bootable devices failed Secure Boot**
 
-### Nguyên nhân kỹ thuật
-1. **Đối với bản cài đặt (sau khi chạy Calamares):**
-   - Mặc định Calamares với cấu hình `installEFIFallback: true` sẽ copy file `grubx64.efi` đè lên vị trí bootloader mặc định `/boot/efi/EFI/BOOT/BOOTX64.EFI`.
-   - File `grubx64.efi` chỉ được ký bởi Debian CA (hoặc không có chữ ký nếu do `grub-install` biên dịch cục bộ). Firmware UEFI của bo mạch chủ Dell **chỉ tin cậy chứng chỉ "Microsoft Corporation UEFI CA"** nằm sẵn trong biến `db` của BIOS từ lúc xuất xưởng.
-   - Khi Dell nạp `BOOTX64.EFI`, phát hiện không có chữ ký Microsoft hợp lệ, firmware lập tức khóa máy và hiển thị lỗi.
+### Root Causes
+1. **For Installed Systems (Post-Calamares):**
+   - By default, Calamares with `installEFIFallback: true` copies `grubx64.efi` over the fallback bootloader path `/boot/efi/EFI/BOOT/BOOTX64.EFI`.
+   - The file `grubx64.efi` is only signed by Debian CA (or unsigned if compiled locally by `grub-install`). Dell motherboard UEFI firmware **only trusts the "Microsoft Corporation UEFI CA" certificate** embedded in the factory BIOS `db` variable.
+   - When Dell loads `BOOTX64.EFI` and discovers no valid Microsoft signature, the firmware immediately halts boot and shows the error.
 
-2. **Đối với USB Live ISO:**
-   - Nếu quá trình build ISO không đóng gói đúng file `shimx64.efi.signed` (đã ký bởi Microsoft) làm `BOOTX64.EFI`, hoặc rơi vào nhánh fallback tạo GRUB unsigned (`grub-mkrescue`), USB sẽ bị BIOS từ chối boot ngay lập tức.
-
----
-
-## 2. Mô Hình Chuỗi Tin Cậy Chuẩn (Chain of Trust)
-
-Trong hệ sinh thái Linux thương mại và cộng đồng (Ubuntu, Fedora, Debian, openSUSE), **tuyệt đối không bao giờ yêu cầu người dùng cuối:**
-> *“Vào BIOS → Chuyển sang Custom Mode → Enroll key của Hyggshi”* 💀
-
-Yêu cầu này vi phạm trải nghiệm người dùng, tiềm ẩn nguy cơ làm brick BIOS, và làm mất khả năng boot song song (Dual Boot) với Windows.
-
-### Chuỗi tin cậy chuẩn thực tế:
-
-```
-PC Firmware (UEFI BIOS có sẵn "Microsoft Corporation UEFI CA" trong factory db)
-     │
-     │ 1. Xác thực bằng chữ ký Microsoft UEFI CA
-     ▼
-  shim (BOOTX64.EFI) — [ĐƯỢC MICROSOFT KÝ SẴN]
-     │
-     │ 2. Xác thực bằng chứng chỉ Distro nhúng sẵn trong shim hoặc qua MOK
-     ▼
-  GRUB (grubx64.efi) — [ĐƯỢC DISTRO KÝ]
-     │
-     │ 3. Xác thực Kernel qua giao thức EFI load image / verify
-     ▼
-  Linux Kernel (vmlinuz) — [ĐƯỢC DISTRO KÝ]
-     │
-     ▼
-  Hyggshi OS (Khởi chạy hệ thống hoàn chỉnh)
-```
+2. **For Live USB ISOs:**
+   - If the ISO build pipeline does not properly package `shimx64.efi.signed` (signed by Microsoft) as `BOOTX64.EFI`, or falls back to generating an unsigned GRUB image (`grub-mkrescue`), the BIOS rejects the USB instantly.
 
 ---
 
-## 3. Quy Tắc Bảo Mật: Quản Lý Khóa & GitHub
+## 2. Standard Chain of Trust Model
 
-### ⚠️ CẢNH BÁO QUAN TRỌNG: KHÔNG COMMIT PRIVATE KEY LÊN GITHUB
+In commercial and community Linux distributions (Ubuntu, Fedora, Debian, openSUSE), **end users must never be instructed to:**
+> *“Enter BIOS → Switch to Custom Mode → Enroll Hyggshi's key”* 💀
 
-Tuyệt đối không lưu các khóa riêng tư (`.key`) trong repository Git:
+Such requirements degrade user experience, risk bricking the BIOS, and break dual-boot compatibility with Windows.
+
+### Standard Real-World Chain of Trust:
+
+```
+PC Firmware (UEFI BIOS with "Microsoft Corporation UEFI CA" in factory db)
+     │
+     │ 1. Verified by Microsoft UEFI CA signature
+     ▼
+  shim (BOOTX64.EFI) — [SIGNED BY MICROSOFT]
+     │
+     │ 2. Verified by Distro certificate embedded in shim or via MOK
+     ▼
+  GRUB (grubx64.efi) — [SIGNED BY DISTRO]
+     │
+     │ 3. Verified Kernel via EFI load image / verify protocol
+     ▼
+  Linux Kernel (vmlinuz) — [SIGNED BY DISTRO]
+     │
+     ▼
+  Hyggshi OS (Complete system boot)
+```
+
+---
+
+## 3. Security Policy: Key Management & GitHub
+
+### ⚠️ CRITICAL WARNING: NEVER COMMIT PRIVATE KEYS TO GITHUB
+
+Under no circumstances should private keys (`.key`) be stored in the Git repository:
 
 ```
 GitHub Repository
 └── secureboot/
-    ├── PK.key       ❌ TUYỆT ĐỐI KHÔNG
-    ├── KEK.key      ❌ TUYỆT ĐỐI KHÔNG
-    └── db.key       ❌ TUYỆT ĐỐI KHÔNG
+    ├── PK.key       ❌ NEVER COMMIT
+    ├── KEK.key      ❌ NEVER COMMIT
+    └── db.key       ❌ NEVER COMMIT
 ```
 
-Nếu private key bị lộ lên GitHub, toàn bộ chuỗi chứng thực sẽ bị coi là thỏa hiệp (compromised), và Microsoft/UEFI Forum có thể đưa chứng chỉ vào danh sách thu hồi (`dbx`).
+If private keys are leaked on GitHub, the entire chain of trust is compromised, and Microsoft/UEFI Forum may revoke the certificate via the forbidden database (`dbx`).
 
-### Phân biệt vai trò của các tầng khóa trong UEFI:
+### Distinguishing UEFI Key Roles:
 
-| Loại Khóa | Tên Đầy Đủ | Phạm Vi & Vai Trò | Ai Nắm Giữ? |
+| Key Type | Full Name | Scope & Role | Key Holder |
 | :--- | :--- | :--- | :--- |
-| **PK** | Platform Key | Khóa gốc tối cao của bo mạch chủ, kiểm soát quyền ghi đè KEK. | OEM (Dell, Asus, HP, Lenovo...) |
-| **KEK** | Key Exchange Key | Khóa trung gian, kiểm soát việc cập nhật danh sách `db` và `dbx`. | OEM & Microsoft |
-| **db** | Signature Database | Danh sách chứng chỉ/hash các loader được phép chạy (bao gồm Microsoft Windows CA & Microsoft 3rd Party UEFI CA). | Chứa trong firmware máy |
-| **dbx** | Forbidden Database | Danh sách thu hồi các bootloader có lỗ hổng bảo mật. | Cập nhật qua Windows Update / fwupd |
-| **MOK** | Machine Owner Key | Khóa riêng do **shim** quản lý trong NVRAM, cho phép người dùng hoặc distro nạp driver ngoài (NVIDIA, VirtualBox) mà không cần can thiệp vào PK/db của BIOS. | Do máy người dùng / distro cấp |
+| **PK** | Platform Key | Supreme root key of the motherboard; governs permission to update KEK. | OEM (Dell, ASUS, HP, Lenovo...) |
+| **KEK** | Key Exchange Key | Intermediate key; governs updates to the `db` and `dbx` databases. | OEM & Microsoft |
+| **db** | Signature Database | List of authorized certificates/hashes allowed to execute (includes Microsoft Windows CA & Microsoft 3rd Party UEFI CA). | Preloaded in machine firmware |
+| **dbx** | Forbidden Database | Revocation list of bootloaders with known vulnerabilities. | Updated via Windows Update / fwupd |
+| **MOK** | Machine Owner Key | Private key managed by **shim** in NVRAM, allowing users or distros to load third-party drivers (NVIDIA, VirtualBox) without altering BIOS PK/db. | Maintained by user / distro |
 
 ---
 
-## 4. Kiến Trúc Ký Số Trong GitHub Actions Của Hyggshi OS
+## 4. Digital Signing Architecture in Hyggshi OS GitHub Actions
 
-Đối với Hyggshi OS, quy trình build tự động trên GitHub Actions được chuẩn hoá theo sơ đồ:
+For Hyggshi OS, the automated build process on GitHub Actions is standardized as follows:
 
 ```
 Hyggshi GitHub Actions Pipeline
         │
         ├── 1. Build ISO & Rootfs (debootstrap, chroot, desktop.sh)
         │
-        ├── 2. Cài đặt bootloader:
-        │      ├── shim-signed (Microsoft-signed binary từ Debian upstream)
-        │      └── grub-efi-*-signed (Signed GRUB từ Debian upstream)
+        ├── 2. Install bootloader:
+        │      ├── shim-signed (Microsoft-signed binary from Debian upstream)
+        │      └── grub-efi-*-signed (Signed GRUB from Debian upstream)
         │
-        ├── 3. Môi trường ký số bảo mật (Secure Signing Environment):
-        │      ├── Kiểm tra chữ ký hiện tại bằng `sbverify`
-        │      └── NẾU có custom kernel/modules:
-        │          Ký tự động bằng GitHub Actions Secrets:
+        ├── 3. Secure Signing Environment:
+        │      ├── Verify current signatures using `sbverify`
+        │      └── IF custom kernel/modules are present:
+        │          Automatically sign using GitHub Actions Secrets:
         │          - ${{ secrets.SECURE_BOOT_KEY }}
         │          - ${{ secrets.SECURE_BOOT_CERT }}
-        │          (Key được ghi vào ramdisk tạm, phân quyền 0600, shred ngay sau khi ký)
+        │          (Key written to temporary ramdisk, permissions 0600, shredded immediately after signing)
         │
-        └── 4. Đóng gói Hybrid ISO bằng xorriso:
-               - Phân vùng El Torito BIOS MBR
-               - Phân vùng UEFI ESP (BOOTX64.EFI = shim Microsoft)
+        └── 4. Package Hybrid ISO using xorriso:
+               - El Torito BIOS MBR partition
+               - UEFI ESP partition (BOOTX64.EFI = Microsoft shim)
 ```
 
 ---
 
-## 5. Các Thay Đổi Kỹ Thuật Đã Áp Dụng Trong Repo
+## 5. Technical Changes Implemented in the Repository
 
 1. **`.gitignore`:**
-   - Đã thêm quy tắc chặn hoàn toàn các định dạng khóa: `*.key`, `*.priv`, `*.pem`, `*.pfx`, `PK.*`, `KEK.*`, `db.*`, `MOK.*`.
+   - Strict patterns added to block all key formats: `*.key`, `*.priv`, `*.pem`, `*.pfx`, `PK.*`, `KEK.*`, `db.*`, `MOK.*`.
 2. **`scripts/secureboot.sh`:**
-   - Tạo thư viện chuyên trách kiểm tra chữ ký (`hyggshi_sb_verify`), kiểm tra nguồn gốc Microsoft (`hyggshi_sb_is_microsoft_signed`), cấu trúc hóa phân vùng ESP (`hyggshi_sb_setup_esp_tree`), và ký số an toàn bằng GitHub Secrets (`hyggshi_sb_sign_with_secrets_if_available`).
+   - Dedicated library for signature verification (`hyggshi_sb_verify`), Microsoft origin validation (`hyggshi_sb_is_microsoft_signed`), ESP tree structuring (`hyggshi_sb_setup_esp_tree`), and secure signing via GitHub Secrets (`hyggshi_sb_sign_with_secrets_if_available`).
 3. **`iso-config/calamares/modules/bootloader.conf`:**
-   - Đặt `installEFIFallback: false` để ngăn Calamares copy đè file `grubx64.efi` không có chữ ký Microsoft vào `BOOTX64.EFI`.
-   - Đặt `efiBootloaderId: "hyggshi"`.
-4. **`iso-config/calamares/hyggshi-secureboot-postinstall.sh` & module `hyggshi-secureboot.conf`:**
-   - Chạy ngay sau bước `bootloader` trong Calamares:
-   - Đảm bảo `/boot/efi/EFI/BOOT/BOOTX64.EFI` luôn là bản `shimx64.efi` đã được Microsoft ký.
-   - Sao chép kèm `grubx64.efi` đã ký và `mmx64.efi` (MokManager).
-   - Đăng ký NVRAM entry trỏ đúng vào `\EFI\hyggshi\shimx64.efi` thông qua `efibootmgr`.
+   - Set `installEFIFallback: false` to prevent Calamares from overwriting `BOOTX64.EFI` with an unsigned `grubx64.efi`.
+   - Set `efiBootloaderId: "hyggshi"`.
+4. **`iso-config/calamares/hyggshi-secureboot-postinstall.sh` & `hyggshi-secureboot.conf` module:**
+   - Executed immediately following Calamares `bootloader` step:
+   - Ensures `/boot/efi/EFI/BOOT/BOOTX64.EFI` is always the Microsoft-signed `shimx64.efi`.
+   - Copies companion signed `grubx64.efi` and `mmx64.efi` (MokManager).
+   - Registers NVRAM boot entry pointing directly to `\EFI\hyggshi\shimx64.efi` using `efibootmgr`.
 5. **`scripts/iso.sh`:**
-   - Tích hợp `secureboot.sh`, xác thực tính hợp lệ của shim Microsoft trước khi đóng gói ISO.
-   - Loại bỏ hoàn toàn nguy cơ âm thầm fallback sang `grub-mkrescue` unsigned khi build bản phát hành.
+   - Integrates `secureboot.sh` to validate Microsoft shim integrity before packaging the ISO.
+   - Eliminates silent fallbacks to unsigned `grub-mkrescue` for release builds.
 
 ---
 
-## 6. Hướng Dẫn Sử Dụng Thực Tế (Usage Guide)
+## 6. Practical Usage Guide
 
-### Trường Hợp 1: Sử Dụng Mặc Định (Khuyên dùng — Không cần cấu hình gì thêm)
-Đây là cách 99% người dùng và nhà phát triển sử dụng. Bạn **không cần làm gì cả**:
+### Scenario 1: Standard Build (Recommended — No Extra Configuration Required)
+This is the default path for 99% of users and developers. **No manual actions are needed**:
 
 1. **Build ISO:**
-   - Trên GitHub, vào tab **Actions** → chạy workflow **Build Hyggshi OS ISO** (chọn distro mặc định `debian` hoặc `ubuntu`).
-   - Workflow sẽ tự động lấy các thành phần đã ký chuẩn từ Debian/Ubuntu:
-     - `shim-signed` (được Microsoft ký).
-     - `grub-efi-amd64-signed` (được Debian/Ubuntu ký).
-     - `linux-image-*` (kernel được Debian/Ubuntu ký).
-2. **Flash ra USB & Khởi động:**
-   - Ghi file ISO ra USB bằng Rufus, BalenaEtcher hoặc `dd`.
-   - Cắm vào laptop (Dell, HP, Lenovo...) có bật **Secure Boot: ON**. Máy sẽ boot thẳng vào Live Desktop của Hyggshi OS mà **không gặp cảnh báo SupportAssist**.
-3. **Cài đặt vào máy:**
-   - Nhấn icon **Install Hyggshi OS** (Calamares).
-   - Calamares cài đặt xong, hook `hyggshi-secureboot-postinstall.sh` sẽ tự động cấu hình `BOOTX64.EFI` là Microsoft Shim và đăng ký NVRAM entry.
-   - Khởi động lại máy: Hyggshi OS khởi động trực tiếp mà không cần vào BIOS tắt Secure Boot.
+   - On GitHub, navigate to **Actions** → run workflow **Build Hyggshi OS ISO** (select `debian` or `ubuntu`).
+   - The workflow automatically retrieves standard signed binaries from Debian/Ubuntu:
+     - `shim-signed` (signed by Microsoft).
+     - `grub-efi-amd64-signed` (signed by Debian/Ubuntu).
+     - `linux-image-*` (kernel signed by Debian/Ubuntu).
+2. **Flash to USB & Boot:**
+   - Write the ISO to USB using Rufus, BalenaEtcher, or `dd`.
+   - Insert into laptop (Dell, HP, Lenovo...) with **Secure Boot: ON**. The system boots directly into the Hyggshi OS Live Desktop **without SupportAssist errors**.
+3. **Install to Disk:**
+   - Click **Install Hyggshi OS** (Calamares).
+   - Once installation completes, the `hyggshi-secureboot-postinstall.sh` hook automatically configures `BOOTX64.EFI` as Microsoft Shim and registers the NVRAM entry.
+   - Reboot: Hyggshi OS boots directly without requiring Secure Boot to be disabled in BIOS.
 
 ---
 
-### Trường Hợp 2: Bạn Tự Build Kernel Riêng / Driver Riêng (Nâng cao)
-Nếu bạn tự biên dịch kernel tùy chỉnh (custom kernel) không có sẵn chữ ký của Debian/Ubuntu, bạn sử dụng hệ thống **GitHub Actions Secrets** để ký tự động:
+### Scenario 2: Custom Kernel / Proprietary Driver Builds (Advanced)
+If you compile a custom kernel that lacks upstream Debian/Ubuntu signatures, use **GitHub Actions Secrets** for automated signing:
 
-1. **Tạo cặp khóa ký riêng trên máy cá nhân của bạn (chạy 1 lần):**
+1. **Generate signing key pair locally (one-time setup):**
    ```bash
    openssl req -new -x509 -newkey rsa:2048 \
      -keyout my-signing-key.key \
      -out my-signing-cert.crt \
      -nodes -days 3650 -subj "/CN=Hyggshi OS Custom Signing Key/"
    ```
-   > ⚠️ **TUYỆT ĐỐI KHÔNG commit file `my-signing-key.key` vào GitHub!**
+   > ⚠️ **NEVER commit `my-signing-key.key` to GitHub!**
 
-2. **Thêm vào GitHub Repository Secrets:**
-   - Vào GitHub Repo: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
-   - Tạo secret `SECURE_BOOT_KEY`: Dán toàn bộ nội dung file `my-signing-key.key`.
-   - Tạo secret `SECURE_BOOT_CERT`: Dán toàn bộ nội dung file `my-signing-cert.crt`.
+2. **Add to GitHub Repository Secrets:**
+   - Go to GitHub Repo: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+   - Create secret `SECURE_BOOT_KEY`: Paste the full contents of `my-signing-key.key`.
+   - Create secret `SECURE_BOOT_CERT`: Paste the full contents of `my-signing-cert.crt`.
 
-3. **Chạy Build:**
-   - Khi workflow chạy, `scripts/iso.sh` và `scripts/secureboot.sh` sẽ tự động phát hiện 2 secret này và ký kernel tùy biến của bạn bằng `sbsign`.
-   - Private key được nạp tạm thời và tiêu hủy ngay sau khi ký, đảm bảo an toàn 100%.
+3. **Run Build:**
+   - During the workflow run, `scripts/iso.sh` and `scripts/secureboot.sh` automatically detect these secrets and sign your custom kernel using `sbsign`.
+   - The private key is loaded into temporary volatile storage and immediately shredded after signing.
 
 ---
 
-### Trường Hợp 3: Kiểm Tra Chữ Ký Thủ Công (Local Debug)
-Để kiểm tra xem file `.efi` hoặc `vmlinuz` trên máy có chữ ký hợp lệ hay không:
+### Scenario 3: Manual Signature Verification (Local Debugging)
+To verify whether `.efi` binaries or `vmlinuz` carry valid digital signatures:
 ```bash
-# Kiểm tra file shim
+# Check shim binary
 sbverify --list live-build/image/EFI/BOOT/BOOTX64.EFI
 
-# Kiểm tra file GRUB
+# Check GRUB binary
 sbverify --list live-build/image/EFI/BOOT/grubx64.efi
 
-# Kiểm tra file Kernel
+# Check Kernel binary
 sbverify --list live-build/image/live/vmlinuz
 ```
-Nếu chữ ký hợp lệ, lệnh sẽ in ra thông tin chứng chỉ (`Microsoft Corporation UEFI CA` hoặc `Debian Secure Boot CA`).
-
+If signatures are valid, the command prints certificate details (`Microsoft Corporation UEFI CA` or `Debian Secure Boot CA`).
