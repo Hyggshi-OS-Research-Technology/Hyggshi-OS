@@ -204,9 +204,17 @@ ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
 
 echo "===== Tạo user mặc định cho live session ====="
 for grp in wheel storage power network video audio input autologin; do
-  groupadd -r "$grp" 2>/dev/null || true
+  groupadd -r "\$grp" 2>/dev/null || true
 done
-id -u "$OS_USERNAME" >/dev/null 2>&1 || useradd -m -G wheel,audio,video,input,autologin -s /bin/bash "$OS_USERNAME"
+
+if ! id -u "$OS_USERNAME" >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$OS_USERNAME"
+fi
+
+for grp in wheel storage power network video audio input autologin; do
+  gpasswd -a "$OS_USERNAME" "\$grp" 2>/dev/null || true
+done
+
 echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
 mkdir -p /etc/sudoers.d
 echo "$OS_USERNAME ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/99-$OS_USERNAME"
