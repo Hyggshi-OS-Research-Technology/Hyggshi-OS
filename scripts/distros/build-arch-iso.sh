@@ -32,7 +32,7 @@ echo "===== Khởi tạo pacman keyring và cài archiso + build tools ====="
 pacman-key --init
 pacman-key --populate archlinux
 pacman -Sy --noconfirm archlinux-keyring
-pacman -Syu --noconfirm --needed archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntool openssl sudo rsync
+pacman -Syu --noconfirm --needed archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntools openssl sudo rsync
 
 # 2. Định vị thư mục Arch-folder
 RAW_ARCH_FOLDER="${HCL_ARCH_FOLDER:-${ARCH_FOLDER:-scripts/Arch-folder}}"

@@ -988,7 +988,7 @@ jobs:
           pacman-key --init
           pacman-key --populate archlinux
           pacman -Sy --noconfirm archlinux-keyring
-          pacman -Syu --noconfirm --needed archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntool openssl sudo rsync
+          pacman -Syu --noconfirm --needed archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntools openssl sudo rsync
 
       - name: Chmod +x cho scripts/distros/build-arch-iso.sh
         run: chmod +x scripts/distros/build-arch-iso.sh

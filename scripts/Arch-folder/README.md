@@ -51,7 +51,7 @@ To build the ISO locally on an Arch Linux system:
 
 ```bash
 # 1. Install prerequisites
-sudo pacman -S archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntool openssl
+sudo pacman -S archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntools openssl
 
 # 2. Build Calamares (AUR) into a local repository
 git clone https://github.com/archlinux/aur.git --branch calamares --single-branch /tmp/calamares
