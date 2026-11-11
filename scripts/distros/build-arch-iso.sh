@@ -68,7 +68,7 @@ if [ -d "$ARCH_FOLDER_PATH/pkgs" ]; then
       echo "==> Đang build: $pkgname..."
       (
         cd "$pkg"
-        sudo -u builder makepkg -s -f --noconfirm --needed 2>&1 || true
+        su - builder -c "cd '$pkg' && makepkg -f --noconfirm --needed" || true
         cp -f ./*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
       )
     fi
@@ -77,14 +77,18 @@ fi
 
 # 5. Build Calamares từ AUR nếu có trong packages.x86_64
 if grep -q "^calamares$" "$PROFILE_DIR/packages.x86_64" 2>/dev/null; then
+  echo "===== Cài đặt build dependencies cho Calamares ====="
+  pacman -S --noconfirm --needed \
+    cmake ninja extra-cmake-modules libglvnd qt6-tools qt6-translations \
+    kcoreaddons kpmcore libpwquality qt6-declarative qt6-svg yaml-cpp boost-libs polkit
+
   echo "===== Build Calamares (AUR) vào /opt/localrepo ====="
-  sudo -u builder bash -c '
-    rm -rf /home/builder/calamares
-    git clone --depth 1 --branch calamares --single-branch https://github.com/archlinux/aur.git /home/builder/calamares 2>/dev/null || \
-    git clone --depth 1 https://aur.archlinux.org/calamares.git /home/builder/calamares
-    cd /home/builder/calamares
-    makepkg -s -f --noconfirm --needed
-  ' 2>&1 || echo "⚠️ Build Calamares AUR không thành công, sẽ bỏ qua nếu thiếu package."
+  rm -rf /home/builder/calamares
+  if ! git clone --depth 1 https://aur.archlinux.org/calamares.git /home/builder/calamares 2>/dev/null; then
+    git clone --depth 1 --branch calamares --single-branch https://github.com/archlinux/aur.git /home/builder/calamares
+  fi
+  chown -R builder:builder /home/builder/calamares
+  su - builder -c 'cd /home/builder/calamares && makepkg -f --noconfirm --needed' || echo "⚠️ Lỗi khi build Calamares"
   cp -f /home/builder/calamares/*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
 fi
 
@@ -105,7 +109,17 @@ fi
 
 # 7. Lọc và chuẩn hóa packages.x86_64: chỉ giữ lại các gói thực sự có trên repo
 echo "===== Kiểm tra và chuẩn hoá manifest packages.x86_64 ====="
-pacman -Sql | sort -u > /tmp/available_pkgs.txt
+pacman --config "$PROFILE_DIR/pacman.conf" -Sy 2>/dev/null || true
+pacman --config "$PROFILE_DIR/pacman.conf" -Sql 2>/dev/null | sort -u > /tmp/available_pkgs.txt
+
+# Đảm bảo các gói trong /opt/localrepo luôn nằm trong danh sách hợp lệ
+if ls /opt/localrepo/*.pkg.tar.zst >/dev/null 2>&1; then
+  for f in /opt/localrepo/*.pkg.tar.zst; do
+    pkgbase=$(basename "$f")
+    pkgname=$(echo "$pkgbase" | sed -E 's/-[0-9].*//')
+    echo "$pkgname" >> /tmp/available_pkgs.txt
+  done
+fi
 
 CLEAN_PKGS="$PROFILE_DIR/packages.x86_64.clean"
 > "$CLEAN_PKGS"
