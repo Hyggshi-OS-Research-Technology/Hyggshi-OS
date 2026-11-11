@@ -651,6 +651,24 @@ class Resolver:
                     "error", f"[Mint-build] Mint-bootstrap — file không tồn tại: {bootstrap_path}"))
         return {"folder": folder, "bootstrap": bootstrap}
 
+    def resolve_arch_build(self) -> dict:
+        """Resolve the Arch source folder and options from [Arch-build]."""
+        values = {}
+        for key, raw, _group in self._entries("Arch-build"):
+            key_clean = key.strip().lower().replace("_", "-")
+            if key_clean not in {"arch-folder"}:
+                continue
+            parsed = self.resolve_value(key, raw)
+            values[key_clean] = str(parsed or "").strip()
+
+        folder = values.get("arch-folder", "./scripts/Arch-folder")
+        if folder:
+            folder_path = os.path.normpath(os.path.join(self.root, folder))
+            if not os.path.isdir(folder_path):
+                self.diags.append(Diagnostic(
+                    "error", f"[Arch-build] Arch-folder — thư mục không tồn tại: {folder_path}"))
+        return {"folder": folder}
+
     def resolve_sourceforge(self) -> dict:
         """
         Resolve [upload-Releases-iso-sourceforge] section.
@@ -1903,6 +1921,7 @@ class Resolver:
         result["architecture"] = self.resolve_architecture()
         result["oem"] = self.resolve_oem()
         result["mint_build"] = self.resolve_mint_build()
+        result["arch_build"] = self.resolve_arch_build()
         result["sourceforge"] = self.resolve_sourceforge()
 
         de_info = self.resolve_desktop_environment()
@@ -1961,6 +1980,8 @@ def to_env_lines(resolved: dict, de_override: str | None = None, distro_override
     mint_build = resolved.get("mint_build") or {}
     put("MINT_FOLDER", mint_build.get("folder", ""))
     put("MINT_BOOTSTRAP", mint_build.get("bootstrap", ""))
+    arch_build = resolved.get("arch_build") or {}
+    put("ARCH_FOLDER", arch_build.get("folder", ""))
     
     distro_effective = (distro_override or "").strip().lower()
     if not distro_effective or distro_effective in ("auto", "none", "all"):
@@ -2534,6 +2555,9 @@ def main():
                     f.write(f"is_base_matrix={'true' if len(debootstrap_bases) > 1 else 'false'}\n")
                     f.write(f"build_arch={'true' if has_arch else 'false'}\n")
                     f.write(f"arch_de={arch_de}\n")
+                    arch_build = resolved.get("arch_build") or {}
+                    arch_folder = arch_build.get("folder", "scripts/Arch-folder")
+                    f.write(f"arch_folder={arch_folder}\n")
                     f.write(f"build_fedora={'true' if has_fedora else 'false'}\n")
                     f.write(f"build_alpine={'true' if has_alpine else 'false'}\n")
                     oem_variants = oem_info.get("oem_variants_to_build") or ["no"]

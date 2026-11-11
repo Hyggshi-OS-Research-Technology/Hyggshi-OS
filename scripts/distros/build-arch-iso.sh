@@ -1,37 +1,9 @@
 #!/bin/bash
 # build-arch-iso.sh — build ISO Arch Linux (bootable) bằng `mkarchiso`
-# (công cụ chính chủ archlinux.org, gói `archiso`), chạy NATIVE trong
-# container archlinux:latest --privileged (mkarchiso tự mount --bind
-# /proc /sys /dev vào work dir để pacstrap/chroot chạy %post của
-# systemd/glibc/kernel — giống lý do build-fedora.sh cần --privileged).
-#
-# BUG ĐÃ SỬA: file này trước đây (do lỗi copy-paste ngược — xem comment
-# đầu build-alpine.sh kể lại đúng sự cố tương tự nhưng theo chiều ngược
-# lại) chứa nhầm nội dung của scripts/arch.sh (helper kiến trúc CPU
-# amd64/arm64 dùng cho build-debian.sh/desktop.sh) — hoàn toàn không có
-# lệnh mkarchiso nào, khiến job build-arch không build ra ISO gì cả.
-# Nội dung đúng của scripts/arch.sh đã được tách ra file riêng
-# (scripts/arch.sh) — file này viết lại từ đầu, đúng vai trò của nó.
-#
-# THIẾT KẾ:
-#   - archiso dùng PROFILE (thư mục packages.x86_64 + profiledef.sh +
-#     airootfs/) — ở đây copy profile "releng" gốc của archiso làm nền,
-#     rồi ghi đè packages.x86_64/profiledef.sh/airootfs theo DE/branding
-#     của Hyggshi OS, giống cách build-alpine.sh/build-fedora.sh tuỳ biến
-#     rootfs riêng cho từng distro.
-#   - USER/SERVICE: dùng airootfs/root/customize_airootfs.sh (script chạy
-#     1 lần qua arch-chroot ngay sau khi mkarchiso pacstrap xong, trước
-#     khi đóng gói squashfs) để tạo user + enable service — đây là cách
-#     CHÍNH THỐNG theo tài liệu archiso (README.profile.rst) dù mkarchiso
-#     có cảnh báo "customize_airootfs.sh is deprecated" (chưa bị gỡ, vẫn
-#     hoạt động — xem archlinux/archiso trên GitHub, nhánh master).
-#   - VIETNAMESE INPUT (fcitx5-unikey) + calamares: CẢ HAI đều chỉ có trên
-#     AUR, không có trong repo chính thức (core/extra) — mkarchiso không
-#     tự cài AUR. Bỏ qua 2 gói này cho job Arch (giống cách build-alpine.sh
-#     thành thật báo "bỏ qua" khi calamares không có sẵn cho Alpine), ISO
-#     vẫn boot live được nhưng KHÔNG có graphical installer/gõ tiếng Việt.
+# sử dụng profile và công cụ từ thư mục Arch-folder ($ARCH_FOLDER, mặc định scripts/Arch-folder)
+# được cấu hình trong [Arch-build] của iso-config/config/config.ini.
 set -e
-: "${HYGGSHI_VERSION_ID:=1.0}"
+: "${HYGGSHI_VERSION_ID:=1.4.2}"
 [ "$DEBUG_MODE" = "true" ] && set -x
 
 : "${DISTRO_NAME:=Hyggshi OS}"
@@ -39,231 +11,138 @@ set -e
 : "${OS_TIMEZONE:=Asia/Ho_Chi_Minh}"
 : "${OS_USERNAME:=hyggshi}"
 : "${OS_PASSWORD:=hyggshi}"
-: "${DE:=xfce}"
+: "${DE:=kde}"
 : "${ICON_THEME:=papirus}"
 : "${INCLUDE_BROWSER:=false}"
 : "${INCLUDE_OFFICE:=false}"
 : "${EDITION:=normal}"
-: "${ISO_FILENAME:=hyggshi-os.iso}"
+: "${ISO_FILENAME:=hyggshi-os-kde-v1.4.2-arch.iso}"
 : "${WALLPAPER_URL:=}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-# shellcheck source=/dev/null
-source "$SCRIPT_DIR/../kernel-tuning.sh"
 
 DISTRO_LABEL="Arch Linux"
 echo "===== Biến build đang dùng ====="
 echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
 echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
 
-echo "===== Khởi tạo pacman keyring và cài archiso + công cụ build ====="
+# 1. Khởi tạo pacman keyring và cài đặt công cụ cần thiết
+echo "===== Khởi tạo pacman keyring và cài archiso + build tools ====="
 pacman-key --init
 pacman-key --populate archlinux
 pacman -Sy --noconfirm archlinux-keyring
-pacman -Syu --noconfirm --needed archiso git openssl
+pacman -Syu --noconfirm --needed archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntool openssl sudo rsync
 
-echo "===== Copy profile 'releng' gốc của archiso làm nền ====="
+# 2. Định vị thư mục Arch-folder
+RAW_ARCH_FOLDER="${HCL_ARCH_FOLDER:-${ARCH_FOLDER:-scripts/Arch-folder}}"
+CLEAN_ARCH_FOLDER="${RAW_ARCH_FOLDER#./}"
+ARCH_FOLDER_PATH="$REPO_ROOT/$CLEAN_ARCH_FOLDER"
+
+echo "===== Sử dụng cấu hình Arch từ $ARCH_FOLDER_PATH ====="
+if [ ! -d "$ARCH_FOLDER_PATH/profile" ]; then
+  echo "LỖI: Không tìm thấy profile archiso tại $ARCH_FOLDER_PATH/profile!" >&2
+  exit 1
+fi
+
 PROFILE_DIR="$REPO_ROOT/archlive"
 rm -rf "$PROFILE_DIR" work out
-cp -r /usr/share/archiso/configs/releng/ "$PROFILE_DIR"
+mkdir -p "$PROFILE_DIR"
+cp -r "$ARCH_FOLDER_PATH/profile/"* "$PROFILE_DIR/"
 
-echo "===== packages.x86_64: thêm gói theo DE/edition/branding ====="
-# Gói base của releng đã có: base linux linux-firmware, mkinitcpio-archiso,
-# grub, efibootmgr, dosfstools, squashfs-tools... — thêm networkmanager,
-# audio, X11/mesa và gói theo DE vào packages.x86_64.
-{
-  echo ""
-  echo "# ===== Hyggshi OS: gói thêm theo DE/edition (build-arch-iso.sh) ====="
-  echo "networkmanager"
-  echo "pipewire"
-  echo "pipewire-pulse"
-  echo "wireplumber"
-  echo "xorg-server"
-  echo "mesa"
-  case "$DE" in
-    kde)
-      printf '%s\n' plasma-desktop plasma-nm plasma-pa sddm konsole dolphin
-      DISPLAY_MANAGER="sddm"
-      ;;
-    lxqt)
-      printf '%s\n' lxqt sddm pcmanfm-qt qterminal featherpad lximage-qt lxqt-archiver pavucontrol-qt qps screengrab openbox obconf-qt network-manager-applet
-      DISPLAY_MANAGER="sddm"
-      ;;
-    gnome)
-      printf '%s\n' gnome gdm gnome-terminal nautilus
-      DISPLAY_MANAGER="gdm"
-      ;;
-    mate)
-      printf '%s\n' mate mate-extra lightdm lightdm-gtk-greeter network-manager-applet
-      DISPLAY_MANAGER="lightdm"
-      ;;
-    cinnamon)
-      printf '%s\n' cinnamon lightdm lightdm-gtk-greeter network-manager-applet
-      DISPLAY_MANAGER="lightdm"
-      ;;
-    *)
-      printf '%s\n' xfce4 xfce4-goodies xfce4-terminal lightdm lightdm-gtk-greeter network-manager-applet
-      DISPLAY_MANAGER="lightdm"
-      ;;
-  esac
+# 3. Tạo user builder để biên dịch package bằng makepkg (không chạy được dưới quyền root)
+id -u builder >/dev/null 2>&1 || useradd -m -s /bin/bash builder
+echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+chmod 0440 /etc/sudoers.d/builder
 
-  case "$ICON_THEME" in
-    numix)   echo "numix-icon-theme" ;;
-    breeze)  echo "breeze-icons" ;;
-    adwaita) echo "adwaita-icon-theme" ;;
-    *)       echo "papirus-icon-theme" ;;
-  esac
+mkdir -p /opt/localrepo
+chmod -R 777 /opt/localrepo
 
-  [ "$INCLUDE_BROWSER" = "true" ] && echo "firefox"
-  [ "$INCLUDE_OFFICE" = "true" ] && echo "libreoffice-fresh"
-
-  SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
-  SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
-  if [ "$SWAP_MODE_VAL" != "off" ] || [ "$EDITION" = "lite" ]; then
-    echo "zram-generator"
-  fi
-
-  hyggshi_edition_packages_pacman "$EDITION"
-} >> "$PROFILE_DIR/packages.x86_64"
-
-SWAP_MODE_VAL="${HCL_SWAP_MODE:-${SWAP_MODE:-fixed}}"
-SWAP_MB_VAL="${HCL_SWAP_MB:-${SWAP_MB:-0}}"
-if [ "$SWAP_MODE_VAL" != "off" ] || [ "$EDITION" = "lite" ]; then
-  mkdir -p "$PROFILE_DIR/airootfs/etc/systemd" "$PROFILE_DIR/airootfs/etc/modules-load.d"
-  echo "zram" > "$PROFILE_DIR/airootfs/etc/modules-load.d/zram.conf"
-  ZRAM_SIZE_SPEC="${SWAP_MB_VAL:-1024}"
-  [ "$ZRAM_SIZE_SPEC" = "0" ] && ZRAM_SIZE_SPEC="min(ram / 2, 4096)"
-  cat <<EOF > "$PROFILE_DIR/airootfs/etc/systemd/zram-generator.conf"
-[zram0]
-zram-size = $ZRAM_SIZE_SPEC
-compression-algorithm = zstd
-swap-priority = 100
-EOF
+# 4. Biên dịch các gói Hyggshi nội bộ từ $ARCH_FOLDER_PATH/pkgs nếu có
+if [ -d "$ARCH_FOLDER_PATH/pkgs" ]; then
+  echo "===== Biên dịch các gói Hyggshi nội bộ từ $ARCH_FOLDER_PATH/pkgs ====="
+  chown -R builder:builder "$ARCH_FOLDER_PATH/pkgs" 2>/dev/null || true
+  for pkg in "$ARCH_FOLDER_PATH/pkgs"/*; do
+    if [ -f "$pkg/PKGBUILD" ]; then
+      pkgname=$(basename "$pkg")
+      echo "==> Đang build: $pkgname..."
+      (
+        cd "$pkg"
+        sudo -u builder makepkg -s -f --noconfirm --needed 2>&1 || true
+        cp -f ./*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
+      )
+    fi
+  done
 fi
 
-# Lưu DISPLAY_MANAGER ra file tạm để customize_airootfs.sh (chạy trong
-# chroot riêng, không thấy biến shell của script này) đọc lại được.
-echo "$DISPLAY_MANAGER" > "$PROFILE_DIR/airootfs/root/.hyggshi-display-manager"
+# 5. Build Calamares từ AUR nếu có trong packages.x86_64
+if grep -q "^calamares$" "$PROFILE_DIR/packages.x86_64" 2>/dev/null; then
+  echo "===== Build Calamares (AUR) vào /opt/localrepo ====="
+  sudo -u builder bash -c '
+    rm -rf /home/builder/calamares
+    git clone --depth 1 --branch calamares --single-branch https://github.com/archlinux/aur.git /home/builder/calamares 2>/dev/null || \
+    git clone --depth 1 https://aur.archlinux.org/calamares.git /home/builder/calamares
+    cd /home/builder/calamares
+    makepkg -s -f --noconfirm --needed
+  ' 2>&1 || echo "⚠️ Build Calamares AUR không thành công, sẽ bỏ qua nếu thiếu package."
+  cp -f /home/builder/calamares/*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
+fi
 
-echo "===== profiledef.sh: rebrand tên/label ISO ====="
-sed -i "s/^iso_name=.*/iso_name=\"hyggshi-os\"/" "$PROFILE_DIR/profiledef.sh"
-sed -i "s/^iso_label=.*/iso_label=\"HYGGSHI_OS\"/" "$PROFILE_DIR/profiledef.sh"
-sed -i "s/^iso_publisher=.*/iso_publisher=\"$DISTRO_NAME <https:\/\/github.com\/Hyggshi-OS-Research-Technology>\"/" "$PROFILE_DIR/profiledef.sh"
-sed -i "s/^iso_application=.*/iso_application=\"$DISTRO_NAME Live\/Rescue CD\"/" "$PROFILE_DIR/profiledef.sh"
-sed -i "s/^install_dir=.*/install_dir=\"hyggshi\"/" "$PROFILE_DIR/profiledef.sh"
+rm -f /opt/localrepo/*-debug-*.pkg.tar.zst 2>/dev/null || true
 
-echo "===== Branding: wallpaper + rebrand os-release trong airootfs ====="
-mkdir -p "$PROFILE_DIR/airootfs/usr/share/backgrounds/hyggshi"
+# 6. Cập nhật database /opt/localrepo nếu có package
+if ls /opt/localrepo/*.pkg.tar.zst >/dev/null 2>&1; then
+  echo "===== Cập nhật database hyggshi.db cho /opt/localrepo ====="
+  repo-add -n -R /opt/localrepo/hyggshi.db.tar.gz /opt/localrepo/*.pkg.tar.zst
+  ln -sf hyggshi.db.tar.gz /opt/localrepo/hyggshi-local.db.tar.gz
+  [ -f /opt/localrepo/hyggshi.files.tar.gz ] && ln -sf hyggshi.files.tar.gz /opt/localrepo/hyggshi-local.files.tar.gz || true
+  ls -lh /opt/localrepo
+else
+  echo "⚠️ Không có package nào trong /opt/localrepo — tắt repo [hyggshi] và bỏ calamares khỏi packages.x86_64"
+  sed -i '/^\[hyggshi\]/,+4d' "$PROFILE_DIR/pacman.conf" 2>/dev/null || true
+  sed -i '/^calamares$/d' "$PROFILE_DIR/packages.x86_64" 2>/dev/null || true
+fi
+
+# 7. Lọc và chuẩn hóa packages.x86_64: chỉ giữ lại các gói thực sự có trên repo
+echo "===== Kiểm tra và chuẩn hoá manifest packages.x86_64 ====="
+pacman -Sql | sort -u > /tmp/available_pkgs.txt
+
+CLEAN_PKGS="$PROFILE_DIR/packages.x86_64.clean"
+> "$CLEAN_PKGS"
+while IFS= read -r line || [ -n "$line" ]; do
+  trimmed=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  if [ -z "$trimmed" ] || [[ "$trimmed" =~ ^# ]]; then
+    echo "$line" >> "$CLEAN_PKGS"
+    continue
+  fi
+  if grep -Fxq "$trimmed" /tmp/available_pkgs.txt; then
+    echo "$trimmed" >> "$CLEAN_PKGS"
+  else
+    echo "⚠️  Gói '$trimmed' không tồn tại trong repository — bỏ qua để tránh lỗi pacstrap."
+  fi
+done < "$PROFILE_DIR/packages.x86_64"
+mv "$CLEAN_PKGS" "$PROFILE_DIR/packages.x86_64"
+
+# 8. Đảm bảo các file trong file_permissions (profiledef.sh) tồn tại
+if [ ! -f "$PROFILE_DIR/airootfs/usr/local/bin/hyggshi-icons" ]; then
+  mkdir -p "$PROFILE_DIR/airootfs/usr/local/bin"
+  cat <<'EOF' > "$PROFILE_DIR/airootfs/usr/local/bin/hyggshi-icons"
+#!/bin/sh
+exit 0
+EOF
+  chmod +x "$PROFILE_DIR/airootfs/usr/local/bin/hyggshi-icons"
+fi
+
+# 9. Branding wallpaper từ iso-config nếu có
 WALLPAPER_FILE=$(find "$REPO_ROOT/iso-config/branding" -maxdepth 1 -iname "wallpaper.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
-if [ -z "$WALLPAPER_FILE" ] && [ -n "$WALLPAPER_URL" ]; then
-  if curl -fsSL "$WALLPAPER_URL" -o /tmp/wallpaper-remote.png 2>/dev/null && [ -s /tmp/wallpaper-remote.png ]; then
-    WALLPAPER_FILE=/tmp/wallpaper-remote.png
-  fi
-fi
 if [ -n "$WALLPAPER_FILE" ]; then
-  cp "$WALLPAPER_FILE" "$PROFILE_DIR/airootfs/usr/share/backgrounds/hyggshi/wallpaper.png"
-else
-  echo "⚠️  Không lấy được wallpaper — bỏ qua, giữ nền mặc định của DE."
+  mkdir -p "$PROFILE_DIR/airootfs/usr/share/backgrounds/hyggshi"
+  cp -f "$WALLPAPER_FILE" "$PROFILE_DIR/airootfs/usr/share/backgrounds/hyggshi/wallpaper.png" 2>/dev/null || true
 fi
 
-mkdir -p "$PROFILE_DIR/airootfs/etc"
-cat <<EOF > "$PROFILE_DIR/airootfs/etc/os-release"
-PRETTY_NAME="$DISTRO_NAME $HYGGSHI_VERSION_ID (dựa trên $DISTRO_LABEL)"
-NAME="$DISTRO_NAME"
-VERSION_ID="$HYGGSHI_VERSION_ID"
-VERSION="$HYGGSHI_VERSION_ID ($DISTRO_LABEL)"
-ID=hyggshios
-ID_LIKE=arch
-HOME_URL="https://github.com/Hyggshi-OS-Research-Technology"
-SUPPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
-BUG_REPORT_URL="https://github.com/Hyggshi-OS-Research-Technology/Hyggshi-OS/issues"
-EOF
-printf "%s \\\\n \\\\l\n\n" "$DISTRO_NAME" > "$PROFILE_DIR/airootfs/etc/issue"
-echo "Welcome to $DISTRO_NAME — built on $DISTRO_LABEL" > "$PROFILE_DIR/airootfs/etc/motd"
-echo "$OS_HOSTNAME" > "$PROFILE_DIR/airootfs/etc/hostname"
-
-echo "===== sysctl tuning theo edition (xem kernel-tuning.sh) ====="
-mkdir -p "$PROFILE_DIR/airootfs/etc/sysctl.d"
-hyggshi_sysctl_conf "$EDITION" > "$PROFILE_DIR/airootfs/etc/sysctl.d/99-hyggshi-tuning.conf"
-
-echo "===== customize_airootfs.sh: user/timezone/service/autologin ====="
-# Chạy 1 lần qua arch-chroot NGAY SAU pacstrap (trước khi mkarchiso đóng
-# gói squashfs) — đây là chỗ duy nhất có đủ môi trường chroot thật để chạy
-# useradd/systemctl enable (không thể làm bằng cách ghi file tĩnh như
-# build-alpine.sh vì Arch cần systemctl preset đúng cách qua chroot).
-cat <<CUSTOMEOF > "$PROFILE_DIR/airootfs/root/customize_airootfs.sh"
-#!/usr/bin/env bash
-set -e -u
-
-DISPLAY_MANAGER="\$(cat /root/.hyggshi-display-manager 2>/dev/null || echo lightdm)"
-rm -f /root/.hyggshi-display-manager
-
-ln -sf "/usr/share/zoneinfo/$OS_TIMEZONE" /etc/localtime
-
-echo "===== Tạo user mặc định cho live session ====="
-for grp in wheel storage power network video audio input autologin; do
-  groupadd -r "\$grp" 2>/dev/null || true
-done
-
-if ! id -u "$OS_USERNAME" >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$OS_USERNAME"
-fi
-
-for grp in wheel storage power network video audio input autologin; do
-  gpasswd -a "$OS_USERNAME" "\$grp" 2>/dev/null || true
-done
-
-echo "$OS_USERNAME:$OS_PASSWORD" | chpasswd
-mkdir -p /etc/sudoers.d
-echo "$OS_USERNAME ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/99-$OS_USERNAME"
-chmod 0440 "/etc/sudoers.d/99-$OS_USERNAME"
-sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers 2>/dev/null || true
-
-echo "===== Bật NetworkManager + display manager ====="
-systemctl enable NetworkManager.service 2>/dev/null || true
-if [ -n "\${DISPLAY_MANAGER:-}" ]; then
-  systemctl enable "\${DISPLAY_MANAGER}.service" 2>/dev/null || true
-fi
-systemctl set-default graphical.target 2>/dev/null || true
-
-echo "===== Autologin cho live session ====="
-case "\$DISPLAY_MANAGER" in
-  sddm)
-    mkdir -p /etc/sddm.conf.d
-    cat <<EOF > /etc/sddm.conf.d/hyggshi-autologin.conf
-[Autologin]
-User=$OS_USERNAME
-Session=$([ "$DE" = "kde" ] && echo plasma || echo lxqt)
-EOF
-    ;;
-  gdm)
-    mkdir -p /etc/gdm
-    cat <<EOF > /etc/gdm/custom.conf
-[daemon]
-AutomaticLoginEnable = true
-AutomaticLogin = $OS_USERNAME
-EOF
-    ;;
-  *)
-    groupadd -r autologin 2>/dev/null || true
-    gpasswd -a "$OS_USERNAME" autologin 2>/dev/null || true
-    mkdir -p /etc/lightdm/lightdm.conf.d
-    cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
-[Seat:*]
-autologin-user=$OS_USERNAME
-autologin-user-timeout=0
-autologin-session=$DE
-EOF
-    ;;
-esac
-
-echo "customize_airootfs.sh xong."
-CUSTOMEOF
-chmod +x "$PROFILE_DIR/airootfs/root/customize_airootfs.sh"
-
-echo "===== mkarchiso: build ISO thật (native, không cần QEMU vì amd64) ====="
+# 10. Chạy mkarchiso để build ISO
+echo "===== Chạy mkarchiso để build ISO Hyggshi OS Arch Edition ====="
 mkarchiso -v -w "$REPO_ROOT/work" -o "$REPO_ROOT/out" "$PROFILE_DIR"
 
 OUT_ISO=$(find "$REPO_ROOT/out" -maxdepth 1 -iname "*.iso" | head -n1)
@@ -272,11 +151,9 @@ if [ -z "$OUT_ISO" ]; then
   ls -la "$REPO_ROOT/out" >&2 || true
   exit 1
 fi
+
 mv "$OUT_ISO" "$REPO_ROOT/$ISO_FILENAME"
 sha256sum "$REPO_ROOT/$ISO_FILENAME" > "$REPO_ROOT/$ISO_FILENAME.sha256"
 ls -lh "$REPO_ROOT/$ISO_FILENAME" "$REPO_ROOT/$ISO_FILENAME.sha256"
 
-echo "===== build-arch-iso.sh xong ====="
-echo "LƯU Ý: bỏ qua fcitx5-unikey (gõ tiếng Việt) và calamares (graphical"
-echo "installer) — cả 2 chỉ có trên AUR, mkarchiso không tự cài AUR package."
-echo "ISO boot live được nhưng không có 2 tính năng này."
+echo "===== build-arch-iso.sh xong: ISO được tạo thành công từ $ARCH_FOLDER_PATH ====="

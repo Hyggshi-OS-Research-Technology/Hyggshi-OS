@@ -193,6 +193,7 @@ jobs:
       matrix_exclude: ${{ steps.set-matrix.outputs.matrix_exclude }}
       build_arch: ${{ steps.set-matrix.outputs.build_arch }}
       arch_de: ${{ steps.set-matrix.outputs.arch_de }}
+      arch_folder: ${{ steps.set-matrix.outputs.arch_folder }}
       build_fedora: ${{ steps.set-matrix.outputs.build_fedora }}
       build_alpine: ${{ steps.set-matrix.outputs.build_alpine }}
       oem_matrix: ${{ steps.set-matrix.outputs.oem_matrix }}
@@ -976,6 +977,7 @@ jobs:
       options: --privileged
     env:
       DE: ${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || needs.matrix-prep.outputs.arch_de || 'kde' }}
+      ARCH_FOLDER: ${{ needs.matrix-prep.outputs.arch_folder || 'scripts/Arch-folder' }}
       ISO_FILENAME: "hyggshi-os-${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || needs.matrix-prep.outputs.arch_de || 'kde' }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-arch.iso"
     steps:
       - name: Checkout repo (scripts, config files, branding...)
@@ -986,7 +988,7 @@ jobs:
           pacman-key --init
           pacman-key --populate archlinux
           pacman -Sy --noconfirm archlinux-keyring
-          pacman -Syu --noconfirm --needed archiso git openssl
+          pacman -Syu --noconfirm --needed archiso base-devel git grub dosfstools edk2-ovmf mtools libisoburn squashfs-tools sbsigntool openssl sudo rsync
 
       - name: Chmod +x cho scripts/distros/build-arch-iso.sh
         run: chmod +x scripts/distros/build-arch-iso.sh
