@@ -23,6 +23,11 @@ import re
 import subprocess
 import sys
 
+# Workaround for GNOME 40+ Wayland GLib-GIO bug where 'antialiasing' key was removed from xsettings
+if os.environ.get("XDG_SESSION_TYPE") == "wayland":
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    os.environ.setdefault("GDK_BACKEND", "x11")
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import (

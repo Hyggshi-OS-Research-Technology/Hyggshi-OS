@@ -1469,11 +1469,11 @@ echo "===== Dọn thêm để giảm kích thước ISO (doc/man sót từ base 
 # TRƯỚC khi xoá /usr/share/doc, rồi khôi phục lại đúng cấu trúc
 # <package>/copyright sau khi xoá phần còn lại.
 if [ -d /usr/share/doc ]; then
-  find /usr/share/doc -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r d; do
+  while IFS= read -r d || [ -n "$d" ]; do
     if [ -f "$d/copyright" ]; then
       cp "$d/copyright" "/tmp/$(basename "$d")-copyright" 2>/dev/null || true
     fi
-  done || true
+  done < <(find /usr/share/doc -mindepth 1 -maxdepth 1 -type d 2>/dev/null; true) || true
 fi
 rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /usr/share/groff/* 2>/dev/null || true
 mkdir -p /usr/share/doc
