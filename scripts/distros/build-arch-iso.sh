@@ -68,7 +68,7 @@ if [ -d "$ARCH_FOLDER_PATH/pkgs" ]; then
       echo "==> Đang build: $pkgname..."
       (
         cd "$pkg"
-        su - builder -c "cd '$pkg' && makepkg -f --noconfirm --needed" || true
+        su - builder -c "cd '$pkg' && makepkg -s -f --noconfirm --nocheck" || true
         cp -f ./*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
       )
     fi
@@ -80,16 +80,18 @@ if grep -q "^calamares$" "$PROFILE_DIR/packages.x86_64" 2>/dev/null; then
   echo "===== Cài đặt build dependencies cho Calamares ====="
   pacman -S --noconfirm --needed \
     cmake ninja extra-cmake-modules libglvnd qt6-tools qt6-translations \
-    kcoreaddons kpmcore libpwquality qt6-declarative qt6-svg yaml-cpp boost-libs polkit
+    kcoreaddons kpmcore libpwquality qt6-declarative qt6-svg yaml-cpp boost-libs polkit python git
 
   echo "===== Build Calamares (AUR) vào /opt/localrepo ====="
   rm -rf /home/builder/calamares
-  if ! git clone --depth 1 https://aur.archlinux.org/calamares.git /home/builder/calamares 2>/dev/null; then
-    git clone --depth 1 --branch calamares --single-branch https://github.com/archlinux/aur.git /home/builder/calamares
+  if ! su - builder -c 'git clone --depth 1 https://aur.archlinux.org/calamares.git /home/builder/calamares 2>/dev/null'; then
+    su - builder -c 'git clone --depth 1 --branch calamares --single-branch https://github.com/archlinux/aur.git /home/builder/calamares'
   fi
-  chown -R builder:builder /home/builder/calamares
-  su - builder -c 'cd /home/builder/calamares && makepkg -f --noconfirm --needed' || echo "⚠️ Lỗi khi build Calamares"
-  cp -f /home/builder/calamares/*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
+  if [ -f /home/builder/calamares/PKGBUILD ]; then
+    chown -R builder:builder /home/builder/calamares
+    su - builder -c 'cd /home/builder/calamares && makepkg -s -f --noconfirm --nocheck' || echo "⚠️ Lỗi khi build Calamares"
+    cp -f /home/builder/calamares/*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
+  fi
 fi
 
 rm -f /opt/localrepo/*-debug-*.pkg.tar.zst 2>/dev/null || true
@@ -101,6 +103,10 @@ if ls /opt/localrepo/*.pkg.tar.zst >/dev/null 2>&1; then
   ln -sf hyggshi.db.tar.gz /opt/localrepo/hyggshi-local.db.tar.gz
   [ -f /opt/localrepo/hyggshi.files.tar.gz ] && ln -sf hyggshi.files.tar.gz /opt/localrepo/hyggshi-local.files.tar.gz || true
   ls -lh /opt/localrepo
+
+  # Đồng bộ /opt/localrepo vào airootfs để offline installer/live system có sẵn package
+  mkdir -p "$PROFILE_DIR/airootfs/opt/localrepo"
+  cp -a /opt/localrepo/* "$PROFILE_DIR/airootfs/opt/localrepo/" 2>/dev/null || true
 else
   echo "⚠️ Không có package nào trong /opt/localrepo — tắt repo [hyggshi] và bỏ calamares khỏi packages.x86_64"
   sed -i '/^\[hyggshi\]/,+4d' "$PROFILE_DIR/pacman.conf" 2>/dev/null || true

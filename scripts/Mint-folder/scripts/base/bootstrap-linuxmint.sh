@@ -7,9 +7,15 @@ set -Eeuo pipefail
 : "${MINT_VERSION:=22}"
 : "${CHROOT_DIR:=live-build/chroot}"
 : "${GITHUB_ENV:=live-build/build.env}"
+: "${ARCH:=amd64}"
 : "${MINT_MIRROR:=http://packages.linuxmint.com}"
-: "${UBUNTU_MIRROR:=http://archive.ubuntu.com/ubuntu}"
-: "${SECURITY_MIRROR:=http://security.ubuntu.com/ubuntu}"
+if [ "$ARCH" = "arm64" ]; then
+  : "${UBUNTU_MIRROR:=http://ports.ubuntu.com/ubuntu-ports}"
+  : "${SECURITY_MIRROR:=http://ports.ubuntu.com/ubuntu-ports}"
+else
+  : "${UBUNTU_MIRROR:=http://archive.ubuntu.com/ubuntu}"
+  : "${SECURITY_MIRROR:=http://security.ubuntu.com/ubuntu}"
+fi
 
 case "$MINT_VERSION" in
   22.3) DEFAULT_BASE_CODENAME="noble"; DEFAULT_MINT_CODENAME="zena" ;;
@@ -28,7 +34,7 @@ DISTRO_LABEL="Linux Mint ${MINT_VERSION} (${MINT_CODENAME}, Ubuntu ${BASE_CODENA
 
 mkdir -p "$(dirname "$GITHUB_ENV")" "$CHROOT_DIR"
 echo "===== Bootstrap $DISTRO_LABEL vào $CHROOT_DIR ====="
-sudo debootstrap --arch=amd64 --variant=minbase \
+sudo debootstrap --arch="$ARCH" --variant=minbase \
   "$BASE_CODENAME" "$CHROOT_DIR" "$UBUNTU_MIRROR/"
 
 sudo mkdir -p "$CHROOT_DIR/dev/pts" "$CHROOT_DIR/run" \

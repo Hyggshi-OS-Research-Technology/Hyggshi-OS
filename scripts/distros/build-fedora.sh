@@ -32,15 +32,22 @@ set -e
 : "${EDITION:=normal}"
 : "${ISO_FILENAME:=hyggshi-os.iso}"
 : "${WALLPAPER_URL:=}"
+: "${ARCH:=amd64}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/../kernel-tuning.sh"
+[ -f "$SCRIPT_DIR/../arch.sh" ] && source "$SCRIPT_DIR/../arch.sh"
 
-DISTRO_LABEL="Fedora ${FEDORA_VERSION}"
+case "$ARCH" in
+  arm64|aarch64) FEDORA_ARCH="aarch64" ;;
+  *)             FEDORA_ARCH="x86_64" ;;
+esac
+
+DISTRO_LABEL="Fedora ${FEDORA_VERSION} (${FEDORA_ARCH})"
 echo "===== Biến build đang dùng ====="
 echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
-echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
+echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME | ARCH=$ARCH"
 
 rm -rf live-build
 mkdir -p live-build/chroot
@@ -65,10 +72,11 @@ rpm --root "$ROOTFS" --initdb
 # (image fedora:41 gốc) làm nguồn cài cho $ROOTFS.
 DNF_TARGET() {
   dnf -y --use-host-config --releasever="$FEDORA_VERSION" --installroot="$ROOTFS" \
+    --forcearch="$FEDORA_ARCH" \
     --setopt=install_weak_deps=False --nogpgcheck "$@"
 }
 
-echo "===== dnf --installroot: bootstrap base rootfs + kernel + dracut-live ====="
+echo "===== dnf --installroot: bootstrap base rootfs + kernel + dracut-live (arch=$FEDORA_ARCH) ====="
 # util-linux: cần cho dracut nói chung (logger — xem cảnh báo bên dưới).
 # device-mapper: cung cấp dmsetup — dmsquash-live-root.sh (chạy lúc live-boot
 # thật) gọi thẳng "dmsetup create live-rw", và module-setup.sh của
@@ -78,9 +86,15 @@ echo "===== dnf --installroot: bootstrap base rootfs + kernel + dracut-live ====
 # trong log CHỈ là warning vô hại của chính dracut-logger, không phải nguyên
 # nhân — xem dracut-logger.c, đã xác nhận qua nhiều báo lỗi tương tự trên
 # GitHub/Bugzilla dùng dmsquash-live).
+if [ "$FEDORA_ARCH" = "aarch64" ]; then
+  BOOTLOADER_PKGS="grub2-efi-aa64 shim-aa64"
+else
+  BOOTLOADER_PKGS="grub2-pc grub2-efi-x64 shim-x64"
+fi
+
 DNF_TARGET install glibc-minimal-langpack systemd systemd-udev passwd sudo \
   util-linux device-mapper NetworkManager kernel kernel-core dracut dracut-live \
-  grub2-pc grub2-efi-x64 shim-x64 squashfs-tools
+  $BOOTLOADER_PKGS squashfs-tools
 
 echo "===== Kiểm tra kernel image đã thực sự có trong /boot và /lib/modules ====="
 KVER=$(basename "$(ls -d "$ROOTFS"/lib/modules/*/ 2>/dev/null | head -n1)")
@@ -308,7 +322,11 @@ fi
 EXCLUDE_OPTS=(-wildcards -e "tmp/*" -e "tmp/.*" -e "var/tmp/*" -e "var/cache/dnf/*" -e "var/cache/yum/*" -e "root/.cache/*" -e "home/*/.cache/*")
 if [ "${MAX_COMP:-false}" = "true" ]; then
   echo "squashfs-max-compression=true -> xz tối đa"
-  mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj x86 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  if [ "$FEDORA_ARCH" = "aarch64" ]; then
+    mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj arm -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  else
+    mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj x86 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  fi
 else
   mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% "${EXCLUDE_OPTS[@]}"
 fi

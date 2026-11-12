@@ -2,7 +2,7 @@
 Description=Create the Hyggshi OS live user
 ConditionKernelCommandLine=archisobasedir
 After=local-fs.target systemd-sysusers.service
-Before=systemd-user-sessions.service display-manager.service
+Before=systemd-user-sessions.service display-manager.service sddm.service lightdm.service
 
 [Service]
 Type=oneshot

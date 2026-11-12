@@ -668,10 +668,18 @@ elif [ -f "live-build/image/boot/grub/bios.img" ]; then
 fi
 
 # UEFI Secure Boot / UEFI options
+HAS_PRIMARY_BOOT=false
+for arg in "${XORRISO_ARGS[@]}"; do
+  if [ "$arg" = "-b" ] || [ "$arg" = "-eltorito-boot" ]; then
+    HAS_PRIMARY_BOOT=true
+    break
+  fi
+done
+
 if [ "$SECURE_BOOT_OK" = "true" ] && [ -f "live-build/image/boot/grub/efi.img" ]; then
   echo "    Boot: UEFI Secure Boot (shim-signed Microsoft ký sẵn + GRUB signed)"
+  [ "$HAS_PRIMARY_BOOT" = "true" ] && XORRISO_ARGS+=(-eltorito-alt-boot)
   XORRISO_ARGS+=(
-    -eltorito-alt-boot
     -e boot/grub/efi.img
     -no-emul-boot
     -isohybrid-gpt-basdat
@@ -679,16 +687,16 @@ if [ "$SECURE_BOOT_OK" = "true" ] && [ -f "live-build/image/boot/grub/efi.img" ]
   )
 elif [ -f "live-build/image/EFI/boot/efiboot.img" ]; then
   echo "    Boot: EFI (efiboot.img)"
+  [ "$HAS_PRIMARY_BOOT" = "true" ] && XORRISO_ARGS+=(-eltorito-alt-boot)
   XORRISO_ARGS+=(
-    -eltorito-alt-boot
     -e EFI/boot/efiboot.img
     -no-emul-boot
     -append_partition 2 0xef live-build/image/EFI/boot/efiboot.img
   )
 elif [ -f "live-build/image/boot/grub/efi.img" ]; then
   echo "    Boot: GRUB EFI (efi.img)"
+  [ "$HAS_PRIMARY_BOOT" = "true" ] && XORRISO_ARGS+=(-eltorito-alt-boot)
   XORRISO_ARGS+=(
-    -eltorito-alt-boot
     -e boot/grub/efi.img
     -no-emul-boot
     -append_partition 2 0xef live-build/image/boot/grub/efi.img

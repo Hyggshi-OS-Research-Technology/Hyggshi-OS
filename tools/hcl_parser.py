@@ -554,11 +554,11 @@ class Resolver:
             return None
 
         if len(true_keys) > 1:
-            if is_base_sec:
+            if is_base_sec or is_arch_sec:
                 self.diags.append(Diagnostic(
                     "warning",
-                    f"[{section_name}] có {len(true_keys)} base distro được bật ({', '.join(true_keys)}). "
-                    f"Sử dụng base đầu tiên ({true_keys[0]}) làm base mặc định cho build."))
+                    f"[{section_name}] có {len(true_keys)} {noun} được bật ({', '.join(true_keys)}). "
+                    f"Sử dụng {noun} đầu tiên ({true_keys[0]}) làm mặc định cho build."))
             else:
                 self.diags.append(Diagnostic(
                     "error",
@@ -569,13 +569,28 @@ class Resolver:
     def resolve_architecture(self) -> str:
         """
         Resolve [Architecture] section.
-        Đảm bảo chỉ đúng 1 kiến trúc (amd64, arm64) = true (ERROR HCL102).
         Mặc định fallback là amd64 nếu section không tồn tại.
         """
         if "Architecture" in self.sections:
             arch = self.resolve_enum_section("Architecture")
             return (arch or "amd64").strip().lower()
         return "amd64"
+
+    def resolve_architectures(self) -> list[str]:
+        """
+        Trả về tất cả các kiến trúc được bật (= true) trong [Architecture].
+        """
+        if "Architecture" in self.sections:
+            kv = self._kv("Architecture")
+            true_archs = []
+            for k, raw in kv.items():
+                if classify(k, raw).value is True:
+                    k_clean = k.strip().lower()
+                    if k_clean in self._KNOWN_ARCHITECTURES:
+                        true_archs.append(k_clean)
+            if true_archs:
+                return true_archs
+        return ["amd64"]
 
     def resolve_oem(self) -> dict:
         """
@@ -2560,6 +2575,10 @@ def main():
                     f.write(f"arch_folder={arch_folder}\n")
                     f.write(f"build_fedora={'true' if has_fedora else 'false'}\n")
                     f.write(f"build_alpine={'true' if has_alpine else 'false'}\n")
+                    arch_list = resolver.resolve_architectures()
+                    arch_primary = resolved.get("architecture") or "amd64"
+                    f.write(f"arch={arch_primary}\n")
+                    f.write(f"arch_matrix={json.dumps(arch_list)}\n")
                     oem_variants = oem_info.get("oem_variants_to_build") or ["no"]
                     f.write(f"oem_matrix={json.dumps(oem_variants)}\n")
                     f.write(f"is_oem_matrix={'true' if len(oem_variants) > 1 else 'false'}\n")

@@ -111,7 +111,7 @@ on:
       # AUTOSCALE_DISPLAY/WELCOME_WIZARD/THEME_DAEMON như cũ — không script nào khác
       # (desktop.sh, welcome.sh...) phải đổi theo.
       feature_flags:
-        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme, arm64, oem. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. arm64: build kiến trúc arm64 thay vì amd64 mặc định — CHỈ áp dụng khi distro = debian (xem [Architecture] trong config.ini + scripts/arch.sh); Ubuntu/Mint/Alpine/Arch/Fedora job chưa hỗ trợ, luôn build amd64 dù có cờ này. oem: bật chế độ OEM (Calamares oem-setup) cho nhà sản xuất/lắp ráp máy. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
+        description: "Các tính năng bật (danh sách cách nhau bằng dấu phẩy): browser, office, autologin, autoscale, welcome, theme-daemon, auto-theme, arm64, oem. theme-daemon (C++/libxfconf, chạy nền) và auto-theme (bash + systemd timer, chạy mỗi 5 phút rồi thoát) là 2 CÁCH KHÁC NHAU cho cùng 1 việc (đổi wallpaper Sáng/Tối) — chỉ nên bật 1 trong 2. arm64: build kiến trúc arm64 thay vì amd64 mặc định — áp dụng cho Debian, Ubuntu, Fedora, Alpine (xem [Architecture] trong config.ini + scripts/arch.sh); Arch Linux chỉ hỗ trợ x86_64. oem: bật chế độ OEM (Calamares oem-setup) cho nhà sản xuất/lắp ráp máy. Vd dùng bản bash nhẹ: 'browser,autologin,autoscale,welcome,auto-theme'"
         required: false
         default: "browser,autologin,autoscale,welcome,auto-theme"
       extra_packages:
@@ -191,6 +191,8 @@ jobs:
       has_debootstrap_bases: ${{ steps.set-matrix.outputs.has_debootstrap_bases }}
       is_base_matrix: ${{ steps.set-matrix.outputs.is_base_matrix }}
       matrix_exclude: ${{ steps.set-matrix.outputs.matrix_exclude }}
+      arch: ${{ steps.set-matrix.outputs.arch }}
+      arch_matrix: ${{ steps.set-matrix.outputs.arch_matrix }}
       build_arch: ${{ steps.set-matrix.outputs.build_arch }}
       arch_de: ${{ steps.set-matrix.outputs.arch_de }}
       arch_folder: ${{ steps.set-matrix.outputs.arch_folder }}
@@ -324,11 +326,10 @@ jobs:
           # workflow_dispatch chỉ cho phép TỐI ĐA 25 inputs, thêm 1 input
           # riêng cho arch làm dư lên 26 -> "Invalid workflow file" (xem
           # ghi chú ở khối `inputs:` phía trên về lý do 6 toggle khác cũng
-          # bị gộp CSV). Chỉ build-debian.sh/desktop.sh/iso.sh đọc $ARCH
-          # (qua scripts/arch.sh) — Ubuntu/Mint/Alpine/Arch/Fedora job chưa
-          # dùng, luôn hardcode amd64 dù có cờ này.
-          if [ "$(has_flag arm64)" = "true" ]; then
+          # bị gộp CSV). Hỗ trợ Debian, Ubuntu, Fedora, Alpine qua scripts/arch.sh.
+          if [ "$(has_flag arm64)" = "true" ] || [ "${HCL_ARCH:-amd64}" = "arm64" ]; then
             echo "ARCH=arm64" >> "$GITHUB_ENV"
+            echo "ISO_FILENAME=hyggshi-os-${{ matrix.desktop }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-${{ matrix.distro }}-arm64${{ matrix.oem == 'yes' && '-oem' || '' }}.iso" >> "$GITHUB_ENV"
           else
             echo "ARCH=amd64" >> "$GITHUB_ENV"
           fi
@@ -923,10 +924,12 @@ jobs:
     if: ${{ always() && (github.event.inputs.distro == 'alpine' || github.event.inputs.distro == 'all' || needs.matrix-prep.outputs.build_alpine == 'true') }}
     container:
       image: ${{ (github.event.inputs.alpine_version == 'v3.19' && 'alpine:3.19') || (github.event.inputs.alpine_version == 'edge' && 'alpine:edge') || 'alpine:3.20' }}
+    env:
+      ARCH: ${{ needs.matrix-prep.outputs.arch || 'amd64' }}
     steps:
       - name: Cài build tools (apk add trong container)
         run: |
-          apk add --no-cache bash coreutils curl xz tar squashfs-tools grub grub-bios xorriso
+          apk add --no-cache bash coreutils curl xz tar squashfs-tools grub grub-bios grub-efi xorriso 2>/dev/null || apk add --no-cache bash coreutils curl xz tar squashfs-tools grub grub-bios xorriso
 
       - name: Checkout repo (scripts, config files, branding...)
         uses: actions/checkout@v4
@@ -1054,6 +1057,7 @@ jobs:
       options: --privileged
     env:
       DE: ${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || 'xfce' }}
+      ARCH: ${{ needs.matrix-prep.outputs.arch || 'amd64' }}
       ISO_FILENAME: "hyggshi-os-${{ (github.event.inputs.desktop != '' && github.event.inputs.desktop != 'auto' && github.event.inputs.desktop) || 'xfce' }}-v${{ needs.matrix-prep.outputs.version || '1.4.2' }}-fedora.iso"
     steps:
       - name: "Cài build tools trên HOST (container fedora — build-fedora.sh chỉ cài vào --installroot, không tự cài công cụ cho chính host)"
@@ -1062,6 +1066,9 @@ jobs:
           # nó được đóng gói riêng trong "grub2-tools-extra" (khác Debian, nơi
           # grub-mkrescue nằm ngay trong grub-common/grub-pc-bin). Thiếu gói này
           # gây lỗi "grub2-mkrescue: command not found" ở bước build ISO cuối.
+          dnf install -y --setopt=install_weak_deps=False \
+            squashfs-tools grub2-tools grub2-tools-extra grub2-pc-modules grub2-efi-x64-modules grub2-efi-aa64-modules \
+            xorriso mtools rsync util-linux 2>/dev/null || \
           dnf install -y --setopt=install_weak_deps=False \
             squashfs-tools grub2-tools grub2-tools-extra grub2-pc-modules grub2-efi-x64-modules \
             xorriso mtools rsync util-linux

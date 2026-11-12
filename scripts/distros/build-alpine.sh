@@ -45,15 +45,22 @@ set -e
 : "${EDITION:=normal}"
 : "${ISO_FILENAME:=hyggshi-os.iso}"
 : "${WALLPAPER_URL:=}"
+: "${ARCH:=amd64}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/../kernel-tuning.sh"
+[ -f "$SCRIPT_DIR/../arch.sh" ] && source "$SCRIPT_DIR/../arch.sh"
 
-DISTRO_LABEL="Alpine Linux ${ALPINE_VERSION}"
+case "$ARCH" in
+  arm64|aarch64) ALPINE_ARCH="aarch64" ;;
+  *)             ALPINE_ARCH="x86_64" ;;
+esac
+
+DISTRO_LABEL="Alpine Linux ${ALPINE_VERSION} (${ALPINE_ARCH})"
 echo "===== Biến build đang dùng ====="
 echo "DISTRO_NAME=$DISTRO_NAME | DISTRO_LABEL=$DISTRO_LABEL"
-echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME"
+echo "EDITION=$EDITION | DE=$DE | ISO_FILENAME=$ISO_FILENAME | ARCH=$ARCH"
 
 ROOTFS="live-build/chroot"
 rm -rf live-build alpine-initrd
@@ -75,7 +82,7 @@ EOF
 # apk_target — helper cài gói vào $ROOTFS, tránh lặp lại 4 tham số ở mọi
 # lệnh cài gói bên dưới.
 apk_target() {
-  apk add --root "$ROOTFS" --initdb -U \
+  apk add --arch "$ALPINE_ARCH" --root "$ROOTFS" --initdb -U \
     --repository "$MAIN_REPO" --repository "$COMMUNITY_REPO" \
     --allow-untrusted "$@"
 }
@@ -286,7 +293,11 @@ fi
 EXCLUDE_OPTS=(-wildcards -e "tmp/*" -e "tmp/.*" -e "var/tmp/*" -e "var/cache/apk/*" -e "root/.cache/*" -e "home/*/.cache/*")
 if [ "${MAX_COMP:-false}" = "true" ]; then
   echo "squashfs-max-compression=true -> xz tối đa"
-  mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj x86 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  if [ "$ALPINE_ARCH" = "aarch64" ]; then
+    mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj arm -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  else
+    mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -Xbcj x86 -processors "$(nproc)" "${EXCLUDE_OPTS[@]}"
+  fi
 else
   mksquashfs "$ROOTFS" live-build/image/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% "${EXCLUDE_OPTS[@]}"
 fi

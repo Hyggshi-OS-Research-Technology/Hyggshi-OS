@@ -185,6 +185,10 @@ git
 
 # --- 11. Installer (Calamares) & Setup Tools ---
 calamares
+hyggshi-branding
+hyggshi-os-release
+hyggshi-tools
+hyggshi-welcome
 os-prober
 arch-install-scripts
 reflector

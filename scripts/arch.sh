@@ -1,17 +1,17 @@
 #!/bin/bash
 # arch.sh — helper tập trung cho kiến trúc CPU (amd64 | arm64), dùng chung
-# cho build-debian.sh (chạy trên HOST runner, trước khi debootstrap) và
-# desktop.sh (chạy BÊN TRONG chroot). Được `source`, KHÔNG tự chạy độc lập
-# — giống hệt cách kernel-tuning.sh (profile Edition) đã làm.
+# cho các distro: Debian, Ubuntu, Fedora, Alpine và chroot scripts (desktop.sh).
+# Được `source`, KHÔNG tự chạy độc lập.
 #
 # ARCH hợp lệ: amd64 | arm64 (mặc định amd64 nếu không set — xem
-# `: "${ARCH:=amd64}"` ở build-debian.sh/desktop.sh).
+# `: "${ARCH:=amd64}"`).
 #
-# GIỚI HạN HIệN TạI (thành thật — xem thêm comment [Architecture] trong
-# iso-config/config/config.ini):
-#   - Chỉ Debian job (build-debian.sh + desktop.sh) đọc $ARCH. Ubuntu/Mint
-#     (build-ubuntu.sh/build-linuxmint.sh) và job container Arch/Fedora/
-#     Alpine chưa dùng file này, vẫn hardcode amd64.
+# PHẠM VI HỖ TRỢ KIẾN TRÚC:
+#   - Debian & Ubuntu: hỗ trợ amd64 & arm64 đầy đủ (debootstrap, kernel, GRUB EFI, Secure Boot shim).
+#     Lưu ý Ubuntu dùng http://ports.ubuntu.com/ubuntu-ports/ cho arm64.
+#   - Fedora: hỗ trợ x86_64 & aarch64 (dnf --forcearch, dracut, grub2-efi-aa64, shim-aa64).
+#   - Alpine: hỗ trợ x86_64 & aarch64 (apk add --arch aarch64, kernel-lts, grub).
+#   - Arch Linux: giữ nguyên x86_64 theo upstream archiso official (không dùng script này).
 #   - iso.sh (UEFI Secure Boot) sử dụng shim-signed từ Debian (đã được Microsoft
 #     ký sẵn) và grub-signed, tạo chuỗi tin cậy chuẩn cho amd64 (và arm64).
 
@@ -145,5 +145,50 @@ hyggshi_gcd_efi_name() {
   case "$arch" in
     arm64) echo "gcdaa64.efi" ;;
     *)     echo "gcdx64.efi" ;;
+  esac
+}
+
+# Ubuntu mirror theo kiến trúc (arm64 nằm ở ports.ubuntu.com)
+hyggshi_ubuntu_mirror() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "http://ports.ubuntu.com/ubuntu-ports/" ;;
+    *)     echo "http://archive.ubuntu.com/ubuntu/" ;;
+  esac
+}
+
+# Ubuntu security mirror theo kiến trúc
+hyggshi_ubuntu_security_mirror() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64) echo "http://ports.ubuntu.com/ubuntu-ports/" ;;
+    *)     echo "http://security.ubuntu.com/ubuntu/" ;;
+  esac
+}
+
+# Fedora architecture tag (amd64 -> x86_64, arm64 -> aarch64)
+hyggshi_fedora_arch() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64|aarch64) echo "aarch64" ;;
+    *)             echo "x86_64" ;;
+  esac
+}
+
+# Alpine architecture tag (amd64 -> x86_64, arm64 -> aarch64)
+hyggshi_alpine_arch() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64|aarch64) echo "aarch64" ;;
+    *)             echo "x86_64" ;;
+  esac
+}
+
+# BCJ filter cho mksquashfs theo kiến trúc
+hyggshi_bcj_filter() {
+  local arch="${1:-amd64}"
+  case "$arch" in
+    arm64|aarch64) echo "arm" ;;
+    *)             echo "x86" ;;
   esac
 }
