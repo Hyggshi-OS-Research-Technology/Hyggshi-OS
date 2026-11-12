@@ -58,24 +58,10 @@ chmod 0440 /etc/sudoers.d/builder
 mkdir -p /opt/localrepo
 chmod -R 777 /opt/localrepo
 
-# 4. Biên dịch các gói Hyggshi nội bộ từ $ARCH_FOLDER_PATH/pkgs nếu có
-if [ -d "$ARCH_FOLDER_PATH/pkgs" ]; then
-  echo "===== Biên dịch các gói Hyggshi nội bộ từ $ARCH_FOLDER_PATH/pkgs ====="
-  chown -R builder:builder "$ARCH_FOLDER_PATH/pkgs" 2>/dev/null || true
-  for pkg in "$ARCH_FOLDER_PATH/pkgs"/*; do
-    if [ -f "$pkg/PKGBUILD" ]; then
-      pkgname=$(basename "$pkg")
-      echo "==> Đang build: $pkgname..."
-      (
-        cd "$pkg"
-        su - builder -c "cd '$pkg' && makepkg -s -f --noconfirm --nocheck" || true
-        cp -f ./*.pkg.tar.zst /opt/localrepo/ 2>/dev/null || true
-      )
-    fi
-  done
-fi
-
-# 5. Build Calamares từ AUR nếu có trong packages.x86_64
+# 4. Build Calamares từ AUR nếu có trong packages.x86_64
+# Lưu ý: Các gói trong $ARCH_FOLDER_PATH/pkgs (hyggshi-branding, hyggshi-os-release...)
+# là dành cho kho HRAC (cài qua mạng cho máy đã cài đặt). Trong ISO, toàn bộ các file
+# này đã nằm sẵn trong profile/airootfs/ và được mkarchiso tự động copy vào rootfs.
 if grep -q "^calamares$" "$PROFILE_DIR/packages.x86_64" 2>/dev/null; then
   echo "===== Cài đặt build dependencies cho Calamares ====="
   pacman -S --noconfirm --needed \
@@ -96,7 +82,7 @@ fi
 
 rm -f /opt/localrepo/*-debug-*.pkg.tar.zst 2>/dev/null || true
 
-# 6. Cập nhật database /opt/localrepo nếu có package
+# 5. Cập nhật database /opt/localrepo nếu có package
 if ls /opt/localrepo/*.pkg.tar.zst >/dev/null 2>&1; then
   echo "===== Cập nhật database hyggshi.db cho /opt/localrepo ====="
   repo-add -n -R /opt/localrepo/hyggshi.db.tar.gz /opt/localrepo/*.pkg.tar.zst
@@ -113,7 +99,7 @@ else
   sed -i '/^calamares$/d' "$PROFILE_DIR/packages.x86_64" 2>/dev/null || true
 fi
 
-# 7. Lọc và chuẩn hóa packages.x86_64: chỉ giữ lại các gói thực sự có trên repo
+# 6. Lọc và chuẩn hóa packages.x86_64: chỉ giữ lại các gói thực sự có trên repo
 echo "===== Kiểm tra và chuẩn hoá manifest packages.x86_64 ====="
 pacman --config "$PROFILE_DIR/pacman.conf" -Sy 2>/dev/null || true
 pacman --config "$PROFILE_DIR/pacman.conf" -Sql 2>/dev/null | sort -u > /tmp/available_pkgs.txt
@@ -143,7 +129,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$PROFILE_DIR/packages.x86_64"
 mv "$CLEAN_PKGS" "$PROFILE_DIR/packages.x86_64"
 
-# 8. Đảm bảo các file trong file_permissions (profiledef.sh) tồn tại
+# 7. Đảm bảo các file trong file_permissions (profiledef.sh) tồn tại
 if [ ! -f "$PROFILE_DIR/airootfs/usr/local/bin/hyggshi-icons" ]; then
   mkdir -p "$PROFILE_DIR/airootfs/usr/local/bin"
   cat <<'EOF' > "$PROFILE_DIR/airootfs/usr/local/bin/hyggshi-icons"
@@ -153,7 +139,7 @@ EOF
   chmod +x "$PROFILE_DIR/airootfs/usr/local/bin/hyggshi-icons"
 fi
 
-# 9. Branding wallpaper từ iso-config nếu có
+# 8. Branding wallpaper từ iso-config nếu có
 WALLPAPER_FILE=$(find "$REPO_ROOT/iso-config/branding" -maxdepth 1 -iname "wallpaper.*" \
   \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
 if [ -n "$WALLPAPER_FILE" ]; then
@@ -161,7 +147,7 @@ if [ -n "$WALLPAPER_FILE" ]; then
   cp -f "$WALLPAPER_FILE" "$PROFILE_DIR/airootfs/usr/share/backgrounds/hyggshi/wallpaper.png" 2>/dev/null || true
 fi
 
-# 10. Chạy mkarchiso để build ISO
+# 9. Chạy mkarchiso để build ISO
 echo "===== Chạy mkarchiso để build ISO Hyggshi OS Arch Edition ====="
 mkarchiso -v -w "$REPO_ROOT/work" -o "$REPO_ROOT/out" "$PROFILE_DIR"
 
