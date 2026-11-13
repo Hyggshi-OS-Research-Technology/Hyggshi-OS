@@ -527,6 +527,13 @@ class Resolver:
                 continue
             if is_base_sec and (k_clean.startswith("oem-") or k_clean.startswith("build-all-oem")):
                 continue
+            if is_arch_sec and k_clean in (
+                "build-all-architecture-github-actions",
+                "build-all-architecture-github-action",
+                "build-all-architecture",
+                "build-all-arch",
+            ):
+                continue
             pv = classify(k, raw)
             if pv.type == "BOOLEAN" and pv.value is True:
                 true_keys.append(k)
@@ -549,6 +556,16 @@ class Resolver:
                     if k.strip().lower().replace("_", "-") in ("build-all-github-actions", "build-all-github-action", "build-all"):
                         if classify(k, raw).value is True:
                             return None
+            if is_arch_sec:
+                for k, raw in kv.items():
+                    if k.strip().lower().replace("_", "-") in (
+                        "build-all-architecture-github-actions",
+                        "build-all-architecture-github-action",
+                        "build-all-architecture",
+                        "build-all-arch",
+                    ):
+                        if classify(k, raw).value is True:
+                            return "amd64"
             self.diags.append(Diagnostic(
                 "error", f"ERROR {err_code}: [{section_name}] requires exactly one {noun} = true. Found none."))
             return None
@@ -566,28 +583,54 @@ class Resolver:
                     f"Found {len(true_keys)}: {', '.join(true_keys)}"))
         return true_keys[0]
 
-    def resolve_architecture(self) -> str:
+    def resolve_architecture(self, arch_override: str | None = None) -> str:
         """
         Resolve [Architecture] section.
         Mặc định fallback là amd64 nếu section không tồn tại.
         """
+        override = (arch_override or "").strip().lower()
+        if override and override not in ("auto", "none", "all"):
+            if override in self._KNOWN_ARCHITECTURES:
+                return override
         if "Architecture" in self.sections:
             arch = self.resolve_enum_section("Architecture")
             return (arch or "amd64").strip().lower()
         return "amd64"
 
-    def resolve_architectures(self) -> list[str]:
+    def resolve_architectures(self, arch_override: str | None = None) -> list[str]:
         """
         Trả về tất cả các kiến trúc được bật (= true) trong [Architecture].
+        Hỗ trợ:
+          amd64 = true
+          arm64 = true
+          Build-all-architecture-github-actions = true
         """
+        override = (arch_override or "").strip().lower()
+        if override == "all":
+            return ["amd64", "arm64"]
+        elif override and override not in ("auto", "none"):
+            if override in self._KNOWN_ARCHITECTURES:
+                return [override]
+
         if "Architecture" in self.sections:
             kv = self._kv("Architecture")
+            build_all = False
             true_archs = []
             for k, raw in kv.items():
-                if classify(k, raw).value is True:
-                    k_clean = k.strip().lower()
-                    if k_clean in self._KNOWN_ARCHITECTURES:
+                k_clean = k.strip().lower().replace("_", "-")
+                val = classify(k, raw).value
+                if val is True:
+                    if k_clean in (
+                        "build-all-architecture-github-actions",
+                        "build-all-architecture-github-action",
+                        "build-all-architecture",
+                        "build-all-arch",
+                    ):
+                        build_all = True
+                    elif k_clean in self._KNOWN_ARCHITECTURES:
                         true_archs.append(k_clean)
+            if build_all:
+                return ["amd64", "arm64"]
             if true_archs:
                 return true_archs
         return ["amd64"]
@@ -1926,14 +1969,19 @@ class Resolver:
                         "error", f"[{sec_name}] {key} = {raw!r} — {e}"))
         self.validate_known_schemas()
 
-    def resolve_all(self, de_override: str | None = None, distro_override: str | None = None) -> dict:
+    def resolve_all(
+        self,
+        de_override: str | None = None,
+        distro_override: str | None = None,
+        arch_override: str | None = None,
+    ) -> dict:
         result = {}
         result["base_distro"] = self.resolve_base_distro(distro_override=distro_override)
         result["base_profile"] = self.resolve_my_version_os_base(distro_override=distro_override)
         bp = result["base_profile"]
         kp = bp.get("kernel_profile") or {}
         
-        result["architecture"] = self.resolve_architecture()
+        result["architecture"] = self.resolve_architecture(arch_override=arch_override)
         result["oem"] = self.resolve_oem()
         result["mint_build"] = self.resolve_mint_build()
         result["arch_build"] = self.resolve_arch_build()
@@ -2474,6 +2522,11 @@ def main():
         help="Ghi đè base distro active khi resolve (vd debian, linuxmint, all, auto)"
     )
     ap.add_argument(
+        "--arch-override",
+        default=None,
+        help="Ghi đè architecture active khi resolve (vd amd64, arm64, all, auto)"
+    )
+    ap.add_argument(
         "--print-matrix-json",
         action="store_true",
         help="In mảng JSON danh sách desktop matrix cần build (dành cho GitHub Actions matrix strategy)"
@@ -2491,7 +2544,11 @@ def main():
     resolver.validate_every_entry()
 
     try:
-        resolved = resolver.resolve_all(de_override=args.de_override, distro_override=args.distro_override)
+        resolved = resolver.resolve_all(
+            de_override=args.de_override,
+            distro_override=args.distro_override,
+            arch_override=args.arch_override,
+        )
     except HclError as e:
         print(f"::error::[HCL resolve] {e}", file=sys.stderr)
         sys.exit(1)
@@ -2555,6 +2612,11 @@ def main():
                     if matrix_desktop not in original_matrix_list:
                         matrix_exclude.append({"distro": other_base, "desktop": matrix_desktop})
 
+        # Exclude Linux Mint trên arm64 vì repo packages.linuxmint.com chỉ hỗ trợ amd64/i386
+        arch_list = resolver.resolve_architectures(arch_override=args.arch_override)
+        if "arm64" in arch_list and "linuxmint" in debootstrap_bases:
+            matrix_exclude.append({"distro": "linuxmint", "arch": "arm64"})
+
         matrix_json = json.dumps(matrix_list)
         base_matrix_json = json.dumps(debootstrap_bases)
         print(matrix_json)
@@ -2575,7 +2637,6 @@ def main():
                     f.write(f"arch_folder={arch_folder}\n")
                     f.write(f"build_fedora={'true' if has_fedora else 'false'}\n")
                     f.write(f"build_alpine={'true' if has_alpine else 'false'}\n")
-                    arch_list = resolver.resolve_architectures()
                     arch_primary = resolved.get("architecture") or "amd64"
                     f.write(f"arch={arch_primary}\n")
                     f.write(f"arch_matrix={json.dumps(arch_list)}\n")
