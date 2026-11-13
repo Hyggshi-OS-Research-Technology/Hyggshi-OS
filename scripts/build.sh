@@ -21,14 +21,14 @@ df -h
 
 echo "===== Install host build dependencies ====="
 sudo apt-get update
-# Các gói GRUB phụ thuộc kiến trúc: amd64 cần grub-pc-bin + grub-efi-amd64-bin,
-# arm64 cần grub-efi-arm64-bin (không có grub-pc-bin vì BIOS/MBR không dùng trên ARM).
+# Các gói GRUB phụ thuộc theo kiến trúc HOST runner (không phải target ARCH).
+# grub-efi-*-bin chỉ có trong repo tương ứng với kiến trúc host.
+# Bootloader bên trong chroot arm64 được cài bởi debootstrap/desktop.sh.
 _HOST_ARCH="$(dpkg --print-architecture)"
 _GRUB_ARCH_PKGS="grub-common"
-if [ "$_HOST_ARCH" = "amd64" ] || [ "${ARCH:-amd64}" != "arm64" ]; then
+if [ "$_HOST_ARCH" = "amd64" ]; then
   _GRUB_ARCH_PKGS="$_GRUB_ARCH_PKGS grub-pc-bin grub-efi-amd64-bin"
-fi
-if [ "$_HOST_ARCH" = "arm64" ] || [ "${ARCH:-}" = "arm64" ]; then
+elif [ "$_HOST_ARCH" = "arm64" ]; then
   _GRUB_ARCH_PKGS="$_GRUB_ARCH_PKGS grub-efi-arm64-bin"
 fi
 sudo apt-get install -y \
