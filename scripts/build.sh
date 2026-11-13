@@ -21,9 +21,19 @@ df -h
 
 echo "===== Install host build dependencies ====="
 sudo apt-get update
+# Các gói GRUB phụ thuộc kiến trúc: amd64 cần grub-pc-bin + grub-efi-amd64-bin,
+# arm64 cần grub-efi-arm64-bin (không có grub-pc-bin vì BIOS/MBR không dùng trên ARM).
+_HOST_ARCH="$(dpkg --print-architecture)"
+_GRUB_ARCH_PKGS="grub-common"
+if [ "$_HOST_ARCH" = "amd64" ] || [ "${ARCH:-amd64}" != "arm64" ]; then
+  _GRUB_ARCH_PKGS="$_GRUB_ARCH_PKGS grub-pc-bin grub-efi-amd64-bin"
+fi
+if [ "$_HOST_ARCH" = "arm64" ] || [ "${ARCH:-}" = "arm64" ]; then
+  _GRUB_ARCH_PKGS="$_GRUB_ARCH_PKGS grub-efi-arm64-bin"
+fi
 sudo apt-get install -y \
   debootstrap squashfs-tools xorriso isolinux syslinux-efi \
-  grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools \
+  $_GRUB_ARCH_PKGS mtools dosfstools \
   initramfs-tools live-boot live-boot-doc sbsigntool binutils
 
 CHROOT_DIR="live-build/chroot"

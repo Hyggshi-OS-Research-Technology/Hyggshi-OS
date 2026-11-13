@@ -532,8 +532,6 @@ if [ "$BASE_DISTRO" = "debian" ]; then
     firmware-qcom
     firmware-qcom-soc
     firmware-nvidia-gsp
-    intel-microcode
-    amd64-microcode
     firmware-ralink
     firmware-ath9k-htc
     firmware-zd1211
@@ -542,10 +540,24 @@ if [ "$BASE_DISTRO" = "debian" ]; then
     firmware-bnx2
     firmware-bnx2x
   "
+  # intel-microcode và amd64-microcode chỉ có trên kiến trúc x86/amd64,
+  # không tồn tại trong repo arm64 — chỉ thêm khi build cho amd64.
+  if [ "${ARCH:-amd64}" != "arm64" ]; then
+    DEBIAN_FW_PKGS="$DEBIAN_FW_PKGS
+    intel-microcode
+    amd64-microcode
+    "
+  fi
   FW_AVAILABLE=""
   for pkg in $DEBIAN_FW_PKGS; do
-    if apt-cache show "$pkg" >/dev/null 2>&1; then
+    # Dùng apt-cache show + kiểm tra architecture để đảm bảo gói thực sự
+    # có thể cài được trong chroot hiện tại (tránh false-positive khi host
+    # runner vẫn là amd64 nhưng chroot là arm64).
+    if apt-cache show "$pkg" 2>/dev/null | grep -q "^Architecture:.*\(all\|$(dpkg --print-architecture)\)"; then
       FW_AVAILABLE="$FW_AVAILABLE $pkg"
+    elif apt-cache show "$pkg" >/dev/null 2>&1; then
+      # Gói tồn tại trong metadata nhưng architecture không khớp — bỏ qua.
+      echo "FW: bỏ qua $pkg (kiến trúc không phù hợp với $(dpkg --print-architecture))."
     else
       echo "FW: bỏ qua $pkg (không có trong repo suite hiện tại)."
     fi
