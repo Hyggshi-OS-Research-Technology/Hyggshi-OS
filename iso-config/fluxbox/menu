@@ -1,0 +1,33 @@
+[begin] (Hyggshi OS Flex)
+  [exec] (Terminal) {xterm}
+  [exec] (File Manager) {pcmanfm}
+  [exec] (Install Hyggshi OS) {pkexec calamares}
+  [separator]
+  [submenu] (Applications)
+    [submenu] (Accessories)
+      [exec] (File Manager) {pcmanfm}
+      [exec] (Terminal) {xterm}
+      [exec] (Text Editor) {xterm -e nano}
+    [end]
+    [submenu] (System)
+      [exec] (System Info) {xterm -hold -e fastfetch}
+      [exec] (Process Viewer) {xterm -e top}
+    [end]
+    [submenu] (Network)
+      [exec] (Web Browser) {x-www-browser}
+    [end]
+    [submenu] (Audio)
+      [exec] (Volume Control) {pavucontrol}
+    [end]
+  [end]
+  [separator]
+  [submenu] (Styles) {Choose a style...}
+    [stylesdir] (/usr/share/fluxbox/styles)
+  [end]
+  [config] (Configuration)
+  [reconfig] (Reload Config)
+  [restart] (Restart Fluxbox)
+  [separator]
+  [exec] (Lock Screen) {xflock4 || light-locker-command -l || true}
+  [exit] (Exit / Logout)
+[end]

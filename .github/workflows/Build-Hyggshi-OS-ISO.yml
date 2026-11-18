@@ -73,7 +73,7 @@ on:
         description: "Desktop environment (auto = tự động theo config.ini / Build-all-github-actions, all = build song song các DEs, hoặc chọn 1 DE cụ thể)"
         required: false
         type: choice
-        options: [auto, all, xfce, kde, lxqt, gnome, mate, cinnamon, hde]
+        options: [auto, all, xfce, kde, lxqt, gnome, mate, cinnamon, hde, fluxbox]
         default: "auto"
       panel_style:
         description: "Kiểu taskbar (chỉ áp dụng cho XFCE)"
@@ -403,6 +403,7 @@ jobs:
       - name: Copy scripts vào chroot
         run: |
           sudo cp scripts/desktop.sh "${CHROOT_DIR}/tmp/desktop.sh"
+          [ -f scripts/desktop-fluxbox.sh ] && sudo cp scripts/desktop-fluxbox.sh "${CHROOT_DIR}/tmp/desktop-fluxbox.sh"
           sudo cp scripts/kernel-tuning.sh "${CHROOT_DIR}/tmp/kernel-tuning.sh"
           sudo cp scripts/build-nexwm.sh "${CHROOT_DIR}/tmp/build-nexwm.sh"
           sudo cp scripts/arch.sh "${CHROOT_DIR}/tmp/arch.sh"

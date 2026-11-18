@@ -1,0 +1,83 @@
+! Hyggshi OS Flex — Fluxbox Style
+! Theme color scheme: Hyggshi Dark / Verdant Valley
+style.name: Hyggshi-Flex
+style.author: Hyggshi OS Developer
+style.date: 2026-11-18
+
+toolbar: flat
+toolbar.color: #1a1b26
+toolbar.textColor: #c0caf5
+toolbar.font: sans-9:bold
+
+toolbar.windowLabel: flat
+toolbar.windowLabel.color: #24283b
+toolbar.windowLabel.textColor: #7aa2f7
+
+toolbar.clock: flat
+toolbar.clock.color: #1a1b26
+toolbar.clock.textColor: #c0caf5
+
+toolbar.workspace: flat
+toolbar.workspace.color: #1a1b26
+toolbar.workspace.textColor: #7aa2f7
+
+toolbar.iconbar.focused: flat
+toolbar.iconbar.focused.color: #24283b
+toolbar.iconbar.focused.textColor: #7aa2f7
+toolbar.iconbar.focused.font: sans-9:bold
+
+toolbar.iconbar.unfocused: flat
+toolbar.iconbar.unfocused.color: #1a1b26
+toolbar.iconbar.unfocused.textColor: #565f89
+toolbar.iconbar.unfocused.font: sans-9
+
+window.title.focus: flat
+window.title.focus.color: #24283b
+window.title.unfocus: flat
+window.title.unfocus.color: #1a1b26
+
+window.label.focus: flat
+window.label.focus.color: #24283b
+window.label.focus.textColor: #c0caf5
+window.label.focus.font: sans-9:bold
+
+window.label.unfocus: flat
+window.label.unfocus.color: #1a1b26
+window.label.unfocus.textColor: #565f89
+window.label.unfocus.font: sans-9
+
+window.handle.focus: flat
+window.handle.focus.color: #24283b
+window.handle.unfocus: flat
+window.handle.unfocus.color: #1a1b26
+
+window.grip.focus: flat
+window.grip.focus.color: #7aa2f7
+window.grip.unfocus: flat
+window.grip.unfocus.color: #414868
+
+window.bevelWidth: 0
+window.borderWidth: 1
+window.borderColor: #414868
+
+menu.title: flat
+menu.title.color: #1a1b26
+menu.title.textColor: #7aa2f7
+menu.title.font: sans-10:bold
+
+menu.frame: flat
+menu.frame.color: #24283b
+menu.frame.textColor: #c0caf5
+menu.frame.disableColor: #565f89
+menu.frame.font: sans-9
+
+menu.hilite: flat
+menu.hilite.color: #7aa2f7
+menu.hilite.textColor: #1a1b26
+menu.hilite.font: sans-9:bold
+
+menu.bevelWidth: 0
+menu.borderWidth: 1
+menu.borderColor: #414868
+menu.bullet: square
+menu.bullet.position: right

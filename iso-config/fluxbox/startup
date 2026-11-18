@@ -1,0 +1,33 @@
+#!/bin/sh
+# Hyggshi OS Flex Edition — Startup script
+# Minimal background services
+
+# 1. Screen auto-resolution
+if command -v xrandr >/dev/null 2>&1; then
+  xrandr --auto 2>/dev/null || true
+fi
+
+# 2. Polkit agent for authentication dialogs
+if command -v lxpolkit >/dev/null 2>&1; then
+  lxpolkit &
+elif command -v mate-polkit >/dev/null 2>&1; then
+  mate-polkit &
+fi
+
+# 3. PCManFM Desktop Management (desktop icons + wallpaper)
+if command -v pcmanfm >/dev/null 2>&1; then
+  pcmanfm --desktop &
+fi
+
+# 4. Sound daemon / shortcut if present
+if command -v hyggshi-sound-shortcut >/dev/null 2>&1; then
+  hyggshi-sound-shortcut &
+fi
+
+# 5. Network Manager applet
+if command -v nm-applet >/dev/null 2>&1; then
+  nm-applet &
+fi
+
+# 6. Start window manager
+exec fluxbox

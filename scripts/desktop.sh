@@ -702,6 +702,19 @@ case "$DE" in
     fi
     ;;
 
+  fluxbox|flex)
+    echo "===== Cài đặt Hyggshi OS Flex Edition (Fluxbox + PCManFM + xterm) ====="
+    apt-get install -y fluxbox pcmanfm xterm lightdm lightdm-gtk-greeter \
+      x11-xserver-utils menu lxpolkit feh dbus-x11 2>/dev/null || \
+    apt-get install -y fluxbox pcmanfm xterm lightdm lightdm-gtk-greeter
+
+    if [ -f /tmp/desktop-fluxbox.sh ]; then
+      echo "===== Chạy /tmp/desktop-fluxbox.sh (cấu hình môi trường Flex Edition) ====="
+      chmod +x /tmp/desktop-fluxbox.sh
+      /tmp/desktop-fluxbox.sh || echo "⚠️  desktop-fluxbox.sh gặp lỗi, tiếp tục hoàn tất các bước cấu hình khác."
+    fi
+    ;;
+
   kde)
     apt-get install -y kde-plasma-desktop plasma-workspace sddm \
       plasma-nm bluedevil kde-config-sddm dolphin konsole || \
@@ -1177,6 +1190,7 @@ case "$DE" in
   cinnamon) : ;; # cinnamon-settings-daemon tự có agent tích hợp
   kde)      : ;; # plasma-workspace tự có agent tích hợp (polkit-kde-agent)
   hde)      apt-get install -y lxpolkit || apt-get install -y mate-polkit || apt-get install -y policykit-1-gnome || true ;;
+  fluxbox|flex) apt-get install -y lxpolkit || apt-get install -y mate-polkit || true ;;
 esac
 
 mkdir -p /etc/polkit-1/rules.d
@@ -2018,6 +2032,21 @@ case "$DE" in
       echo "CANH BAO: lightdm khong tim thay cho DE=hde" >&2
     fi
     ;;
+  fluxbox|flex)
+    if [ -f /usr/sbin/lightdm ]; then
+      echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager
+      mkdir -p /etc/lightdm/lightdm.conf.d
+      printf '[Seat:*]\nuser-session=fluxbox\n' > /etc/lightdm/lightdm.conf.d/50-fluxbox.conf
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable sddm 2>/dev/null || true
+        systemctl disable gdm3 2>/dev/null || true
+        systemctl enable lightdm 2>/dev/null || true
+      fi
+      echo "OK: đặt lightdm làm DM mặc định cho DE=$DE"
+    else
+      echo "CANH BAO: lightdm khong tim thay cho DE=$DE" >&2
+    fi
+    ;;
   *)
     # XFCE, MATE, Cinnamon dùng LightDM
     if [ -f /usr/sbin/lightdm ]; then
@@ -2115,6 +2144,15 @@ autologin-user=$OS_USERNAME
 autologin-user-timeout=0
 autologin-session=hde
 user-session=hde
+EOF
+elif [ "$DE" = "fluxbox" ] || [ "$DE" = "flex" ]; then
+  mkdir -p /etc/lightdm/lightdm.conf.d
+  cat <<EOF > /etc/lightdm/lightdm.conf.d/50-hyggshi-autologin.conf
+[Seat:*]
+autologin-user=$OS_USERNAME
+autologin-user-timeout=0
+autologin-session=fluxbox
+user-session=fluxbox
 EOF
 else
   # Mặc định: XFCE + lightdm-gtk-greeter

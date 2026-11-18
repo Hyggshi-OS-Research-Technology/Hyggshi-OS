@@ -68,6 +68,7 @@ bash scripts/build.sh
 source "$GITHUB_ENV"
 
 sudo cp scripts/desktop.sh live-build/chroot/tmp/desktop.sh
+[ -f scripts/desktop-fluxbox.sh ] && sudo cp scripts/desktop-fluxbox.sh live-build/chroot/tmp/desktop-fluxbox.sh
 sudo cp scripts/kernel-tuning.sh live-build/chroot/tmp/kernel-tuning.sh
 # Stage the repository's complete Calamares configuration.
 sudo rm -rf live-build/chroot/tmp/calamares

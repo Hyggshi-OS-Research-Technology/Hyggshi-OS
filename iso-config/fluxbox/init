@@ -1,0 +1,14 @@
+session.menuFile: /etc/X11/fluxbox/fluxbox-menu
+session.keyFile: /etc/X11/fluxbox/keys
+session.styleFile: /usr/share/fluxbox/styles/Hyggshi-Flex
+session.configVersion: 13
+session.screen0.toolbar.placement: BottomCenter
+session.screen0.toolbar.widthPercent: 100
+session.screen0.toolbar.tools: prevworkspace, workspacename, nextworkspace, iconbar, systemtray, clock
+session.screen0.toolbar.autoHide: false
+session.screen0.workspaces: 4
+session.screen0.workspaceNames: 1, 2, 3, 4
+session.screen0.strftimeFormat: %H:%M - %d/%m/%Y
+session.screen0.focusModel: ClickToFocus
+session.screen0.window.focus.alpha: 255
+session.screen0.window.unfocus.alpha: 200

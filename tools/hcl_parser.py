@@ -764,7 +764,7 @@ class Resolver:
             "desktops_to_build": [],
             "custom_desktops": {},
         }
-        known_desktops = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
+        known_desktops = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde", "fluxbox"]
         all_desktops_with_cli = known_desktops + ["cli"]
 
         # 1. Tìm cờ Build-all-github-actions
@@ -809,8 +809,14 @@ class Resolver:
                 custom = self.resolve_function(pv.value)
                 target = str(custom.get("target", "")).strip().lower().replace("-", "").replace("_", "")
                 target_can = BASE_CANONICAL.get(target, target)
-                desktop = str(custom.get("object") or custom.get("DE-target") or custom.get("de-target") or "").strip().lower()
-                if target_can and desktop:
+                desktop = str(custom.get("resolved_desktop") or custom.get("object") or custom.get("DE-target") or custom.get("de-target") or "").strip().lower()
+                if desktop == "flex":
+                    desktop = "fluxbox"
+                if target_can in ("all", ""):
+                    for b in ["debian", "ubuntu", "linuxmint"]:
+                        if desktop:
+                            out["custom_desktops"][b] = desktop
+                elif target_can and desktop:
                     out["custom_desktops"][target_can] = desktop
 
         return out
@@ -938,19 +944,39 @@ class Resolver:
         if name == "customDE":
             target_raw = str(kwargs.get("target", "")).strip().lower().replace("-", "").replace("_", "")
             target = BASE_CANONICAL.get(target_raw, target_raw)
-            desktop = str(kwargs.get("object") or kwargs.get("DE-target") or kwargs.get("de-target") or "").strip().lower()
             if not target:
-                self.diags.append(Diagnostic(
-                    "error", "customDE(...) thiếu 'target' — cần tên base distro."))
-            elif target not in {"debian", "ubuntu", "linuxmint", "fedora", "alpine", "arch"}:
+                target = "all"
+            elif target not in {"debian", "ubuntu", "linuxmint", "fedora", "alpine", "arch", "all"}:
                 self.diags.append(Diagnostic(
                     "error", f"customDE(target={target}) — base distro không được hỗ trợ."))
+
+            raw_desktop = str(kwargs.get("object") or kwargs.get("DE-target") or kwargs.get("de-target") or "").strip()
+            desktop_clean = raw_desktop
+            if desktop_clean.startswith("${") and desktop_clean.endswith("}"):
+                desktop_clean = desktop_clean[2:-1]
+            if desktop_clean in self.sections:
+                sec_entries = {k.lower(): self.resolve_value(k, v) for k, v in self._kv(desktop_clean).items()}
+                resolved_de = str(sec_entries.get("desktop") or sec_entries.get("de") or sec_entries.get("name") or "").strip().lower()
+                if resolved_de:
+                    desktop = resolved_de
+                elif "fluxbox" in desktop_clean.lower() or "flex" in desktop_clean.lower():
+                    desktop = "fluxbox"
+                else:
+                    desktop = desktop_clean.lower()
+            else:
+                desktop = desktop_clean.lower()
+
+            if desktop in ("flex", "flax"):
+                desktop = "fluxbox"
+
             if not desktop:
                 self.diags.append(Diagnostic(
                     "error", "customDE(...) thiếu 'object' — cần tên desktop environment (có thể dùng DE-target)."))
-            elif desktop not in {"xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde", "cli"}:
+            elif desktop not in {"xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde", "cli", "fluxbox", "flex", "flax"}:
                 self.diags.append(Diagnostic(
                     "error", f"customDE(object={desktop}) — desktop environment không được hỗ trợ."))
+            result["resolved_desktop"] = desktop
+            result["target"] = target
         if name == "command":
             if "file" in kwargs:
                 full = os.path.normpath(os.path.join(self.root, str(kwargs["file"])))
@@ -1134,8 +1160,13 @@ class Resolver:
 
         return result
 
-    def resolve_my_version_os_base(self, distro_override: str | None = None) -> dict:
-        kv = self._kv("my-version-os-base")
+    def resolve_my_version_os_base(self, distro_override: str | None = None, de_override: str | None = None, edition_override: str | None = None) -> dict:
+        sec_name = "my-version-os-base"
+        de_clean = (de_override or "").strip().lower()
+        ed_clean = (edition_override or "").strip().lower()
+        if "my-version-os-flex" in self.sections and (de_clean in ("fluxbox", "flex", "flax") or ed_clean in ("flex", "flax") or "my-version-os-base" not in self.sections):
+            sec_name = "my-version-os-flex"
+        kv = self._kv(sec_name)
         out = {}
         out["version"] = self.resolve_value("Version", kv["Version"])
         out["codename"] = self.resolve_value("codename", kv["codename"])
@@ -1147,32 +1178,37 @@ class Resolver:
             base_choice = BASE_CANONICAL.get((base_raw or "").strip().lower(), (base_raw or "").strip().lower())
         out["base"] = base_choice
 
-        kernel_raw = classify("kernel", kv["kernel"]).value
-        kernel_section = f"kernel.{kernel_raw}"
-        if kernel_section not in self.sections:
-            self.diags.append(Diagnostic(
-                "error",
-                f"kernel = \"{kernel_raw}\" nhưng không tìm thấy section "
-                f"[{kernel_section}]."))
-            out["kernel_profile"] = None
+        kernel_entry = kv.get("kernel")
+        if kernel_entry is not None:
+            kernel_raw = classify("kernel", kernel_entry).value
+            kernel_section = f"kernel.{kernel_raw}"
+            if kernel_section not in self.sections:
+                self.diags.append(Diagnostic(
+                    "error",
+                    f"kernel = \"{kernel_raw}\" nhưng không tìm thấy section "
+                    f"[{kernel_section}]."))
+                out["kernel_profile"] = None
+            else:
+                profile = {k: self.resolve_value(k, v) for k, v in self._kv(kernel_section).items()}
+                out["kernel_profile_name"] = kernel_raw
+                out["kernel_profile"] = profile
+                de = profile.get("desktop")
+                if de:
+                    de_kv = self._kv("Desktop-Environment")
+                    match = next((k for k in de_kv if k.lower() == str(de).lower()), None)
+                    if match is None:
+                        self.diags.append(Diagnostic(
+                            "warning",
+                            f"[kernel.{kernel_raw}] desktop = {de} nhưng không có key "
+                            f"tương ứng trong [Desktop-Environment]."))
+                    elif classify(match, de_kv[match]).value is not True:
+                        self.diags.append(Diagnostic(
+                            "warning",
+                            f"[kernel.{kernel_raw}] chọn desktop = {de}, nhưng "
+                            f"[Desktop-Environment] {match} = false. Hai nơi đang lệch nhau."))
         else:
-            profile = {k: self.resolve_value(k, v) for k, v in self._kv(kernel_section).items()}
-            out["kernel_profile_name"] = kernel_raw
-            out["kernel_profile"] = profile
-            de = profile.get("desktop")
-            if de:
-                de_kv = self._kv("Desktop-Environment")
-                match = next((k for k in de_kv if k.lower() == str(de).lower()), None)
-                if match is None:
-                    self.diags.append(Diagnostic(
-                        "warning",
-                        f"[kernel.{kernel_raw}] desktop = {de} nhưng không có key "
-                        f"tương ứng trong [Desktop-Environment]."))
-                elif classify(match, de_kv[match]).value is not True:
-                    self.diags.append(Diagnostic(
-                        "warning",
-                        f"[kernel.{kernel_raw}] chọn desktop = {de}, nhưng "
-                        f"[Desktop-Environment] {match} = false. Hai nơi đang lệch nhau."))
+            out["kernel_profile_name"] = "Desktop"
+            out["kernel_profile"] = {k: self.resolve_value(k, v) for k, v in self._kv("kernel.Desktop").items()} if "kernel.Desktop" in self.sections else {}
 
         firmware_raw = classify("firmware", kv["firmware"]).value
         firmware_flag = self.resolve_reference_value(firmware_raw) \
@@ -1891,35 +1927,41 @@ class Resolver:
         Kiểm tra schema các section cốt lõi.
         Bắt lỗi typo (ERROR HCL001) và type mismatch (ERROR HCL201).
         """
-        # 1. Schema cho [my-version-os-base]
-        if "my-version-os-base" in self.sections:
-            known_base_keys = {
-                "version": "Version",
-                "name": "name",
-                "codename": "codename",
-                "kernel": "kernel",
-                "base": "base",
-                "firmware": "firmware",
-                "gnome-apps": "gnome-apps",
-                "gnome-extensions": "gnome-extensions",
-                "gnome-tweak": "gnome-tweak",
-                "auto-login": "Auto-login",
-                "icons": "icons",
-                "kernel-install": "kernel-install",  # bool | installkernel(...)
-                "kernel-version": "kernel-version",
-                "swap": "swap",
-                "config": "config",
-            }
-            kv = self._kv("my-version-os-base")
-            for k, raw in kv.items():
-                k_clean = k.strip().lower()
-                if k_clean not in known_base_keys:
-                    matches = difflib.get_close_matches(k_clean, list(known_base_keys.keys()), n=1, cutoff=0.6)
-                    hint = f"\n    Did you mean:\n        {known_base_keys[matches[0]]}" if matches else ""
-                    self.diags.append(Diagnostic(
-                        "error",
-                        f"ERROR HCL001:\nUnknown property '{k}' in [my-version-os-base].{hint}"
-                    ))
+        # 1. Schema cho [my-version-os-base] và [my-version-os-flex]
+        known_base_keys = {
+            "version": "Version",
+            "name": "name",
+            "codename": "codename",
+            "kernel": "kernel",
+            "base": "base",
+            "firmware": "firmware",
+            "gnome-apps": "gnome-apps",
+            "gnome-extensions": "gnome-extensions",
+            "gnome-tweak": "gnome-tweak",
+            "auto-login": "Auto-login",
+            "icons": "icons",
+            "kernel-install": "kernel-install",  # bool | installkernel(...)
+            "kernel-version": "kernel-version",
+            "swap": "swap",
+            "config": "config",
+            "package": "package",
+            "calamares": "calamares",
+            "hyggshiosflex": "hyggshiosflex",
+            "fluxbox": "fluxbox",
+            "flex": "flex",
+        }
+        for b_sec in ("my-version-os-base", "my-version-os-flex"):
+            if b_sec in self.sections:
+                kv = self._kv(b_sec)
+                for k, raw in kv.items():
+                    k_clean = k.strip().lower()
+                    if k_clean not in known_base_keys:
+                        matches = difflib.get_close_matches(k_clean, list(known_base_keys.keys()), n=1, cutoff=0.6)
+                        hint = f"\n    Did you mean:\n        {known_base_keys[matches[0]]}" if matches else ""
+                        self.diags.append(Diagnostic(
+                            "error",
+                            f"ERROR HCL001:\nUnknown property '{k}' in [{b_sec}].{hint}"
+                        ))
 
         # 2. Schema cho [Base] — enum: đúng 1 distro = true
         self._validate_enum_section(
@@ -1977,7 +2019,7 @@ class Resolver:
     ) -> dict:
         result = {}
         result["base_distro"] = self.resolve_base_distro(distro_override=distro_override)
-        result["base_profile"] = self.resolve_my_version_os_base(distro_override=distro_override)
+        result["base_profile"] = self.resolve_my_version_os_base(distro_override=distro_override, de_override=de_override)
         bp = result["base_profile"]
         kp = bp.get("kernel_profile") or {}
         
@@ -2131,6 +2173,8 @@ def to_env_lines(resolved: dict, de_override: str | None = None, distro_override
         "cli": "cli",
         "hde": "hde",
         "nexwm": "hde",
+        "fluxbox": "fluxbox",
+        "flex": "fluxbox",
         # Các group con khác KHÔNG phải DE (package.compiler, .qt6, .x11, etc.)
         # không nằm ở đây -> is_de_group = False -> gói vào all_packages bình thường
     }
@@ -2560,12 +2604,14 @@ def main():
 
         # 1. Desktop Matrix
         de_override = (args.de_override or "").strip().lower()
+        if de_override in ("flex", "flax"):
+            de_override = "fluxbox"
         if de_override == "all":
-            matrix_list = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
+            matrix_list = ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde", "fluxbox"]
         elif de_override and de_override not in ("auto", "none"):
             matrix_list = [de_override]
         elif de_info.get("build_all_github_actions"):
-            matrix_list = de_info.get("desktops_to_build") or ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde"]
+            matrix_list = de_info.get("desktops_to_build") or ["xfce", "kde", "gnome", "cinnamon", "mate", "lxqt", "hde", "fluxbox"]
         else:
             active = de_info.get("active_desktop") or "hde" if de_info.get("active_desktop") == "hde" else (de_info.get("active_desktop") or "xfce")
             matrix_list = [active]
