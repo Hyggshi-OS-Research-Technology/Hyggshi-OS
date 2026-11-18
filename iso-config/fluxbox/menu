@@ -1,4 +1,5 @@
 [begin] (Hyggshi OS Flex)
+  [exec] (Application Launcher) {rofi -show drun -show-icons}
   [exec] (Terminal) {xterm}
   [exec] (File Manager) {pcmanfm}
   [exec] (Install Hyggshi OS) {pkexec calamares}
@@ -10,8 +11,9 @@
       [exec] (Text Editor) {xterm -e nano}
     [end]
     [submenu] (System)
+      [exec] (App Launcher) {rofi -show drun -show-icons}
+      [exec] (Task Manager) {xterm -e top}
       [exec] (System Info) {xterm -hold -e fastfetch}
-      [exec] (Process Viewer) {xterm -e top}
     [end]
     [submenu] (Network)
       [exec] (Web Browser) {x-www-browser}
@@ -25,7 +27,7 @@
     [stylesdir] (/usr/share/fluxbox/styles)
   [end]
   [config] (Configuration)
-  [reconfig] (Reload Config)
+  [reconfig] (Reload Fluxbox)
   [restart] (Restart Fluxbox)
   [separator]
   [exec] (Lock Screen) {xflock4 || light-locker-command -l || true}

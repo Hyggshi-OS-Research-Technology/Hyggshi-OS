@@ -53,7 +53,7 @@ Hyggshi OS utilizes GitHub Actions runners (`ubuntu-latest` and native container
 | Parameter | Description | Default |
 |---|---|---|
 | `distro` | Base distribution: `auto`, `all`, `debian`, `ubuntu`, `linuxmint`, `alpine`, `arch`, `fedora` | `auto` |
-| `desktop` | Desktop environment: `auto`, `all`, `xfce`, `kde`, `lxqt`, `gnome`, `mate`, `cinnamon`, `hde` | `auto` |
+| `desktop` | Desktop environment: `auto`, `all`, `xfce`, `kde`, `lxqt`, `gnome`, `mate`, `cinnamon`, `hde`, `fluxbox` | `auto` |
 | `hyggshi_version` | Custom Hyggshi OS release version (e.g., `1.4.2`, `2.0`) | `1.0` |
 | `hyggshi_codename` | Custom distribution codename (empty = auto-selected) | _(auto)_ |
 | `edition` | Kernel and sysctl tuning profile: `normal`, `developer`, `server`, `lite` | `normal` |
@@ -154,6 +154,7 @@ python3 tools/hcl_debug_viewer.py iso-config/config/config.ini
 | **MATE** | Debian, Ubuntu, Arch | LightDM | Traditional desktop experience with Caja and customized panel |
 | **Cinnamon** | Debian, Ubuntu, Mint, Arch | LightDM | Tela icon suite, Orchis theme, and 4 pre-configured virtual workspaces |
 | **HDE (NexWM)** | Debian | LightDM | Custom lightweight Hyggshi Desktop Environment built directly from source |
+| **Fluxbox (Flex)** | Debian | LightDM | Slax-style minimal WM: Fluxbox + Tint2 + Rofi + Picom + PCManFM — Hyggshi Dark theme |
 
 ---
 

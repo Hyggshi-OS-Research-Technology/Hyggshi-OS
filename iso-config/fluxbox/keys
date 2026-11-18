@@ -1,9 +1,19 @@
-# Hyggshi OS Flex Edition — Fluxbox Keybindings
-# Super (Mod4) Shortcuts
+# Hyggshi OS Flex Edition — Keybindings (Slax-style)
+
+# App Launcher (Rofi)
+Mod4 space :Exec rofi -show drun -show-icons
+Mod4 d :Exec rofi -show run
+Mod4 r :Exec rofi -show run
+
+# Terminal (xterm)
 Mod4 t :Exec xterm
+Mod4 Return :Exec xterm
+
+# File Manager (PCManFM)
 Mod4 e :Exec pcmanfm
+
+# Installer (Calamares)
 Mod4 i :Exec pkexec calamares
-Mod4 d :Exec fbrun
 
 # Window Navigation
 Mod1 Tab :NextWindow {groups} (workspace=[current])

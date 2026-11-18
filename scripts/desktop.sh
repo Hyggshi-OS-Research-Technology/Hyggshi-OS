@@ -703,10 +703,11 @@ case "$DE" in
     ;;
 
   fluxbox|flex)
-    echo "===== Cài đặt Hyggshi OS Flex Edition (Fluxbox + PCManFM + xterm) ====="
-    apt-get install -y fluxbox pcmanfm xterm lightdm lightdm-gtk-greeter \
-      x11-xserver-utils menu lxpolkit feh dbus-x11 2>/dev/null || \
-    apt-get install -y fluxbox pcmanfm xterm lightdm lightdm-gtk-greeter
+    echo "===== Cài đặt Hyggshi OS Flex Edition (Slax-style: Fluxbox + Tint2 + PCManFM + Rofi + Picom + xterm) ====="
+    apt-get install -y fluxbox tint2 pcmanfm rofi picom xterm lightdm lightdm-gtk-greeter \
+      x11-xserver-utils menu lxpolkit feh dbus-x11 network-manager-gnome 2>/dev/null || \
+    apt-get install -y fluxbox tint2 pcmanfm rofi picom xterm lightdm lightdm-gtk-greeter \
+      x11-xserver-utils menu lxpolkit feh dbus-x11
 
     if [ -f /tmp/desktop-fluxbox.sh ]; then
       echo "===== Chạy /tmp/desktop-fluxbox.sh (cấu hình môi trường Flex Edition) ====="

@@ -1,0 +1,86 @@
+/**
+ * Hyggshi OS Flex Edition — Rofi Theme
+ * Slax-style minimal application launcher
+ */
+
+configuration {
+    modi: "drun,run,window";
+    font: "Sans 10";
+    show-icons: true;
+    icon-theme: "Papirus";
+    terminal: "xterm";
+    drun-display-format: "{name}";
+    disable-history: false;
+}
+
+* {
+    bg: #1a1b26;
+    bg-alt: #24283b;
+    fg: #c0caf5;
+    fg-alt: #565f89;
+    accent: #7aa2f7;
+    background-color: transparent;
+    text-color: @fg;
+    margin: 0;
+    padding: 0;
+    spacing: 0;
+}
+
+window {
+    width: 480px;
+    background-color: @bg;
+    border: 2px;
+    border-color: @accent;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+mainbox {
+    children: [ inputbar, listview ];
+    spacing: 8px;
+}
+
+inputbar {
+    background-color: @bg-alt;
+    border-radius: 6px;
+    padding: 8px 12px;
+    children: [ prompt, entry ];
+    spacing: 8px;
+}
+
+prompt {
+    text-color: @accent;
+}
+
+entry {
+    placeholder: "Search applications...";
+    placeholder-color: @fg-alt;
+    text-color: @fg;
+}
+
+listview {
+    lines: 8;
+    columns: 1;
+    spacing: 4px;
+    cycle: true;
+}
+
+element {
+    padding: 8px 10px;
+    border-radius: 6px;
+    spacing: 8px;
+}
+
+element selected {
+    background-color: @accent;
+    text-color: #1a1b26;
+}
+
+element-icon {
+    size: 24px;
+}
+
+element-text {
+    vertical-align: 0.5;
+    text-color: inherit;
+}
