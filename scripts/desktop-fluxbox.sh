@@ -198,20 +198,23 @@ EOF
 mkdir -p /etc/X11/app-defaults
 cp -f /etc/skel/.Xresources /etc/X11/app-defaults/XTerm-color 2>/dev/null || true
 
-# Calamares Live Installer icon trên Desktop
-cat <<'EOF' > /etc/skel/Desktop/calamares.desktop
+# Calamares Live Installer icon trên Desktop (dùng install-hyggshi-os.desktop đồng bộ với branding.sh, tránh trùng 2 icon)
+rm -f /etc/skel/Desktop/calamares.desktop 2>/dev/null || true
+if [ ! -f /etc/skel/Desktop/install-hyggshi-os.desktop ]; then
+  cat <<'EOF' > /etc/skel/Desktop/install-hyggshi-os.desktop
 [Desktop Entry]
 Type=Application
 Version=1.0
 Name=Install Hyggshi OS
 GenericName=Live Installer
 Comment=Install Hyggshi OS Flex Edition to your drive
-Exec=pkexec calamares
-Icon=calamares
+Exec=/usr/local/bin/hyggshi-launch-installer.sh
+Icon=hyggshi-installer
 Terminal=false
 Categories=System;
 EOF
-chmod 0755 /etc/skel/Desktop/calamares.desktop
+fi
+chmod 0755 /etc/skel/Desktop/install-hyggshi-os.desktop 2>/dev/null || true
 
 # xinitrc fallback
 cat <<'EOF' > /etc/skel/.xinitrc
@@ -231,6 +234,7 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
              "$USER_HOME/.config/picom" \
              "$USER_HOME/.config/pcmanfm/default" \
              "$USER_HOME/Desktop"
+    rm -f "$USER_HOME/Desktop/calamares.desktop" 2>/dev/null || true
     cp -rf /etc/skel/.fluxbox/. "$USER_HOME/.fluxbox/" 2>/dev/null || true
     [ -f /etc/skel/.Xresources ] && cp -f /etc/skel/.Xresources "$USER_HOME/.Xresources" 2>/dev/null || true
     [ -f /etc/skel/.xinitrc ] && cp -f /etc/skel/.xinitrc "$USER_HOME/.xinitrc" 2>/dev/null || true
@@ -241,10 +245,11 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
       cp -f /etc/skel/.config/pcmanfm/default/pcmanfm.conf "$USER_HOME/.config/pcmanfm/default/pcmanfm.conf" 2>/dev/null || true
     [ -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf ] && \
       cp -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf "$USER_HOME/.config/pcmanfm/default/desktop-items-0.conf" 2>/dev/null || true
-    [ -f /etc/skel/Desktop/calamares.desktop ] && cp -f /etc/skel/Desktop/calamares.desktop "$USER_HOME/Desktop/" 2>/dev/null || true
+    [ -f /etc/skel/Desktop/install-hyggshi-os.desktop ] && \
+      cp -f /etc/skel/Desktop/install-hyggshi-os.desktop "$USER_HOME/Desktop/" 2>/dev/null || true
     
     [ -f "$USER_HOME/.fluxbox/startup" ] && chmod 0755 "$USER_HOME/.fluxbox/startup"
-    [ -f "$USER_HOME/Desktop/calamares.desktop" ] && chmod 0755 "$USER_HOME/Desktop/calamares.desktop"
+    [ -f "$USER_HOME/Desktop/install-hyggshi-os.desktop" ] && chmod 0755 "$USER_HOME/Desktop/install-hyggshi-os.desktop"
     
     chown -R "$OS_USERNAME:$OS_USERNAME" \
       "$USER_HOME/.fluxbox" \

@@ -44,15 +44,20 @@ if command -v nm-applet >/dev/null 2>&1; then
   nm-applet &
 fi
 
-# 7. Sound shortcut daemon nếu có
+# 7. Volume controller applet (systray trong tint2)
+if command -v pasystray >/dev/null 2>&1; then
+  pasystray &
+fi
+
+# 8. Sound shortcut daemon nếu có
 if command -v hyggshi-sound-shortcut >/dev/null 2>&1; then
   hyggshi-sound-shortcut &
 fi
 
-# 8. Taskbar (Tint2)
+# 9. Taskbar (Tint2)
 if command -v tint2 >/dev/null 2>&1; then
   tint2 &
 fi
 
-# 9. Start Window Manager (Fluxbox) — PHẢI là lệnh cuối cùng
+# 10. Start Window Manager (Fluxbox) — PHẢI là lệnh cuối cùng
 exec fluxbox

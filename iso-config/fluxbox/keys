@@ -1,4 +1,48 @@
-# Hyggshi OS Flex Edition — Keybindings (Slax-style)
+# Hyggshi OS Flex Edition — Keybindings & Mouse Actions (Slax-style)
+
+# ==============================================================================
+# 1. Mouse Bindings for Window Management (Di chuyển, đổi cỡ, menu ngữ cảnh)
+# ==============================================================================
+
+# Nhấp chuột vào cửa sổ: Focus và đưa lên trên cùng (Raise)
+OnWindow Mouse1 :MacroCmd {Raise} {Focus}
+OnWindow Mod1 Mouse1 :MacroCmd {Raise} {Focus} {StartMoving}
+OnWindow Mod1 Mouse3 :MacroCmd {Raise} {Focus} {StartResizing NearestCorner}
+OnWindow Mod1 Mouse2 :Lower
+
+# Thanh tiêu đề (Titlebar): Di chuyển cửa sổ khi kéo chuột trái
+OnTitlebar Mouse1 :MacroCmd {Raise} {Focus} {ActivateTab}
+OnTitlebar Move1 :StartMoving
+OnTitlebar Double Mouse1 :Maximize
+OnTitlebar Mouse2 :Lower
+OnTitlebar Mouse3 :WindowMenu
+OnTitlebar Mouse4 :PrevTab
+OnTitlebar Mouse5 :NextTab
+
+# Nút trên thanh tiêu đề (Minimize, Maximize, Close, Stick)
+OnTitlebar [Minimize] Mouse1 :Minimize
+OnTitlebar [Maximize] Mouse1 :Maximize
+OnTitlebar [Maximize] Mouse3 :MaximizeVertical
+OnTitlebar [Close] Mouse1 :Close
+OnTitlebar [Stick] Mouse1 :Stick
+
+# Kéo viền cửa sổ để đổi kích thước (Resize from borders & corners)
+OnWindowBorder Move1 :StartResizing NearestCorner
+OnLeftBorder Move1 :StartResizing Left
+OnRightBorder Move1 :StartResizing Right
+OnTopBorder Move1 :StartResizing Top
+OnBottomBorder Move1 :StartResizing Bottom
+
+# Chuột trên màn hình Desktop (Mở context menu chuột phải / Menu danh sách workspace)
+OnDesktop Mouse1 :HideMenus
+OnDesktop Mouse2 :WorkspaceMenu
+OnDesktop Mouse3 :RootMenu
+OnDesktop Mouse4 :PrevWorkspace
+OnDesktop Mouse5 :NextWorkspace
+
+# ==============================================================================
+# 2. Keyboard Shortcuts — Launchers & Apps
+# ==============================================================================
 
 # App Launcher (Rofi)
 Mod4 space :Exec rofi -show drun -show-icons
@@ -13,22 +57,40 @@ Mod4 Return :Exec xterm
 Mod4 e :Exec pcmanfm
 
 # Installer (Calamares)
-Mod4 i :Exec pkexec calamares
+Mod4 i :Exec /usr/local/bin/hyggshi-launch-installer.sh
 
-# Window Navigation
+# ==============================================================================
+# 3. Window Control & Tiling Shortcuts (Quản lý cửa sổ)
+# ==============================================================================
+
+# Đóng / Phóng to / Thu nhỏ cửa sổ
+Mod1 F4 :Close
+Mod4 Up :Maximize
+Mod4 Down :Minimize
+
+# Tiling / Window snapping (chia nửa màn hình trái / phải)
+Mod4 Left :MacroCmd {SetGeometry 0 0 50% 100%}
+Mod4 Right :MacroCmd {SetGeometry 50% 0 50% 100%}
+
+# Chuyển đổi giữa các cửa sổ (Alt+Tab)
 Mod1 Tab :NextWindow {groups} (workspace=[current])
 Mod1 Shift Tab :PrevWindow {groups} (workspace=[current])
-Mod1 F4 :Close
 
-# Workspace Navigation
+# ==============================================================================
+# 4. Workspace Navigation
+# ==============================================================================
+
 Mod1 F1 :Workspace 1
 Mod1 F2 :Workspace 2
 Mod1 F3 :Workspace 3
 Mod1 F4 :Workspace 4
-Mod4 Left :PrevWorkspace
-Mod4 Right :NextWorkspace
+Control Mod4 Left :PrevWorkspace
+Control Mod4 Right :NextWorkspace
 
-# Volume Control (PulseAudio / PipeWire)
+# ==============================================================================
+# 5. Media & Sound Control
+# ==============================================================================
+
 None XF86AudioRaiseVolume :Exec pactl set-sink-volume @DEFAULT_SINK@ +5%
 None XF86AudioLowerVolume :Exec pactl set-sink-volume @DEFAULT_SINK@ -5%
 None XF86AudioMute :Exec pactl set-sink-mute @DEFAULT_SINK@ toggle
