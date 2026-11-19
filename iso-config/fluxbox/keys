@@ -1,16 +1,11 @@
 # Hyggshi OS Flex Edition — Keybindings & Mouse Actions (Slax-style)
+# Configuration chuẩn theo tiêu chuẩn Fluxbox (fluxbox-keys)
 
 # ==============================================================================
-# 1. Mouse Bindings for Window Management (Di chuyển, đổi cỡ, menu ngữ cảnh)
+# 1. Mouse Actions on Windows & Desktop
 # ==============================================================================
 
-# Nhấp chuột vào cửa sổ: Focus và đưa lên trên cùng (Raise)
-OnWindow Mouse1 :MacroCmd {Raise} {Focus}
-OnWindow Mod1 Mouse1 :MacroCmd {Raise} {Focus} {StartMoving}
-OnWindow Mod1 Mouse3 :MacroCmd {Raise} {Focus} {StartResizing NearestCorner}
-OnWindow Mod1 Mouse2 :Lower
-
-# Thanh tiêu đề (Titlebar): Di chuyển cửa sổ khi kéo chuột trái
+# Kéo thanh tiêu đề (Titlebar): Nhấp để Focus/Raise, kéo chuột trái để di chuyển
 OnTitlebar Mouse1 :MacroCmd {Raise} {Focus} {ActivateTab}
 OnTitlebar Move1 :StartMoving
 OnTitlebar Double Mouse1 :Maximize
@@ -19,21 +14,24 @@ OnTitlebar Mouse3 :WindowMenu
 OnTitlebar Mouse4 :PrevTab
 OnTitlebar Mouse5 :NextTab
 
-# Nút trên thanh tiêu đề (Minimize, Maximize, Close, Stick)
-OnTitlebar [Minimize] Mouse1 :Minimize
-OnTitlebar [Maximize] Mouse1 :Maximize
-OnTitlebar [Maximize] Mouse3 :MaximizeVertical
-OnTitlebar [Close] Mouse1 :Close
-OnTitlebar [Stick] Mouse1 :Stick
+# Giữ Control kéo thanh tiêu đề để nhóm cửa sổ vào tab
+OnTitlebar Control Mouse1 :StartTabbing
 
-# Kéo viền cửa sổ để đổi kích thước (Resize from borders & corners)
-OnWindowBorder Move1 :StartResizing NearestCorner
-OnLeftBorder Move1 :StartResizing Left
-OnRightBorder Move1 :StartResizing Right
-OnTopBorder Move1 :StartResizing Top
-OnBottomBorder Move1 :StartResizing Bottom
+# Giữ Alt + chuột trái ở bất kỳ đâu trên cửa sổ để di chuyển
+OnWindow Mod1 Mouse1 :MacroCmd {Raise} {Focus} {StartMoving}
 
-# Chuột trên màn hình Desktop (Mở context menu chuột phải / Menu danh sách workspace)
+# Giữ Alt + chuột phải ở bất kỳ đâu trên cửa sổ để đổi kích thước
+OnWindow Mod1 Mouse3 :MacroCmd {Raise} {Focus} {StartResizing NearestCorner}
+
+# Giữ Alt + chuột giữa để hạ cửa sổ xuống dưới
+OnWindow Mod1 Mouse2 :Lower
+
+# Kéo viền và góc cửa sổ để đổi kích thước
+OnWindowBorder Move1 :StartMoving
+OnLeftGrip Move1 :StartResizing bottomleft
+OnRightGrip Move1 :StartResizing bottomright
+
+# Chuột trên màn hình nền Desktop
 OnDesktop Mouse1 :HideMenus
 OnDesktop Mouse2 :WorkspaceMenu
 OnDesktop Mouse3 :RootMenu
@@ -56,11 +54,11 @@ Mod4 Return :Exec xterm
 # File Manager (PCManFM)
 Mod4 e :Exec pcmanfm
 
-# Installer (Calamares)
+# Live Installer
 Mod4 i :Exec /usr/local/bin/hyggshi-launch-installer.sh
 
 # ==============================================================================
-# 3. Window Control & Tiling Shortcuts (Quản lý cửa sổ)
+# 3. Window Control & Tiling Shortcuts
 # ==============================================================================
 
 # Đóng / Phóng to / Thu nhỏ cửa sổ
@@ -68,11 +66,11 @@ Mod1 F4 :Close
 Mod4 Up :Maximize
 Mod4 Down :Minimize
 
-# Tiling / Window snapping (chia nửa màn hình trái / phải)
+# Tiling / Window snapping (chia nửa màn hình)
 Mod4 Left :MacroCmd {SetGeometry 0 0 50% 100%}
 Mod4 Right :MacroCmd {SetGeometry 50% 0 50% 100%}
 
-# Chuyển đổi giữa các cửa sổ (Alt+Tab)
+# Chuyển đổi cửa sổ (Alt+Tab)
 Mod1 Tab :NextWindow {groups} (workspace=[current])
 Mod1 Shift Tab :PrevWindow {groups} (workspace=[current])
 

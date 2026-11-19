@@ -1,4 +1,5 @@
 # Tint2 configuration for Hyggshi OS Flex Edition (Slax-style)
+
 # Backgrounds
 # 1: Panel background
 rounded = 0
@@ -36,7 +37,7 @@ border_color = #7aa2f7 80
 background_color = #3b4261 80
 
 # Panel
-panel_items = LTSBC
+panel_items = P LTSBC
 panel_size = 100% 36
 panel_margin = 0 0
 panel_padding = 6 2 4
@@ -51,6 +52,18 @@ autohide_show_timeout = 0
 autohide_hide_timeout = 0
 autohide_height = 1
 strut_policy = follow_size
+
+# Button 1: Start Menu (Application Launcher)
+button = new
+button_icon = distributor-logo
+button_text = 
+button_tooltip = Applications (Rofi)
+button_lclick_command = rofi -show drun -show-icons
+button_rclick_command = rofi -show run
+button_padding = 4 2
+button_background_id = 0
+button_centered = 1
+button_max_icon_size = 24
 
 # Taskbar
 taskbar_mode = single_desktop
@@ -111,9 +124,9 @@ launcher_icon_asb = 100 0 0
 launcher_icon_theme_override = 0
 startup_notifications = 0
 launcher_tooltip = 1
-launcher_item_app = /usr/share/applications/hyggshi-rofi.desktop
 launcher_item_app = /usr/share/applications/xterm.desktop
 launcher_item_app = /usr/share/applications/pcmanfm.desktop
+launcher_item_app = /usr/share/applications/install-hyggshi-os.desktop
 launcher_item_app = /usr/share/applications/calamares.desktop
 
 # Clock
