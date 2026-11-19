@@ -1,5 +1,5 @@
-session.menuFile: /etc/X11/fluxbox/fluxbox-menu
-session.keyFile: /etc/X11/fluxbox/keys
+session.menuFile: ~/.fluxbox/menu
+session.keyFile: ~/.fluxbox/keys
 session.styleFile: /usr/share/fluxbox/styles/Hyggshi-Flex
 session.configVersion: 13
 session.screen0.toolbar.visible: false

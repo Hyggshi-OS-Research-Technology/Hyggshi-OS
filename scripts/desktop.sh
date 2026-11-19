@@ -704,10 +704,23 @@ case "$DE" in
 
   fluxbox|flex)
     echo "===== Cài đặt Hyggshi OS Flex Edition (Slax-style: Fluxbox + Tint2 + PCManFM + Rofi + Picom + xterm) ====="
-    apt-get install -y fluxbox tint2 pcmanfm rofi picom xterm lightdm lightdm-gtk-greeter \
-      x11-xserver-utils menu lxpolkit feh dbus-x11 network-manager-gnome 2>/dev/null || \
-    apt-get install -y fluxbox tint2 pcmanfm rofi picom xterm lightdm lightdm-gtk-greeter \
-      x11-xserver-utils menu lxpolkit feh dbus-x11
+    # Cài đầy đủ Xorg drivers (fbdev + vesa) để tránh màn hình đen trong QEMU/VM
+    apt-get install -y \
+      fluxbox tint2 pcmanfm rofi picom xterm \
+      xorg xserver-xorg xserver-xorg-core \
+      xserver-xorg-input-all xserver-xorg-video-all \
+      xserver-xorg-video-fbdev xserver-xorg-video-vesa \
+      x11-xserver-utils x11-utils \
+      lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
+      menu lxpolkit feh dbus-x11 \
+      network-manager-gnome \
+      at-spi2-core libglib2.0-bin 2>/dev/null || \
+    apt-get install -y \
+      fluxbox tint2 pcmanfm rofi picom xterm \
+      xorg xserver-xorg xserver-xorg-input-all \
+      xserver-xorg-video-fbdev xserver-xorg-video-vesa \
+      x11-xserver-utils lightdm lightdm-gtk-greeter \
+      menu lxpolkit feh dbus-x11
 
     if [ -f /tmp/desktop-fluxbox.sh ]; then
       echo "===== Chạy /tmp/desktop-fluxbox.sh (cấu hình môi trường Flex Edition) ====="
@@ -1947,6 +1960,13 @@ fi
 # user mặc định cho live session
 useradd -m -s /bin/bash -G sudo "$OS_USERNAME" || true
 [ -d "/home/$OS_USERNAME" ] && chown -R "$OS_USERNAME:$OS_USERNAME" "/home/$OS_USERNAME" 2>/dev/null || true
+
+# Đối với Fluxbox / Flex Edition: chạy lại desktop-fluxbox.sh để đồng bộ đầy đủ cấu hình vào /home/$OS_USERNAME
+if ([ "$DE" = "fluxbox" ] || [ "$DE" = "flex" ]) && [ -f /tmp/desktop-fluxbox.sh ]; then
+  echo "===== Đồng bộ cấu hình Flex Edition vào user '$OS_USERNAME' ====="
+  chmod +x /tmp/desktop-fluxbox.sh
+  /tmp/desktop-fluxbox.sh || true
+fi
 # BUG CŨ: khi DEBUG_MODE=true (set -x ở đầu file), lệnh chpasswd bên dưới
 # sẽ bị xtrace in thẳng "OS_USERNAME:OS_PASSWORD" ra install-debug.log —
 # log này được upload làm artifact (retention 14 ngày) -> lộ mật khẩu

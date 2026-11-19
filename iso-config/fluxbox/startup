@@ -1,50 +1,58 @@
 #!/bin/sh
-# Hyggshi OS Flex Edition (Slax-style) — Startup script
-# Window Manager: Fluxbox | Taskbar: Tint2 | Launcher: Rofi | Compositor: Picom | File Manager: PCManFM
+# Hyggshi OS Flex Edition (Slax-style) — Fluxbox Startup script
+# Window Manager: Fluxbox | Taskbar: Tint2 | Launcher: Rofi | Compositor: Picom | File Manager & Desktop: PCManFM
+# Chạy bởi startfluxbox (LightDM session hoặc startx)
 
-# 1. Screen auto-resolution
+# 1. Load .Xresources (màu xterm)
+[ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources" 2>/dev/null || true
+
+# 2. Tự động chỉnh độ phân giải màn hình
 if command -v xrandr >/dev/null 2>&1; then
   xrandr --auto 2>/dev/null || true
 fi
 
-# 2. Set Wallpaper (using feh, pcmanfm or fallback solid color)
-WALLPAPER="/usr/share/backgrounds/hyggshi/wallpaper.png"
-[ ! -f "$WALLPAPER" ] && WALLPAPER="/usr/share/backgrounds/Verdant-Valley.png"
-
-if [ -f "$WALLPAPER" ] && command -v feh >/dev/null 2>&1; then
-  feh --bg-fill "$WALLPAPER" 2>/dev/null &
-elif [ -f "$WALLPAPER" ] && command -v pcmanfm >/dev/null 2>&1; then
-  pcmanfm --set-wallpaper "$WALLPAPER" 2>/dev/null &
-else
-  xsetroot -solid "#1a1b26" 2>/dev/null || true
-fi
-
 # 3. Compositor (Picom)
 if command -v picom >/dev/null 2>&1; then
-  picom -b --config /etc/xdg/picom.conf 2>/dev/null || picom -b 2>/dev/null || true
+  picom -b --config /etc/xdg/picom.conf 2>/dev/null || picom -b --backend xrender 2>/dev/null || true
 fi
 
-# 4. Polkit authentication agent
+# 4. PCManFM quản lý Desktop (Wallpaper + Desktop Icons theo phong cách Slax)
+if command -v pcmanfm >/dev/null 2>&1; then
+  pcmanfm --desktop &
+else
+  # Fallback nếu pcmanfm chưa chạy: đặt hình nền bằng feh hoặc màu nền đơn
+  WALLPAPER="/usr/share/backgrounds/hyggshi/wallpaper.png"
+  [ ! -f "$WALLPAPER" ] && WALLPAPER="/usr/share/backgrounds/Verdant-Valley.png"
+  if [ -f "$WALLPAPER" ] && command -v feh >/dev/null 2>&1; then
+    feh --bg-fill "$WALLPAPER" 2>/dev/null &
+  else
+    xsetroot -solid "#1a1b26" 2>/dev/null || true
+  fi
+fi
+
+# 5. Polkit authentication agent
 if command -v lxpolkit >/dev/null 2>&1; then
   lxpolkit &
 elif command -v mate-polkit >/dev/null 2>&1; then
   mate-polkit &
+elif command -v /usr/lib/polkit-1/polkitd >/dev/null 2>&1; then
+  /usr/lib/polkit-1/polkitd &
 fi
 
-# 5. Network Manager applet (systray in tint2)
+# 6. Network Manager applet (systray trong tint2)
 if command -v nm-applet >/dev/null 2>&1; then
   nm-applet &
 fi
 
-# 6. Sound shortcut daemon if present
+# 7. Sound shortcut daemon nếu có
 if command -v hyggshi-sound-shortcut >/dev/null 2>&1; then
   hyggshi-sound-shortcut &
 fi
 
-# 7. Taskbar (Tint2)
+# 8. Taskbar (Tint2)
 if command -v tint2 >/dev/null 2>&1; then
   tint2 &
 fi
 
-# 8. Start Window Manager (Fluxbox)
+# 9. Start Window Manager (Fluxbox) — PHẢI là lệnh cuối cùng
 exec fluxbox

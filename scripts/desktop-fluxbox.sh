@@ -1,6 +1,6 @@
 #!/bin/bash
 # desktop-fluxbox.sh — configure Hyggshi OS Flex Edition (Slax-style)
-# Stack: Fluxbox (WM) + Tint2 (Taskbar) + PCManFM (File Manager) + Rofi (Launcher) + Picom (Compositor) + xterm
+# Stack: Fluxbox (WM) + Tint2 (Taskbar) + PCManFM (File Manager & Desktop) + Rofi (Launcher) + Picom (Compositor) + xterm
 # Runs as root inside chroot
 set -e
 [ "${DEBUG_MODE:-}" = "true" ] && set -x
@@ -9,7 +9,11 @@ say() { printf '===== %s =====\n' "$*"; }
 
 say "Cấu hình Hyggshi OS Flex Edition (Slax-style)"
 
-# 1. Tạo thư mục cấu hình hệ thống
+# 1. Dọn cấu hình xorg.conf cứng (để Xorg tự dò KMS/virtio/qxl/vesa/gpu thật)
+rm -f /etc/X11/xorg.conf.d/20-hyggshi-flex.conf \
+      /etc/X11/xorg.conf.d/21-hyggshi-flex-fallback.conf 2>/dev/null || true
+
+# 2. Tạo thư mục cấu hình hệ thống
 mkdir -p /etc/X11/fluxbox
 mkdir -p /usr/share/fluxbox/styles
 mkdir -p /etc/xdg/tint2
@@ -17,28 +21,41 @@ mkdir -p /etc/rofi
 mkdir -p /etc/xdg/picom
 mkdir -p /etc/xdg/pcmanfm/default
 mkdir -p /usr/share/backgrounds/hyggshi
+mkdir -p /usr/share/xsessions
+mkdir -p /usr/share/applications
 
-# 2. Copy cấu hình từ staged source (/tmp/hcl-filecopy-src) nếu có
+# 3. Copy cấu hình từ staged source (/tmp/hcl-filecopy-src) nếu có
 FLUX_SRC="/tmp/hcl-filecopy-src/iso-config/fluxbox"
 if [ -d "$FLUX_SRC" ]; then
-  [ -f "$FLUX_SRC/init" ] && cp -f "$FLUX_SRC/init" /etc/X11/fluxbox/init
-  [ -f "$FLUX_SRC/menu" ] && cp -f "$FLUX_SRC/menu" /etc/X11/fluxbox/fluxbox-menu
-  [ -f "$FLUX_SRC/keys" ] && cp -f "$FLUX_SRC/keys" /etc/X11/fluxbox/keys
-  [ -f "$FLUX_SRC/startup" ] && cp -f "$FLUX_SRC/startup" /etc/X11/fluxbox/startup
-  [ -f "$FLUX_SRC/tint2rc" ] && cp -f "$FLUX_SRC/tint2rc" /etc/xdg/tint2/tint2rc
-  [ -f "$FLUX_SRC/rofi.rasi" ] && cp -f "$FLUX_SRC/rofi.rasi" /etc/rofi/config.rasi
-  [ -f "$FLUX_SRC/picom.conf" ] && cp -f "$FLUX_SRC/picom.conf" /etc/xdg/picom.conf
-  [ -f "$FLUX_SRC/pcmanfm.conf" ] && cp -f "$FLUX_SRC/pcmanfm.conf" /etc/xdg/pcmanfm/default/pcmanfm.conf
+  [ -f "$FLUX_SRC/init" ]                  && cp -f "$FLUX_SRC/init"                  /etc/X11/fluxbox/init
+  [ -f "$FLUX_SRC/menu" ]                  && cp -f "$FLUX_SRC/menu"                  /etc/X11/fluxbox/fluxbox-menu
+  [ -f "$FLUX_SRC/keys" ]                  && cp -f "$FLUX_SRC/keys"                  /etc/X11/fluxbox/keys
+  [ -f "$FLUX_SRC/startup" ]               && cp -f "$FLUX_SRC/startup"               /etc/X11/fluxbox/startup
+  [ -f "$FLUX_SRC/tint2rc" ]               && cp -f "$FLUX_SRC/tint2rc"               /etc/xdg/tint2/tint2rc
+  [ -f "$FLUX_SRC/rofi.rasi" ]             && cp -f "$FLUX_SRC/rofi.rasi"             /etc/rofi/config.rasi
+  [ -f "$FLUX_SRC/picom.conf" ]            && cp -f "$FLUX_SRC/picom.conf"            /etc/xdg/picom.conf
+  [ -f "$FLUX_SRC/pcmanfm.conf" ]          && cp -f "$FLUX_SRC/pcmanfm.conf"          /etc/xdg/pcmanfm/default/pcmanfm.conf
+  [ -f "$FLUX_SRC/desktop-items-0.conf" ]  && cp -f "$FLUX_SRC/desktop-items-0.conf"  /etc/xdg/pcmanfm/default/desktop-items-0.conf
   if [ -d "$FLUX_SRC/styles" ]; then
     cp -rf "$FLUX_SRC/styles/"* /usr/share/fluxbox/styles/ 2>/dev/null || true
   fi
 fi
 
-# Đảm bảo startup có quyền thực thi
+# Đảm bảo startup hệ thống có quyền thực thi
 [ -f /etc/X11/fluxbox/startup ] && chmod 0755 /etc/X11/fluxbox/startup
 
-# 3. Tạo desktop entry cho Rofi để launcher trên Tint2 hoạt động
-mkdir -p /usr/share/applications
+# 4. Sao chép hình nền vào hệ thống
+for wp in /tmp/hcl-filecopy-src/iso-config/branding/wallpaper.png \
+          /tmp/hcl-filecopy-src/iso-config/branding/Verdant-Valley.png \
+          /usr/share/backgrounds/Verdant-Valley.png; do
+  if [ -f "$wp" ] && [ ! -f /usr/share/backgrounds/hyggshi/wallpaper.png ]; then
+    cp -f "$wp" /usr/share/backgrounds/hyggshi/wallpaper.png
+    echo "OK: wallpaper sao chép từ $wp"
+    break
+  fi
+done
+
+# 5. Tạo desktop entry cho Rofi launcher và đảm bảo xterm.desktop / calamares.desktop cho Tint2 launcher
 cat <<'EOF' > /usr/share/applications/hyggshi-rofi.desktop
 [Desktop Entry]
 Type=Application
@@ -53,18 +70,27 @@ StartupNotify=false
 EOF
 chmod 0644 /usr/share/applications/hyggshi-rofi.desktop
 
-# 4. Sao chép hình nền vào hệ thống
-for wp in /tmp/hcl-filecopy-src/iso-config/branding/wallpaper.png \
-          /tmp/hcl-filecopy-src/iso-config/branding/Verdant-Valley.png \
-          /usr/share/backgrounds/Verdant-Valley.png; do
-  if [ -f "$wp" ] && [ ! -f /usr/share/backgrounds/hyggshi/wallpaper.png ]; then
-    cp -f "$wp" /usr/share/backgrounds/hyggshi/wallpaper.png
-    break
-  fi
-done
+if [ -f /usr/share/applications/debian-xterm.desktop ] && [ ! -f /usr/share/applications/xterm.desktop ]; then
+  ln -sf debian-xterm.desktop /usr/share/applications/xterm.desktop
+elif [ ! -f /usr/share/applications/xterm.desktop ]; then
+  cat <<'EOF' > /usr/share/applications/xterm.desktop
+[Desktop Entry]
+Name=XTerm
+Comment=standard terminal emulator for the X Window System
+Exec=xterm
+Terminal=false
+Type=Application
+Icon=xterm-color
+Categories=System;TerminalEmulator;
+EOF
+  chmod 0644 /usr/share/applications/xterm.desktop
+fi
 
-# 5. Cấu hình session desktop cho display manager (LightDM)
-mkdir -p /usr/share/xsessions
+if [ -f /usr/share/applications/io.calamares.calamares.desktop ] && [ ! -f /usr/share/applications/calamares.desktop ]; then
+  ln -sf io.calamares.calamares.desktop /usr/share/applications/calamares.desktop
+fi
+
+# 6. Cấu hình session desktop cho LightDM
 cat <<'EOF' > /usr/share/xsessions/fluxbox.desktop
 [Desktop Entry]
 Name=Fluxbox
@@ -78,32 +104,68 @@ SessionManaged=true
 EOF
 chmod 0644 /usr/share/xsessions/fluxbox.desktop
 
-# 6. Cấu hình skeleton (/etc/skel)
+# 7. Cấu hình LightDM
+mkdir -p /etc/lightdm/lightdm.conf.d
+cat <<'EOF' > /etc/lightdm/lightdm.conf.d/50-fluxbox.conf
+[Seat:*]
+user-session=fluxbox
+greeter-session=lightdm-gtk-greeter
+EOF
+
+# 8. Cấu hình skeleton (/etc/skel) — áp dụng cho mọi user mới tạo
 mkdir -p /etc/skel/.fluxbox
-for f in init menu keys startup; do
-  if [ -f "/etc/X11/fluxbox/$f" ]; then
-    cp -f "/etc/X11/fluxbox/$f" "/etc/skel/.fluxbox/$f"
-  elif [ -f "/etc/X11/fluxbox/fluxbox-$f" ]; then
-    cp -f "/etc/X11/fluxbox/fluxbox-$f" "/etc/skel/.fluxbox/$f"
-  fi
-done
+mkdir -p /etc/skel/.config/tint2
+mkdir -p /etc/skel/.config/rofi
+mkdir -p /etc/skel/.config/picom
+mkdir -p /etc/skel/.config/pcmanfm/default
+mkdir -p /etc/skel/Desktop
+
+# Copy các file của Fluxbox vào skel
+[ -f /etc/X11/fluxbox/init ]          && cp -f /etc/X11/fluxbox/init          /etc/skel/.fluxbox/init
+[ -f /etc/X11/fluxbox/fluxbox-menu ]  && cp -f /etc/X11/fluxbox/fluxbox-menu  /etc/skel/.fluxbox/menu
+[ -f /etc/X11/fluxbox/menu ]          && cp -f /etc/X11/fluxbox/menu          /etc/skel/.fluxbox/menu
+[ -f /etc/X11/fluxbox/keys ]          && cp -f /etc/X11/fluxbox/keys          /etc/skel/.fluxbox/keys
+[ -f /etc/X11/fluxbox/startup ]       && cp -f /etc/X11/fluxbox/startup       /etc/skel/.fluxbox/startup
+
+# Đảm bảo /etc/skel/.fluxbox/startup luôn tồn tại và có quyền thực thi
+if [ ! -f /etc/skel/.fluxbox/startup ] && [ -f "$FLUX_SRC/startup" ]; then
+  cp -f "$FLUX_SRC/startup" /etc/skel/.fluxbox/startup
+fi
 [ -f /etc/skel/.fluxbox/startup ] && chmod 0755 /etc/skel/.fluxbox/startup
 
+# Đảm bảo /etc/skel/.fluxbox/init luôn tồn tại và tắt toolbar fluxbox mặc định
+if [ ! -f /etc/skel/.fluxbox/init ]; then
+  cat <<'EOF' > /etc/skel/.fluxbox/init
+session.menuFile: ~/.fluxbox/menu
+session.keyFile: ~/.fluxbox/keys
+session.styleFile: /usr/share/fluxbox/styles/Hyggshi-Flex
+session.configVersion: 13
+session.screen0.toolbar.visible: false
+session.screen0.toolbar.autoHide: false
+session.screen0.workspaces: 4
+session.screen0.workspaceNames: 1, 2, 3, 4
+session.screen0.focusModel: ClickToFocus
+session.screen0.window.focus.alpha: 255
+session.screen0.window.unfocus.alpha: 200
+session.screen0.titlebar.left: Stick
+session.screen0.titlebar.right: Minimize Maximize Close
+EOF
+fi
+
 # Tint2 user skeleton
-mkdir -p /etc/skel/.config/tint2
 [ -f /etc/xdg/tint2/tint2rc ] && cp -f /etc/xdg/tint2/tint2rc /etc/skel/.config/tint2/tint2rc
 
 # Rofi user skeleton
-mkdir -p /etc/skel/.config/rofi
 [ -f /etc/rofi/config.rasi ] && cp -f /etc/rofi/config.rasi /etc/skel/.config/rofi/config.rasi
 
 # Picom user skeleton
-mkdir -p /etc/skel/.config/picom
 [ -f /etc/xdg/picom.conf ] && cp -f /etc/xdg/picom.conf /etc/skel/.config/picom/picom.conf
 
-# PCManFM user skeleton
-mkdir -p /etc/skel/.config/pcmanfm/default
-[ -f /etc/xdg/pcmanfm/default/pcmanfm.conf ] && cp -f /etc/xdg/pcmanfm/default/pcmanfm.conf /etc/skel/.config/pcmanfm/default/pcmanfm.conf
+# PCManFM user skeleton (cấu hình desktop + wallpaper)
+[ -f /etc/xdg/pcmanfm/default/pcmanfm.conf ] && \
+  cp -f /etc/xdg/pcmanfm/default/pcmanfm.conf /etc/skel/.config/pcmanfm/default/pcmanfm.conf
+[ -f /etc/xdg/pcmanfm/default/desktop-items-0.conf ] && \
+  cp -f /etc/xdg/pcmanfm/default/desktop-items-0.conf /etc/skel/.config/pcmanfm/default/desktop-items-0.conf
 
 # xterm user skeleton (.Xresources)
 cat <<'EOF' > /etc/skel/.Xresources
@@ -136,8 +198,7 @@ EOF
 mkdir -p /etc/X11/app-defaults
 cp -f /etc/skel/.Xresources /etc/X11/app-defaults/XTerm-color 2>/dev/null || true
 
-# 7. Desktop icon cho Calamares Live Installer
-mkdir -p /etc/skel/Desktop
+# Calamares Live Installer icon trên Desktop
 cat <<'EOF' > /etc/skel/Desktop/calamares.desktop
 [Desktop Entry]
 Type=Application
@@ -152,7 +213,15 @@ Categories=System;
 EOF
 chmod 0755 /etc/skel/Desktop/calamares.desktop
 
-# 8. Sao chép vào user live hiện tại nếu đã tạo
+# xinitrc fallback
+cat <<'EOF' > /etc/skel/.xinitrc
+#!/bin/sh
+[ -f ~/.fluxbox/startup ] && exec ~/.fluxbox/startup
+exec fluxbox
+EOF
+chmod 0755 /etc/skel/.xinitrc
+
+# 9. Sao chép trực tiếp vào user live ($OS_USERNAME) nếu đã được tạo
 if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
   USER_HOME=$(getent passwd "$OS_USERNAME" | cut -d: -f6)
   if [ -d "$USER_HOME" ]; then
@@ -162,14 +231,28 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
              "$USER_HOME/.config/picom" \
              "$USER_HOME/.config/pcmanfm/default" \
              "$USER_HOME/Desktop"
-    cp -rf /etc/skel/.fluxbox/* "$USER_HOME/.fluxbox/" 2>/dev/null || true
-    cp -f /etc/skel/.Xresources "$USER_HOME/.Xresources" 2>/dev/null || true
-    cp -f /etc/skel/.config/tint2/* "$USER_HOME/.config/tint2/" 2>/dev/null || true
-    cp -f /etc/skel/.config/rofi/* "$USER_HOME/.config/rofi/" 2>/dev/null || true
-    cp -f /etc/skel/.config/picom/* "$USER_HOME/.config/picom/" 2>/dev/null || true
-    cp -f /etc/skel/.config/pcmanfm/default/* "$USER_HOME/.config/pcmanfm/default/" 2>/dev/null || true
-    cp -f /etc/skel/Desktop/* "$USER_HOME/Desktop/" 2>/dev/null || true
-    chown -R "$OS_USERNAME:$OS_USERNAME" "$USER_HOME/.fluxbox" "$USER_HOME/.config" "$USER_HOME/Desktop" "$USER_HOME/.Xresources" 2>/dev/null || true
+    cp -rf /etc/skel/.fluxbox/. "$USER_HOME/.fluxbox/" 2>/dev/null || true
+    [ -f /etc/skel/.Xresources ] && cp -f /etc/skel/.Xresources "$USER_HOME/.Xresources" 2>/dev/null || true
+    [ -f /etc/skel/.xinitrc ] && cp -f /etc/skel/.xinitrc "$USER_HOME/.xinitrc" 2>/dev/null || true
+    [ -f /etc/skel/.config/tint2/tint2rc ] && cp -f /etc/skel/.config/tint2/tint2rc "$USER_HOME/.config/tint2/tint2rc" 2>/dev/null || true
+    [ -f /etc/skel/.config/rofi/config.rasi ] && cp -f /etc/skel/.config/rofi/config.rasi "$USER_HOME/.config/rofi/config.rasi" 2>/dev/null || true
+    [ -f /etc/skel/.config/picom/picom.conf ] && cp -f /etc/skel/.config/picom/picom.conf "$USER_HOME/.config/picom/picom.conf" 2>/dev/null || true
+    [ -f /etc/skel/.config/pcmanfm/default/pcmanfm.conf ] && \
+      cp -f /etc/skel/.config/pcmanfm/default/pcmanfm.conf "$USER_HOME/.config/pcmanfm/default/pcmanfm.conf" 2>/dev/null || true
+    [ -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf ] && \
+      cp -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf "$USER_HOME/.config/pcmanfm/default/desktop-items-0.conf" 2>/dev/null || true
+    [ -f /etc/skel/Desktop/calamares.desktop ] && cp -f /etc/skel/Desktop/calamares.desktop "$USER_HOME/Desktop/" 2>/dev/null || true
+    
+    [ -f "$USER_HOME/.fluxbox/startup" ] && chmod 0755 "$USER_HOME/.fluxbox/startup"
+    [ -f "$USER_HOME/Desktop/calamares.desktop" ] && chmod 0755 "$USER_HOME/Desktop/calamares.desktop"
+    
+    chown -R "$OS_USERNAME:$OS_USERNAME" \
+      "$USER_HOME/.fluxbox" \
+      "$USER_HOME/.config" \
+      "$USER_HOME/Desktop" \
+      "$USER_HOME/.Xresources" \
+      "$USER_HOME/.xinitrc" 2>/dev/null || true
+    echo "OK: đã sao chép cấu hình Fluxbox/Tint2/PCManFM vào $USER_HOME"
   fi
 fi
 
