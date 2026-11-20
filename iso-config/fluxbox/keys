@@ -26,10 +26,10 @@ OnWindow Mod1 Mouse3 :MacroCmd {Raise} {Focus} {StartResizing NearestCorner}
 # Giữ Alt + chuột giữa để hạ cửa sổ xuống dưới
 OnWindow Mod1 Mouse2 :Lower
 
-# Kéo viền và góc cửa sổ để đổi kích thước
-OnWindowBorder Move1 :StartMoving
-OnLeftGrip Move1 :StartResizing bottomleft
-OnRightGrip Move1 :StartResizing bottomright
+# Kéo viền và góc cửa sổ (grips) để đổi kích thước (Resize window)
+OnWindowBorder Move1 :StartResizing NearestCornerOrEdge
+OnLeftGrip Move1 :StartResizing BottomLeft
+OnRightGrip Move1 :StartResizing BottomRight
 
 # Chuột trên màn hình nền Desktop
 OnDesktop Mouse1 :HideMenus

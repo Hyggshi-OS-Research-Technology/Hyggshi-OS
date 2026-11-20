@@ -407,9 +407,12 @@ printf "%s \\n \\l\n\n" "$ISSUE_TITLE" | sudo tee "$CHROOT/etc/issue" > /dev/nul
 echo "Welcome to $MOTD_TITLE — built on $DISTRO_LABEL" | sudo tee "$CHROOT/etc/motd" > /dev/null
 
 echo "===== Distributor logo (GNOME, XFCE, Cinnamon, system info, pixmaps) ====="
-# 1. Ưu tiên file logo có sẵn trong repo (checkout local, không phân biệt hoa/thường)
-LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \
-  \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.svg" \) 2>/dev/null | head -n1)
+# 1. Ưu tiên file logo PNG có sẵn trong repo (tránh dùng SVG vì ImageMagick thiếu librsvg delegate sẽ convert thành ô vuông trắng)
+LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.png" 2>/dev/null | head -n1)
+if [ -z "$LOGO_FILE" ]; then
+  LOGO_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.*" \
+    \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null | head -n1)
+fi
 LOGO_SVG_FILE=$(find iso-config/branding -maxdepth 1 -iname "logo.svg" 2>/dev/null | head -n1)
 
 # 2. Nếu không có, tải trực tiếp từ link người dùng dán vào ($LOGO_URL, xem workflow input "logo_url")
@@ -424,7 +427,7 @@ if [ -z "$LOGO_FILE" ] && [ -n "$LOGO_URL" ]; then
 fi
 
 if [ -n "$LOGO_FILE" ]; then
-  sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+  sudo apt-get install -y imagemagick librsvg2-bin > /dev/null 2>&1 || true
   if ! command -v convert > /dev/null 2>&1; then
     echo "⚠️  imagemagick không cài được — bỏ qua đổi distributor logo."
   else
@@ -590,7 +593,7 @@ echo "===== Calamares: đổi logo sidebar (branding.desc) ====="
 # branding của calamares đã tồn tại sẵn để ghi đè.
 CALAMARES_SETTINGS="$CHROOT/etc/calamares/settings.conf"
 if [ -n "$LOGO_FILE" ] && [ -f "$CALAMARES_SETTINGS" ]; then
-  sudo apt-get install -y imagemagick > /dev/null 2>&1 || true
+  sudo apt-get install -y imagemagick librsvg2-bin > /dev/null 2>&1 || true
   if ! command -v convert > /dev/null 2>&1; then
     echo "⚠️  imagemagick không cài được — bỏ qua đổi logo sidebar Calamares."
   else

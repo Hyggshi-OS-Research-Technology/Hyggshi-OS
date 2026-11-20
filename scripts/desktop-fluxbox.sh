@@ -165,6 +165,7 @@ session.screen0.toolbar.autoHide: false
 session.screen0.workspaces: 4
 session.screen0.workspaceNames: 1, 2, 3, 4
 session.screen0.focusModel: ClickToFocus
+session.screen0.defaultDeco: NORMAL
 session.screen0.window.focus.alpha: 255
 session.screen0.window.unfocus.alpha: 200
 session.screen0.titlebar.left: Stick
@@ -238,6 +239,16 @@ Categories=System;
 EOF
 fi
 chmod 0755 /etc/skel/Desktop/install-hyggshi-os.desktop 2>/dev/null || true
+mkdir -p /usr/share/applications
+cp -f /etc/skel/Desktop/install-hyggshi-os.desktop /usr/share/applications/install-hyggshi-os.desktop
+chmod 0644 /usr/share/applications/install-hyggshi-os.desktop 2>/dev/null || true
+
+# Đảm bảo icon hyggshi-installer có mặt ở cả hicolor và pixmaps
+if [ -f /tmp/hcl-filecopy-src/iso-config/branding/Hyggshi-OS-Installer.png ]; then
+  mkdir -p /usr/share/icons/hicolor/256x256/apps /usr/share/pixmaps
+  cp -f /tmp/hcl-filecopy-src/iso-config/branding/Hyggshi-OS-Installer.png /usr/share/icons/hicolor/256x256/apps/hyggshi-installer.png 2>/dev/null || true
+  cp -f /tmp/hcl-filecopy-src/iso-config/branding/Hyggshi-OS-Installer.png /usr/share/pixmaps/hyggshi-installer.png 2>/dev/null || true
+fi
 
 # xinitrc fallback
 cat <<'EOF' > /etc/skel/.xinitrc

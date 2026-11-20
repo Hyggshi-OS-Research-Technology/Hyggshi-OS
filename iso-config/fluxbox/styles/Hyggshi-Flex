@@ -46,6 +46,8 @@ window.label.unfocus.color: #1a1b26
 window.label.unfocus.textColor: #565f89
 window.label.unfocus.font: sans-9
 
+window.handleWidth: 7
+
 window.handle.focus: flat
 window.handle.focus.color: #24283b
 window.handle.unfocus: flat
