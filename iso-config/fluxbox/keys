@@ -1,11 +1,11 @@
 # Hyggshi OS Flex Edition — Keybindings & Mouse Actions (Slax-style)
-# Configuration chuẩn theo tiêu chuẩn Fluxbox (fluxbox-keys)
+# Standard Fluxbox configuration (fluxbox-keys)
 
 # ==============================================================================
 # 1. Mouse Actions on Windows & Desktop
 # ==============================================================================
 
-# Kéo thanh tiêu đề (Titlebar): Nhấp để Focus/Raise, kéo chuột trái để di chuyển
+# Titlebar: click to Focus/Raise, drag with left button to move
 OnTitlebar Mouse1 :MacroCmd {Raise} {Focus} {ActivateTab}
 OnTitlebar Move1 :StartMoving
 OnTitlebar Double Mouse1 :Maximize
@@ -14,24 +14,24 @@ OnTitlebar Mouse3 :WindowMenu
 OnTitlebar Mouse4 :PrevTab
 OnTitlebar Mouse5 :NextTab
 
-# Giữ Control kéo thanh tiêu đề để nhóm cửa sổ vào tab
+# Hold Control and drag the titlebar to group windows into tabs
 OnTitlebar Control Mouse1 :StartTabbing
 
-# Giữ Alt + chuột trái ở bất kỳ đâu trên cửa sổ để di chuyển
+# Hold Alt + left click anywhere on a window to move it
 OnWindow Mod1 Mouse1 :MacroCmd {Raise} {Focus} {StartMoving}
 
-# Giữ Alt + chuột phải ở bất kỳ đâu trên cửa sổ để đổi kích thước
+# Hold Alt + right click anywhere on a window to resize it
 OnWindow Mod1 Mouse3 :MacroCmd {Raise} {Focus} {StartResizing NearestCorner}
 
-# Giữ Alt + chuột giữa để hạ cửa sổ xuống dưới
+# Hold Alt + middle click to lower the window
 OnWindow Mod1 Mouse2 :Lower
 
-# Kéo viền và góc cửa sổ (grips) để đổi kích thước (Resize window)
+# Drag window borders and corners (grips) to resize
 OnWindowBorder Move1 :StartResizing NearestCornerOrEdge
 OnLeftGrip Move1 :StartResizing BottomLeft
 OnRightGrip Move1 :StartResizing BottomRight
 
-# Chuột trên màn hình nền Desktop
+# Mouse on the Desktop background
 OnDesktop Mouse1 :HideMenus
 OnDesktop Mouse2 :WorkspaceMenu
 OnDesktop Mouse3 :RootMenu
@@ -44,33 +44,51 @@ OnDesktop Mouse5 :NextWorkspace
 
 # App Launcher (Rofi)
 Mod4 space :Exec rofi -show drun -show-icons
+Mod1 F2 :Exec rofi -show run
 Mod4 d :Exec rofi -show run
 Mod4 r :Exec rofi -show run
+
+# Switch windows with Rofi (list of all open windows)
+Mod4 w :Exec rofi -show window -show-icons
 
 # Terminal (xterm)
 Mod4 t :Exec xterm
 Mod4 Return :Exec xterm
+Control Mod1 t :Exec xterm
 
 # File Manager (PCManFM)
 Mod4 e :Exec pcmanfm
 
+# Web browser
+Mod4 b :Exec x-www-browser
+
+# Task manager (Ctrl+Shift+Esc)
+Control Shift Escape :Exec xterm -e sh -c 'htop || top'
+
 # Live Installer
 Mod4 i :Exec /usr/local/bin/hyggshi-launch-installer.sh
+
+# Help: keyboard shortcuts cheat sheet
+Mod4 F1 :Exec hyggshi-help
+Mod4 slash :Exec hyggshi-help
 
 # ==============================================================================
 # 3. Window Control & Tiling Shortcuts
 # ==============================================================================
 
-# Đóng / Phóng to / Thu nhỏ cửa sổ
+# Close / Maximize / Minimize window
 Mod1 F4 :Close
+Mod4 q :Close
+Mod1 space :WindowMenu
+Mod4 f :Fullscreen
 Mod4 Up :Maximize
 Mod4 Down :Minimize
 
-# Tiling / Window snapping (chia nửa màn hình)
+# Tiling / Window snapping (half-screen split)
 Mod4 Left :MacroCmd {SetGeometry 0 0 50% 100%}
 Mod4 Right :MacroCmd {SetGeometry 50% 0 50% 100%}
 
-# Chuyển đổi cửa sổ (Alt+Tab)
+# Window switching (Alt+Tab)
 Mod1 Tab :NextWindow {groups} (workspace=[current])
 Mod1 Shift Tab :PrevWindow {groups} (workspace=[current])
 
@@ -78,12 +96,26 @@ Mod1 Shift Tab :PrevWindow {groups} (workspace=[current])
 # 4. Workspace Navigation
 # ==============================================================================
 
-Mod1 F1 :Workspace 1
-Mod1 F2 :Workspace 2
-Mod1 F3 :Workspace 3
-Mod1 F4 :Workspace 4
+# (Alt+F2/F4 are reserved for Run/Close, so use Super+number to switch workspace)
+Mod4 1 :Workspace 1
+Mod4 2 :Workspace 2
+Mod4 3 :Workspace 3
+Mod4 4 :Workspace 4
+Control F1 :Workspace 1
+Control F2 :Workspace 2
+Control F3 :Workspace 3
+Control F4 :Workspace 4
 Control Mod4 Left :PrevWorkspace
 Control Mod4 Right :NextWorkspace
+
+# Send the current window to another workspace
+Mod4 Shift 1 :TakeToWorkspace 1
+Mod4 Shift 2 :TakeToWorkspace 2
+Mod4 Shift 3 :TakeToWorkspace 3
+Mod4 Shift 4 :TakeToWorkspace 4
+
+# Show desktop (minimize/restore all windows)
+Mod4 Shift d :ShowDesktop
 
 # ==============================================================================
 # 5. Media & Sound Control
@@ -92,3 +124,31 @@ Control Mod4 Right :NextWorkspace
 None XF86AudioRaiseVolume :Exec pactl set-sink-volume @DEFAULT_SINK@ +5%
 None XF86AudioLowerVolume :Exec pactl set-sink-volume @DEFAULT_SINK@ -5%
 None XF86AudioMute :Exec pactl set-sink-mute @DEFAULT_SINK@ toggle
+None XF86AudioMicMute :Exec pactl set-source-mute @DEFAULT_SOURCE@ toggle
+None XF86AudioPlay :Exec playerctl play-pause
+None XF86AudioNext :Exec playerctl next
+None XF86AudioPrev :Exec playerctl previous
+
+# ==============================================================================
+# 6. Display, screenshots, lock, power
+# ==============================================================================
+
+# Screen brightness (laptop)
+None XF86MonBrightnessUp :Exec hyggshi-brightness up
+None XF86MonBrightnessDown :Exec hyggshi-brightness down
+
+# Screenshot: Print = full screen, Ctrl+Print = select area, Alt+Print = current window
+None Print :Exec hyggshi-screenshot full
+Control Print :Exec hyggshi-screenshot area
+Mod1 Print :Exec hyggshi-screenshot window
+
+# Lock screen
+Mod4 l :Exec hyggshi-lock
+None XF86ScreenSaver :Exec hyggshi-lock
+
+# Power menu: Shutdown / Reboot / Suspend / Logout
+Control Mod1 Delete :Exec hyggshi-powermenu
+None XF86PowerOff :Exec hyggshi-powermenu
+
+# Desktop right-click menu from the keyboard
+Mod4 m :RootMenu

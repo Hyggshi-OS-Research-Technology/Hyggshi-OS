@@ -1,0 +1,33 @@
+#!/bin/sh
+# Usage: hyggshi-screenshot [full|area|window]
+MODE="${1:-full}"
+DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+mkdir -p "$DIR"
+FILE="$DIR/screenshot-$(date +%Y%m%d-%H%M%S).png"
+
+if command -v scrot >/dev/null 2>&1; then
+  case "$MODE" in
+    area)   scrot -s "$FILE" ;;
+    window) scrot -u "$FILE" ;;
+    *)      scrot "$FILE" ;;
+  esac
+elif command -v maim >/dev/null 2>&1; then
+  case "$MODE" in
+    area)   maim -s "$FILE" ;;
+    window) maim -i "$(xdotool getactivewindow)" "$FILE" ;;
+    *)      maim "$FILE" ;;
+  esac
+elif command -v import >/dev/null 2>&1; then
+  case "$MODE" in
+    area) import "$FILE" ;;
+    *)    import -window root "$FILE" ;;
+  esac
+else
+  notify-send "Hyggshi OS" "Install scrot (or maim / imagemagick) to take screenshots" 2>/dev/null
+  exit 1
+fi
+
+[ -f "$FILE" ] && notify-send "Screenshot saved" "$FILE" 2>/dev/null
+# Copy to clipboard if xclip is available
+[ -f "$FILE" ] && command -v xclip >/dev/null 2>&1 && xclip -selection clipboard -t image/png -i "$FILE"
+exit 0

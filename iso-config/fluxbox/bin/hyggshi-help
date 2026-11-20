@@ -1,0 +1,26 @@
+#!/bin/sh
+# Show the main keyboard shortcuts
+TEXT="Hyggshi OS Flex — Keyboard shortcuts (Super = Windows key)
+
+Super+Space / Alt+F2   Open apps (Rofi)
+Super+T / Ctrl+Alt+T   Terminal
+Super+E                File manager
+Super+B                Web browser
+Super+W                Window list
+Super+L                Lock screen
+Ctrl+Alt+Del           Power menu (shutdown/reboot/logout)
+Ctrl+Shift+Esc         Task manager
+Print / Ctrl+Print     Screenshot full screen / select area
+Alt+Tab                Switch windows
+Alt+F4 / Super+Q       Close window
+Super+↑ / ↓            Maximize / Minimize
+Super+← / →            Split screen in half
+Super+1..4             Switch workspace (add Shift: move window there)
+Alt+Left/Right click    Move / resize window
+Right-click desktop     Main menu
+Super+I                Install Hyggshi OS"
+if command -v rofi >/dev/null 2>&1; then
+  rofi -e "$TEXT"
+else
+  xmessage -center "$TEXT"
+fi

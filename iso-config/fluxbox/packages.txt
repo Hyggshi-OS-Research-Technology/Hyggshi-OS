@@ -1,0 +1,16 @@
+# Debian packages needed in the Hyggshi OS Flex ISO for this config to work fully
+# --- Core (already in use) ---
+fluxbox tint2 rofi picom pcmanfm xterm feh lxpolkit nm-applet pasystray gsimplecal
+# --- New additions ---
+dunst libnotify-bin          # notifications (notify-send)
+udiskie                      # auto-mount USB
+light-locker i3lock          # screen lock (with fallback)
+scrot xclip                  # screenshots + clipboard
+brightnessctl                # laptop brightness
+playerctl                    # media keys
+numlockx htop                # utilities
+arandr lxappearance pavucontrol network-manager-gnome blueman
+dex xdg-user-dirs            # XDG autostart + user directories
+fonts-noto fonts-noto-color-emoji papirus-icon-theme
+x11-xserver-utils            # xrandr, xset, xrdb
+fcitx5 fcitx5-config-qt      # input method (or your NexKey)

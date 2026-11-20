@@ -1,63 +1,105 @@
 #!/bin/sh
 # Hyggshi OS Flex Edition (Slax-style) — Fluxbox Startup script
 # Window Manager: Fluxbox | Taskbar: Tint2 | Launcher: Rofi | Compositor: Picom | File Manager & Desktop: PCManFM
-# Chạy bởi startfluxbox (LightDM session hoặc startx)
+# Run by startfluxbox (LightDM session or startx)
 
-# 1. Load .Xresources (màu xterm)
-[ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources" 2>/dev/null || true
+have() { command -v "$1" >/dev/null 2>&1; }
 
-# 2. Tự động chỉnh độ phân giải màn hình
-if command -v xrandr >/dev/null 2>&1; then
-  xrandr --auto 2>/dev/null || true
+# 0. Basic environment (language, user directories)
+export XDG_CURRENT_DESKTOP=Fluxbox
+export XDG_SESSION_DESKTOP=fluxbox
+have xdg-user-dirs-update && xdg-user-dirs-update 2>/dev/null &
+
+# 1. Load .Xresources (xterm colors, font, copy/paste)
+if [ -f "$HOME/.Xresources" ]; then
+  xrdb -merge "$HOME/.Xresources" 2>/dev/null || true
+elif [ -f /etc/xdg/hyggshi/Xresources ]; then
+  xrdb -merge /etc/xdg/hyggshi/Xresources 2>/dev/null || true
 fi
 
-# 3. Compositor (Picom)
-if command -v picom >/dev/null 2>&1; then
+# 2. Auto-detect screen resolution
+have xrandr && { xrandr --auto 2>/dev/null || true; }
+
+# 3. Default cursor + NumLock on + disable beep + screensaver/power saving
+xsetroot -cursor_name left_ptr 2>/dev/null || true
+have numlockx && numlockx on
+xset b off 2>/dev/null || true
+xset s 600 600 2>/dev/null || true          # screensaver after 10 minutes
+xset dpms 0 0 900 2>/dev/null || true       # DPMS: screen off after 15 minutes
+
+# 4. Keyboard: Vietnamese / multilingual input method (Fcitx5 or IBus if installed)
+if have fcitx5; then
+  export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+  fcitx5 -d 2>/dev/null &
+elif have ibus-daemon; then
+  export GTK_IM_MODULE=ibus QT_IM_MODULE=ibus XMODIFIERS=@im=ibus
+  ibus-daemon -drx 2>/dev/null &
+fi
+
+# 5. Compositor (Picom)
+if have picom; then
   picom -b --config /etc/xdg/picom.conf 2>/dev/null || picom -b --backend xrender 2>/dev/null || true
 fi
 
-# 4. PCManFM quản lý Desktop (Wallpaper + Desktop Icons theo phong cách Slax)
-if command -v pcmanfm >/dev/null 2>&1; then
+# 6. PCManFM manages the Desktop (wallpaper + desktop icons, Slax-style)
+if have pcmanfm; then
   pcmanfm --desktop &
 else
-  # Fallback nếu pcmanfm chưa chạy: đặt hình nền bằng feh hoặc màu nền đơn
   WALLPAPER="/usr/share/backgrounds/hyggshi/wallpaper.png"
   [ ! -f "$WALLPAPER" ] && WALLPAPER="/usr/share/backgrounds/Verdant-Valley.png"
-  if [ -f "$WALLPAPER" ] && command -v feh >/dev/null 2>&1; then
+  if [ -f "$WALLPAPER" ] && have feh; then
     feh --bg-fill "$WALLPAPER" 2>/dev/null &
   else
     xsetroot -solid "#1a1b26" 2>/dev/null || true
   fi
 fi
 
-# 5. Polkit authentication agent
-if command -v lxpolkit >/dev/null 2>&1; then
+# 7. Polkit authentication agent (shows the password prompt for pkexec / mount / installer)
+#    Note: polkitd is a system daemon, NOT an agent -> do not run it in the user session.
+if have lxpolkit; then
   lxpolkit &
-elif command -v mate-polkit >/dev/null 2>&1; then
+elif [ -x /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 ]; then
+  /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 &
+elif have mate-polkit; then
   mate-polkit &
-elif command -v /usr/lib/polkit-1/polkitd >/dev/null 2>&1; then
-  /usr/lib/polkit-1/polkitd &
 fi
 
-# 6. Network Manager applet (systray trong tint2)
-if command -v nm-applet >/dev/null 2>&1; then
-  nm-applet &
+# 8. Notification daemon — tint2 uses notify-send for the low-battery warning
+if have dunst; then
+  dunst -conf /etc/xdg/dunst/dunstrc 2>/dev/null &
 fi
 
-# 7. Volume controller applet (systray trong tint2)
-if command -v pasystray >/dev/null 2>&1; then
-  pasystray &
+# 9. Auto-lock the screen when idle (light-locker or xss-lock)
+if have light-locker; then
+  light-locker --lock-after-screensaver=0 &
+elif have xss-lock && have i3lock; then
+  xss-lock -- i3lock -c 1a1b26 &
 fi
 
-# 8. Sound shortcut daemon nếu có
-if command -v hyggshi-sound-shortcut >/dev/null 2>&1; then
-  hyggshi-sound-shortcut &
+# 10. Auto-mount USB / external drives + systray icon
+if have udiskie; then
+  udiskie --tray --automount &
 fi
 
-# 9. Taskbar (Tint2)
-if command -v tint2 >/dev/null 2>&1; then
-  tint2 &
+# 11. Network Manager applet (systray trong tint2)
+have nm-applet && nm-applet &
+
+# 12. Bluetooth applet (if installed)
+have blueman-applet && blueman-applet &
+
+# 13. Volume controller applet (systray trong tint2)
+have pasystray && pasystray &
+
+# 14. Sound shortcut daemon, if present
+have hyggshi-sound-shortcut && hyggshi-sound-shortcut &
+
+# 15. Run standard XDG autostart apps (~/.config/autostart, /etc/xdg/autostart)
+if have dex; then
+  dex -a -s /etc/xdg/autostart/:"$HOME/.config/autostart/" 2>/dev/null &
 fi
 
-# 10. Start Window Manager (Fluxbox) — PHẢI là lệnh cuối cùng
+# 16. Taskbar (Tint2)
+have tint2 && tint2 &
+
+# 17. Start Window Manager (Fluxbox) — MUST be the last command
 exec fluxbox

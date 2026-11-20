@@ -1,0 +1,15 @@
+#!/bin/sh
+# Usage: hyggshi-brightness up|down
+STEP=10
+case "$1" in
+  up)   OP="+${STEP}%";  XB="-inc $STEP" ;;
+  down) OP="${STEP}%-";  XB="-dec $STEP" ;;
+  *) echo "Usage: $0 up|down"; exit 1 ;;
+esac
+if command -v brightnessctl >/dev/null 2>&1; then
+  brightnessctl set "$OP" >/dev/null
+elif command -v xbacklight >/dev/null 2>&1; then
+  xbacklight $XB
+elif command -v light >/dev/null 2>&1; then
+  [ "$1" = up ] && light -A $STEP || light -U $STEP
+fi

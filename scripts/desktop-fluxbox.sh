@@ -23,6 +23,9 @@ mkdir -p /etc/xdg/pcmanfm/default
 mkdir -p /usr/share/backgrounds/hyggshi
 mkdir -p /usr/share/xsessions
 mkdir -p /usr/share/applications
+mkdir -p /etc/xdg/dunst
+mkdir -p /etc/xdg/hyggshi
+mkdir -p /usr/local/bin
 
 # 3. Copy cấu hình từ staged source (/tmp/hcl-filecopy-src) nếu có
 FLUX_SRC="/tmp/hcl-filecopy-src/iso-config/fluxbox"
@@ -37,6 +40,13 @@ if [ -d "$FLUX_SRC" ]; then
   [ -f "$FLUX_SRC/pcmanfm.conf" ]          && cp -f "$FLUX_SRC/pcmanfm.conf"          /etc/xdg/pcmanfm/default/pcmanfm.conf
   [ -f "$FLUX_SRC/desktop-items-0.conf" ]  && cp -f "$FLUX_SRC/desktop-items-0.conf"  /etc/xdg/pcmanfm/default/desktop-items-0.conf
   [ -f "$FLUX_SRC/gsimplecal.conf" ]       && { mkdir -p /etc/xdg/gsimplecal; cp -f "$FLUX_SRC/gsimplecal.conf" /etc/xdg/gsimplecal/config; }
+  [ -f "$FLUX_SRC/apps" ]                  && cp -f "$FLUX_SRC/apps"                  /etc/X11/fluxbox/apps
+  [ -f "$FLUX_SRC/dunstrc" ]               && cp -f "$FLUX_SRC/dunstrc"               /etc/xdg/dunst/dunstrc
+  [ -f "$FLUX_SRC/Xresources" ]            && cp -f "$FLUX_SRC/Xresources"            /etc/xdg/hyggshi/Xresources
+  if [ -d "$FLUX_SRC/bin" ]; then
+    cp -rf "$FLUX_SRC/bin/"* /usr/local/bin/ 2>/dev/null || true
+    chmod 0755 /usr/local/bin/hyggshi-* 2>/dev/null || true
+  fi
   if [ -d "$FLUX_SRC/styles" ]; then
     cp -rf "$FLUX_SRC/styles/"* /usr/share/fluxbox/styles/ 2>/dev/null || true
   fi
@@ -138,6 +148,7 @@ mkdir -p /etc/skel/.config/rofi
 mkdir -p /etc/skel/.config/picom
 mkdir -p /etc/skel/.config/pcmanfm/default
 mkdir -p /etc/skel/.config/gsimplecal
+mkdir -p /etc/skel/.config/dunst
 mkdir -p /etc/skel/Desktop
 
 # Copy các file của Fluxbox vào skel
@@ -146,6 +157,7 @@ mkdir -p /etc/skel/Desktop
 [ -f /etc/X11/fluxbox/menu ]          && cp -f /etc/X11/fluxbox/menu          /etc/skel/.fluxbox/menu
 [ -f /etc/X11/fluxbox/keys ]          && cp -f /etc/X11/fluxbox/keys          /etc/skel/.fluxbox/keys
 [ -f /etc/X11/fluxbox/startup ]       && cp -f /etc/X11/fluxbox/startup       /etc/skel/.fluxbox/startup
+[ -f /etc/X11/fluxbox/apps ]          && cp -f /etc/X11/fluxbox/apps          /etc/skel/.fluxbox/apps
 
 # Đảm bảo /etc/skel/.fluxbox/startup luôn tồn tại và có quyền thực thi
 if [ ! -f /etc/skel/.fluxbox/startup ] && [ -f "$FLUX_SRC/startup" ]; then
@@ -191,7 +203,13 @@ fi
 # gsimplecal user skeleton (popup lịch khi click vào đồng hồ)
 [ -f /etc/xdg/gsimplecal/config ] && cp -f /etc/xdg/gsimplecal/config /etc/skel/.config/gsimplecal/config
 
+# Dunst user skeleton (thông báo)
+[ -f /etc/xdg/dunst/dunstrc ] && cp -f /etc/xdg/dunst/dunstrc /etc/skel/.config/dunst/dunstrc
+
 # xterm user skeleton (.Xresources)
+if [ -f /etc/xdg/hyggshi/Xresources ]; then
+  cp -f /etc/xdg/hyggshi/Xresources /etc/skel/.Xresources
+else
 cat <<'EOF' > /etc/skel/.Xresources
 ! Hyggshi OS Flex — xterm color configuration (Hyggshi Dark)
 xterm*faceName: Monospace
@@ -219,6 +237,7 @@ xterm*color13: #bb9af7
 xterm*color14: #7dcfff
 xterm*color15: #c0caf5
 EOF
+fi
 mkdir -p /etc/X11/app-defaults
 cp -f /etc/skel/.Xresources /etc/X11/app-defaults/XTerm-color 2>/dev/null || true
 
@@ -268,6 +287,7 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
              "$USER_HOME/.config/picom" \
              "$USER_HOME/.config/pcmanfm/default" \
              "$USER_HOME/.config/gsimplecal" \
+             "$USER_HOME/.config/dunst" \
              "$USER_HOME/Desktop"
     rm -f "$USER_HOME/Desktop/calamares.desktop" 2>/dev/null || true
     cp -rf /etc/skel/.fluxbox/. "$USER_HOME/.fluxbox/" 2>/dev/null || true
@@ -282,6 +302,8 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
       cp -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf "$USER_HOME/.config/pcmanfm/default/desktop-items-0.conf" 2>/dev/null || true
     [ -f /etc/skel/.config/gsimplecal/config ] && \
       cp -f /etc/skel/.config/gsimplecal/config "$USER_HOME/.config/gsimplecal/config" 2>/dev/null || true
+    [ -f /etc/skel/.config/dunst/dunstrc ] && \
+      cp -f /etc/skel/.config/dunst/dunstrc "$USER_HOME/.config/dunst/dunstrc" 2>/dev/null || true
     [ -f /etc/skel/Desktop/install-hyggshi-os.desktop ] && \
       cp -f /etc/skel/Desktop/install-hyggshi-os.desktop "$USER_HOME/Desktop/" 2>/dev/null || true
     
@@ -294,6 +316,7 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
       "$USER_HOME/Desktop" \
       "$USER_HOME/.Xresources" \
       "$USER_HOME/.xinitrc" 2>/dev/null || true
+    chmod 0755 /usr/local/bin/hyggshi-* 2>/dev/null || true
     echo "OK: đã sao chép cấu hình Fluxbox/Tint2/PCManFM vào $USER_HOME"
   fi
 fi

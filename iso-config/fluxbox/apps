@@ -1,0 +1,13 @@
+# Per-window rules — small dialogs stay on top and skip the Fluxbox taskbar
+[app] (name=gsimplecal)
+  [Deco] {NONE}
+  [Sticky] {yes}
+  [Layer] {2}
+[end]
+[app] (name=pavucontrol)
+  [Dimensions] {640 480}
+  [Position] (CENTER) {0 0}
+[end]
+[app] (name=nm-connection-editor)
+  [Position] (CENTER) {0 0}
+[end]

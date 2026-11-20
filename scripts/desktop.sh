@@ -714,13 +714,21 @@ case "$DE" in
       lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
       menu lxpolkit feh dbus-x11 \
       network-manager-gnome pasystray gsimplecal \
+      dunst libnotify-bin udiskie light-locker i3lock \
+      scrot xclip brightnessctl playerctl numlockx htop \
+      arandr lxappearance pavucontrol blueman dex xdg-user-dirs \
+      fonts-noto fonts-noto-color-emoji papirus-icon-theme \
       at-spi2-core libglib2.0-bin 2>/dev/null || \
     apt-get install -y \
       fluxbox tint2 pcmanfm rofi picom xterm \
       xorg xserver-xorg xserver-xorg-input-all \
       xserver-xorg-video-fbdev xserver-xorg-video-vesa \
       x11-xserver-utils lightdm lightdm-gtk-greeter \
-      menu lxpolkit feh dbus-x11 pasystray gsimplecal
+      menu lxpolkit feh dbus-x11 pasystray gsimplecal \
+      dunst libnotify-bin udiskie light-locker i3lock \
+      scrot xclip brightnessctl playerctl numlockx htop \
+      arandr lxappearance pavucontrol blueman dex xdg-user-dirs \
+      fonts-noto fonts-noto-color-emoji papirus-icon-theme
 
     if [ -f /tmp/desktop-fluxbox.sh ]; then
       echo "===== Chạy /tmp/desktop-fluxbox.sh (cấu hình môi trường Flex Edition) ====="

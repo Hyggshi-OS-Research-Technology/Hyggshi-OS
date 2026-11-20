@@ -1,0 +1,31 @@
+# Dunst — notifications for Hyggshi OS Flex (same Tokyo Night palette)
+[global]
+    monitor = 0
+    follow = mouse
+    width = (200, 360)
+    origin = top-right
+    offset = 16x16
+    notification_limit = 5
+    padding = 10
+    horizontal_padding = 12
+    frame_width = 1
+    frame_color = "#414868"
+    corner_radius = 6
+    font = Sans 10
+    markup = full
+    format = "<b>%s</b>\n%b"
+    icon_position = left
+    max_icon_size = 40
+    timeout = 5
+
+[urgency_low]
+    background = "#1a1b26"
+    foreground = "#a9b1d6"
+[urgency_normal]
+    background = "#24283b"
+    foreground = "#c0caf5"
+[urgency_critical]
+    background = "#24283b"
+    foreground = "#f7768e"
+    frame_color = "#f7768e"
+    timeout = 0

@@ -1,0 +1,36 @@
+! Hyggshi OS Flex — readable xterm (Tokyo Night)
+xterm*faceName: Monospace
+xterm*faceSize: 11
+xterm*background: #1a1b26
+xterm*foreground: #c0caf5
+xterm*cursorColor: #7aa2f7
+xterm*color0: #15161e
+xterm*color8: #414868
+xterm*color1: #f7768e
+xterm*color9: #f7768e
+xterm*color2: #9ece6a
+xterm*color10: #9ece6a
+xterm*color3: #e0af68
+xterm*color11: #e0af68
+xterm*color4: #7aa2f7
+xterm*color12: #7aa2f7
+xterm*color5: #bb9af7
+xterm*color13: #bb9af7
+xterm*color6: #7dcfff
+xterm*color14: #7dcfff
+xterm*color7: #a9b1d6
+xterm*color15: #c0caf5
+xterm*saveLines: 10000
+xterm*scrollBar: false
+xterm*selectToClipboard: true
+xterm*utf8: 1
+xterm*metaSendsEscape: true
+xterm*termName: xterm-256color
+xterm*VT100.translations: #override \n\
+    Ctrl Shift <Key>C: copy-selection(CLIPBOARD) \n\
+    Ctrl Shift <Key>V: insert-selection(CLIPBOARD)
+Xft.dpi: 96
+Xft.antialias: 1
+Xft.hinting: 1
+Xft.rgba: rgb
+Xft.hintstyle: hintslight

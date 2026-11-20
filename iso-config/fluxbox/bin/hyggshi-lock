@@ -1,0 +1,7 @@
+#!/bin/sh
+# Lock screen — try each available locker in turn
+if command -v light-locker-command >/dev/null 2>&1; then exec light-locker-command -l; fi
+if command -v xflock4 >/dev/null 2>&1; then exec xflock4; fi
+if command -v i3lock >/dev/null 2>&1; then exec i3lock -c 1a1b26; fi
+if command -v xdg-screensaver >/dev/null 2>&1; then exec xdg-screensaver lock; fi
+notify-send "Hyggshi OS" "No screen locker installed (light-locker or i3lock)" 2>/dev/null

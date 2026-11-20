@@ -1,0 +1,11 @@
+#!/bin/sh
+# Power menu using Rofi
+CHOICE=$(printf '%s\n' "Lock screen" "Logout" "Suspend" "Reboot" "Shutdown" \
+  | rofi -dmenu -i -p "Power" -theme-str 'window {width: 320px;} listview {lines: 5;}')
+case "$CHOICE" in
+  "Lock screen")  hyggshi-lock ;;
+  "Logout")      fluxbox-remote exit 2>/dev/null || pkill -u "$USER" fluxbox ;;
+  "Suspend")            systemctl suspend ;;
+  "Reboot")  systemctl reboot ;;
+  "Shutdown")        systemctl poweroff ;;
+esac

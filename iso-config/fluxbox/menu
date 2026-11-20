@@ -2,6 +2,7 @@
   [exec] (Application Launcher) {rofi -show drun -show-icons}
   [exec] (Terminal) {xterm}
   [exec] (File Manager) {pcmanfm}
+  [exec] (Web Browser) {x-www-browser}
   [exec] (Install Hyggshi OS) {pkexec calamares}
   [separator]
   [submenu] (Applications)
@@ -9,18 +10,32 @@
       [exec] (File Manager) {pcmanfm}
       [exec] (Terminal) {xterm}
       [exec] (Text Editor) {xterm -e nano}
+      [exec] (Calendar) {gsimplecal}
+      [exec] (Screenshot) {hyggshi-screenshot area}
     [end]
     [submenu] (System)
       [exec] (App Launcher) {rofi -show drun -show-icons}
-      [exec] (Task Manager) {xterm -e top}
+      [exec] (Task Manager) {xterm -e sh -c 'htop || top'}
       [exec] (System Info) {xterm -hold -e fastfetch}
+      [exec] (Keyboard Shortcuts) {hyggshi-help}
     [end]
     [submenu] (Network)
       [exec] (Web Browser) {x-www-browser}
+      [exec] (Network Connections) {nm-connection-editor}
+      [exec] (Bluetooth) {blueman-manager}
     [end]
     [submenu] (Audio)
       [exec] (Volume Control) {pavucontrol}
     [end]
+  [end]
+  [submenu] (Settings)
+    [exec] (Display) {arandr}
+    [exec] (Appearance) {lxappearance}
+    [exec] (Network) {nm-connection-editor}
+    [exec] (Sound) {pavucontrol}
+    [exec] (Bluetooth) {blueman-manager}
+    [exec] (Input Method) {fcitx5-configtool}
+    [exec] (Default Applications) {xterm -e sh -c 'echo "Run: sudo update-alternatives --config x-www-browser"; exec $SHELL'}
   [end]
   [separator]
   [submenu] (Styles) {Choose a style...}
@@ -30,6 +45,11 @@
   [reconfig] (Reload Fluxbox)
   [restart] (Restart Fluxbox)
   [separator]
-  [exec] (Lock Screen) {xflock4 || light-locker-command -l || true}
+  [exec] (Lock Screen) {hyggshi-lock}
+  [submenu] (Power)
+    [exec] (Suspend) {systemctl suspend}
+    [exec] (Reboot) {systemctl reboot}
+    [exec] (Shutdown) {systemctl poweroff}
+  [end]
   [exit] (Exit / Logout)
 [end]
