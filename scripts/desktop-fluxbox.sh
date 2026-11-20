@@ -36,9 +36,28 @@ if [ -d "$FLUX_SRC" ]; then
   [ -f "$FLUX_SRC/picom.conf" ]            && cp -f "$FLUX_SRC/picom.conf"            /etc/xdg/picom.conf
   [ -f "$FLUX_SRC/pcmanfm.conf" ]          && cp -f "$FLUX_SRC/pcmanfm.conf"          /etc/xdg/pcmanfm/default/pcmanfm.conf
   [ -f "$FLUX_SRC/desktop-items-0.conf" ]  && cp -f "$FLUX_SRC/desktop-items-0.conf"  /etc/xdg/pcmanfm/default/desktop-items-0.conf
+  [ -f "$FLUX_SRC/gsimplecal.conf" ]       && { mkdir -p /etc/xdg/gsimplecal; cp -f "$FLUX_SRC/gsimplecal.conf" /etc/xdg/gsimplecal/config; }
   if [ -d "$FLUX_SRC/styles" ]; then
     cp -rf "$FLUX_SRC/styles/"* /usr/share/fluxbox/styles/ 2>/dev/null || true
   fi
+fi
+
+# Đảm bảo file cấu hình gsimplecal luôn tồn tại
+if [ ! -f /etc/xdg/gsimplecal/config ]; then
+  mkdir -p /etc/xdg/gsimplecal
+  cat <<'EOF' > /etc/xdg/gsimplecal/config
+show_calendar = 1
+show_week_numbers = 1
+mark_today = 1
+close_on_unfocus = 1
+close_on_mouseleave = 0
+mainwindow_decorated = 0
+mainwindow_keep_above = 1
+mainwindow_sticky = 1
+mainwindow_skip_taskbar = 1
+mainwindow_resizable = 0
+mainwindow_position = mouse
+EOF
 fi
 
 # Đảm bảo startup hệ thống có quyền thực thi
@@ -118,6 +137,7 @@ mkdir -p /etc/skel/.config/tint2
 mkdir -p /etc/skel/.config/rofi
 mkdir -p /etc/skel/.config/picom
 mkdir -p /etc/skel/.config/pcmanfm/default
+mkdir -p /etc/skel/.config/gsimplecal
 mkdir -p /etc/skel/Desktop
 
 # Copy các file của Fluxbox vào skel
@@ -166,6 +186,9 @@ fi
   cp -f /etc/xdg/pcmanfm/default/pcmanfm.conf /etc/skel/.config/pcmanfm/default/pcmanfm.conf
 [ -f /etc/xdg/pcmanfm/default/desktop-items-0.conf ] && \
   cp -f /etc/xdg/pcmanfm/default/desktop-items-0.conf /etc/skel/.config/pcmanfm/default/desktop-items-0.conf
+
+# gsimplecal user skeleton (popup lịch khi click vào đồng hồ)
+[ -f /etc/xdg/gsimplecal/config ] && cp -f /etc/xdg/gsimplecal/config /etc/skel/.config/gsimplecal/config
 
 # xterm user skeleton (.Xresources)
 cat <<'EOF' > /etc/skel/.Xresources
@@ -233,6 +256,7 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
              "$USER_HOME/.config/rofi" \
              "$USER_HOME/.config/picom" \
              "$USER_HOME/.config/pcmanfm/default" \
+             "$USER_HOME/.config/gsimplecal" \
              "$USER_HOME/Desktop"
     rm -f "$USER_HOME/Desktop/calamares.desktop" 2>/dev/null || true
     cp -rf /etc/skel/.fluxbox/. "$USER_HOME/.fluxbox/" 2>/dev/null || true
@@ -245,6 +269,8 @@ if [ -n "${OS_USERNAME:-}" ] && id -u "$OS_USERNAME" >/dev/null 2>&1; then
       cp -f /etc/skel/.config/pcmanfm/default/pcmanfm.conf "$USER_HOME/.config/pcmanfm/default/pcmanfm.conf" 2>/dev/null || true
     [ -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf ] && \
       cp -f /etc/skel/.config/pcmanfm/default/desktop-items-0.conf "$USER_HOME/.config/pcmanfm/default/desktop-items-0.conf" 2>/dev/null || true
+    [ -f /etc/skel/.config/gsimplecal/config ] && \
+      cp -f /etc/skel/.config/gsimplecal/config "$USER_HOME/.config/gsimplecal/config" 2>/dev/null || true
     [ -f /etc/skel/Desktop/install-hyggshi-os.desktop ] && \
       cp -f /etc/skel/Desktop/install-hyggshi-os.desktop "$USER_HOME/Desktop/" 2>/dev/null || true
     

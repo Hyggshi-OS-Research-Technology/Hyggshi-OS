@@ -713,14 +713,14 @@ case "$DE" in
       x11-xserver-utils x11-utils \
       lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
       menu lxpolkit feh dbus-x11 \
-      network-manager-gnome pasystray \
+      network-manager-gnome pasystray gsimplecal \
       at-spi2-core libglib2.0-bin 2>/dev/null || \
     apt-get install -y \
       fluxbox tint2 pcmanfm rofi picom xterm \
       xorg xserver-xorg xserver-xorg-input-all \
       xserver-xorg-video-fbdev xserver-xorg-video-vesa \
       x11-xserver-utils lightdm lightdm-gtk-greeter \
-      menu lxpolkit feh dbus-x11 pasystray
+      menu lxpolkit feh dbus-x11 pasystray gsimplecal
 
     if [ -f /tmp/desktop-fluxbox.sh ]; then
       echo "===== Chạy /tmp/desktop-fluxbox.sh (cấu hình môi trường Flex Edition) ====="
