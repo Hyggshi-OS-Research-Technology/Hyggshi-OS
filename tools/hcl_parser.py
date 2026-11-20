@@ -807,12 +807,16 @@ class Resolver:
                 if pv.type != "FUNCTION" or pv.value.get("name") != "customDE":
                     continue
                 custom = self.resolve_function(pv.value)
-                target = str(custom.get("target", "")).strip().lower().replace("-", "").replace("_", "")
-                target_can = BASE_CANONICAL.get(target, target)
+                target_val = custom.get("target")
+                if not target_val or str(target_val).strip().lower() in ("none", "null", ""):
+                    target_can = ""
+                else:
+                    target_raw = str(target_val).strip().lower().replace("-", "").replace("_", "")
+                    target_can = BASE_CANONICAL.get(target_raw, target_raw)
                 desktop = str(custom.get("resolved_desktop") or custom.get("object") or custom.get("DE-target") or custom.get("de-target") or "").strip().lower()
                 if desktop == "flex":
                     desktop = "fluxbox"
-                if target_can in ("all", ""):
+                if target_can == "all":
                     for b in ["debian", "ubuntu", "linuxmint"]:
                         if desktop:
                             out["custom_desktops"][b] = desktop
@@ -943,12 +947,11 @@ class Resolver:
         result = {"call": name, **kwargs}
         if name == "customDE":
             target_raw = str(kwargs.get("target", "")).strip().lower().replace("-", "").replace("_", "")
-            target = BASE_CANONICAL.get(target_raw, target_raw)
-            if not target:
-                target = "all"
-            elif target not in {"debian", "ubuntu", "linuxmint", "fedora", "alpine", "arch", "all"}:
+            target = BASE_CANONICAL.get(target_raw, target_raw) if target_raw else None
+            if target and target not in {"debian", "ubuntu", "linuxmint", "fedora", "alpine", "arch", "all"}:
                 self.diags.append(Diagnostic(
                     "error", f"customDE(target={target}) — base distro không được hỗ trợ."))
+            result["target"] = target
 
             raw_desktop = str(kwargs.get("object") or kwargs.get("DE-target") or kwargs.get("de-target") or "").strip()
             desktop_clean = raw_desktop
