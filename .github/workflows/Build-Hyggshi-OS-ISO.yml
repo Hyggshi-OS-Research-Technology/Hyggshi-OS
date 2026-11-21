@@ -873,9 +873,11 @@ jobs:
       # === 7) ISO: unmount, squashfs, grub, đóng gói ISO ===
       - name: "[iso.sh] Build squashfs + ISO bootable"
         env:
+          DE: ${{ matrix.desktop }}
           SECURE_BOOT_KEY: ${{ secrets.SECURE_BOOT_KEY }}
           SECURE_BOOT_CERT: ${{ secrets.SECURE_BOOT_CERT }}
         run: |
+          DE="${{ matrix.desktop }}" \
           HCL_SQUASHFS_MAX_COMPRESSION="${HCL_SQUASHFS_MAX_COMPRESSION:-}" \
           SQUASHFS_MAX_COMPRESSION="${SQUASHFS_MAX_COMPRESSION:-}" \
           bash scripts/iso.sh

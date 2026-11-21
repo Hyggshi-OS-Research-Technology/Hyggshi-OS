@@ -57,6 +57,10 @@ path-exclude=/usr/share/groff/*
 path-exclude=/usr/share/info/*
 path-exclude=/usr/share/lintian/*
 path-exclude=/usr/share/linda/*
+path-exclude=/usr/share/locale/*
+path-include=/usr/share/locale/en*
+path-include=/usr/share/locale/vi*
+path-include=/usr/share/locale/locale.alias
 DPKGCFGEOF
 
 echo "===== Cài kernel + base system (arch=$ARCH, fallback generic -> $(hyggshi_kernel_package "$ARCH")) ====="
@@ -517,29 +521,48 @@ echo "===== Firmware / driver phần cứng (wifi, GPU, virtio...) ====="
 # cài package mà giữ initrd cũ thì Plymouth/KMS có thể vẫn boot bằng fallback
 # và máy thật có thể mất Wi-Fi/GPU firmware.
 if [ "$BASE_DISTRO" = "debian" ]; then
-  DEBIAN_FW_PKGS="
-    firmware-linux-free
-    firmware-misc-nonfree
-    firmware-realtek
-    firmware-iwlwifi
-    firmware-atheros
-    firmware-brcm80211
-    firmware-mediatek
-    firmware-libertas
-    firmware-amd-graphics
-    firmware-intel-sound
-    firmware-sof-signed
-    firmware-qcom
-    firmware-qcom-soc
-    firmware-nvidia-gsp
-    firmware-ralink
-    firmware-ath9k-htc
-    firmware-zd1211
-    firmware-marvell
-    firmware-ti-connectivity
-    firmware-bnx2
-    firmware-bnx2x
-  "
+  if [ "$DE" = "fluxbox" ] || [ "$DE" = "flex" ]; then
+    # Hyggshi OS Flex Edition (Slax-style): Tối ưu dung lượng ISO ~790MB, chỉ giữ firmware PC/laptop thiết yếu
+    DEBIAN_FW_PKGS="
+      firmware-linux-free
+      firmware-misc-nonfree
+      firmware-realtek
+      firmware-iwlwifi
+      firmware-atheros
+      firmware-brcm80211
+      firmware-mediatek
+      firmware-amd-graphics
+      firmware-intel-sound
+      firmware-sof-signed
+      firmware-ralink
+      firmware-ath9k-htc
+      firmware-zd1211
+    "
+  else
+    DEBIAN_FW_PKGS="
+      firmware-linux-free
+      firmware-misc-nonfree
+      firmware-realtek
+      firmware-iwlwifi
+      firmware-atheros
+      firmware-brcm80211
+      firmware-mediatek
+      firmware-libertas
+      firmware-amd-graphics
+      firmware-intel-sound
+      firmware-sof-signed
+      firmware-qcom
+      firmware-qcom-soc
+      firmware-nvidia-gsp
+      firmware-ralink
+      firmware-ath9k-htc
+      firmware-zd1211
+      firmware-marvell
+      firmware-ti-connectivity
+      firmware-bnx2
+      firmware-bnx2x
+    "
+  fi
   # intel-microcode và amd64-microcode chỉ có trên kiến trúc x86/amd64,
   # không tồn tại trong repo arm64 — chỉ thêm khi build cho amd64.
   if [ "${ARCH:-amd64}" != "arm64" ]; then
@@ -704,8 +727,8 @@ case "$DE" in
 
   fluxbox|flex)
     echo "===== Cài đặt Hyggshi OS Flex Edition (Slax-style: Fluxbox + Tint2 + PCManFM + Rofi + Picom + xterm) ====="
-    # Cài đầy đủ Xorg drivers (fbdev + vesa) để tránh màn hình đen trong QEMU/VM
-    apt-get install -y \
+    # Cài đầy đủ Xorg drivers (fbdev + vesa) để tránh màn hình đen trong QEMU/VM; dùng --no-install-recommends để tối ưu dung lượng ISO
+    apt-get install -y --no-install-recommends \
       fluxbox tint2 pcmanfm rofi picom xterm \
       xorg xserver-xorg xserver-xorg-core \
       xserver-xorg-input-all xserver-xorg-video-all \
@@ -717,9 +740,9 @@ case "$DE" in
       dunst libnotify-bin udiskie light-locker i3lock \
       scrot xclip brightnessctl playerctl numlockx htop \
       arandr lxappearance pavucontrol blueman dex xdg-user-dirs \
-      fonts-noto fonts-noto-color-emoji papirus-icon-theme \
+      fonts-noto-core fonts-noto-color-emoji papirus-icon-theme \
       at-spi2-core libglib2.0-bin 2>/dev/null || \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
       fluxbox tint2 pcmanfm rofi picom xterm \
       xorg xserver-xorg xserver-xorg-input-all \
       xserver-xorg-video-fbdev xserver-xorg-video-vesa \
@@ -728,7 +751,7 @@ case "$DE" in
       dunst libnotify-bin udiskie light-locker i3lock \
       scrot xclip brightnessctl playerctl numlockx htop \
       arandr lxappearance pavucontrol blueman dex xdg-user-dirs \
-      fonts-noto fonts-noto-color-emoji papirus-icon-theme
+      fonts-noto-core fonts-noto-color-emoji papirus-icon-theme
 
     if [ -f /tmp/desktop-fluxbox.sh ]; then
       echo "===== Chạy /tmp/desktop-fluxbox.sh (cấu hình môi trường Flex Edition) ====="
@@ -1330,11 +1353,13 @@ echo "===== Công cụ dev cơ bản (cmake, gcc) ====="
 # đặt (hyggshi-welcome, hyggshi-theme-daemon — xem scripts/make-welcome.sh,
 # make-theme-daemon.sh), không chỉ lúc build ISO trên CI. Best-effort (không
 # fatal): thiếu 1 trong 2 gói này không nên làm hỏng cả build ISO.
-for pkg in cmake gcc; do
-  if ! apt-get install -y "$pkg"; then
-    echo "CẢNH BÁO: cài gói '$pkg' thất bại — không fatal, nhưng build C++ trên máy đích sẽ thiếu công cụ này." >&2
-  fi
-done
+if [ "$DE" != "fluxbox" ] && [ "$DE" != "flex" ]; then
+  for pkg in cmake gcc; do
+    if ! apt-get install -y "$pkg"; then
+      echo "CẢNH BÁO: cài gói '$pkg' thất bại — không fatal, nhưng build C++ trên máy đích sẽ thiếu công cụ này." >&2
+    fi
+  done
+fi
 
 echo "===== Flatpak + Software Center (Flathub-only) ====="
 # Chỉ dùng Flathub trong Software. Debian trixie gnome-software vẫn có
@@ -1343,8 +1368,11 @@ echo "===== Flatpak + Software Center (Flathub-only) ====="
 # PackageKit (gnome-software cần libpackagekit), chỉ block plugin lúc runtime.
 # Đồng thời cài fuse3 + nạp module fuse để Flatpak revokefs-fuse có thể mount
 # runtime (lỗi "Could not mount ... Child process exited with code 1").
-for pkg in flatpak fuse3 gnome-software gnome-software-plugin-flatpak \
-           xdg-desktop-portal xdg-desktop-portal-xapp xdg-desktop-portal-gtk; do
+FLATPAK_PKGS="flatpak fuse3 xdg-desktop-portal xdg-desktop-portal-gtk"
+if [ "$DE" != "fluxbox" ] && [ "$DE" != "flex" ]; then
+  FLATPAK_PKGS="$FLATPAK_PKGS gnome-software gnome-software-plugin-flatpak xdg-desktop-portal-xapp"
+fi
+for pkg in $FLATPAK_PKGS; do
   if ! apt-get install -y --no-install-recommends "$pkg"; then
     echo "CẢNH BÁO: cài gói '$pkg' thất bại — bỏ qua gói này." >&2
   fi
@@ -2648,6 +2676,16 @@ for f in /tmp/*-copyright; do
   mkdir -p "/usr/share/doc/$pkgname" 2>/dev/null || true
   mv "$f" "/usr/share/doc/$pkgname/copyright" 2>/dev/null || true
 done
+
+# Dọn các locale không dùng (chỉ giữ en*, vi*, locale.alias để tiết kiệm ~200MB)
+if [ -d /usr/share/locale ]; then
+  find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name 'en*' ! -name 'vi*' ! -name 'locale.alias' -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# Dọn Python bytecode cache, debconf backups, dpkg backups
+find /usr -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find /usr -type f -name '*.pyc' -delete 2>/dev/null || true
+rm -f /var/cache/debconf/*-old /var/lib/dpkg/*-old 2>/dev/null || true
 
 # Cache/log/tmp không cần đóng gói trong ISO — hệ thống tự tạo lại lúc chạy
 # thật. truncate thay vì rm cho log hệ thống vẫn muốn giữ file (một số

@@ -47,6 +47,19 @@ clean_virtual_dirs() {
   # Truncate logs
   sudo find "$SFS/var/log" -type f -exec truncate -s 0 {} \; 2>/dev/null || true
 
+  # Xoá Python caches, debconf old files, dpkg old files
+  sudo find "$SFS/usr" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+  sudo find "$SFS/usr" -type f -name '*.pyc' -delete 2>/dev/null || true
+  sudo rm -f "$SFS/var/cache/debconf"/*-old "$SFS/var/lib/dpkg"/*-old 2>/dev/null || true
+
+  # Dọn locales không cần thiết (chỉ giữ en*, vi*, locale.alias)
+  if [ -d "$SFS/usr/share/locale" ]; then
+    sudo find "$SFS/usr/share/locale" -mindepth 1 -maxdepth 1 ! -name 'en*' ! -name 'vi*' ! -name 'locale.alias' -exec rm -rf {} + 2>/dev/null || true
+  fi
+
+  # Dọn docs/man sót lại
+  sudo rm -rf "$SFS/usr/share/man"/* "$SFS/usr/share/info"/* "$SFS/usr/share/groff"/* 2>/dev/null || true
+
   # Đảm bảo các virtual fs dir trống sạch trước khi pack vào squashfs.
   # KHÔNG dùng -e proc/sys/dev/run để loại trừ — nếu loại trừ, các thư mục
   # này sẽ KHÔNG TỒN TẠI trong squashfs, casper/live-boot sẽ không có chỗ để mount
@@ -87,6 +100,11 @@ if [ -z "$MAX_COMP" ] || [ "$MAX_COMP" = "false" ]; then
   if [ -f iso-config/config/config.ini ]; then
     MAX_COMP=$(grep -E '^[[:space:]]*squashfs-max-compression[[:space:]]*=' iso-config/config/config.ini 2>/dev/null | tail -n1 | tr -d ' "' | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]' || echo "false")
   fi
+fi
+
+# Flex Edition (Fluxbox) luôn dùng nén xz tối đa để đạt kích thước ISO ~790MB
+if [ "${DE:-}" = "fluxbox" ] || [ "${DE:-}" = "flex" ]; then
+  MAX_COMP="true"
 fi
 
 EXCLUDE_OPTS=(-wildcards -e "tmp/*" -e "tmp/.*" -e "var/tmp/*" -e "var/tmp/.*" -e "var/cache/apt/archives/*" -e "var/lib/apt/lists/*" -e "root/.cache/*" -e "home/*/.cache/*")

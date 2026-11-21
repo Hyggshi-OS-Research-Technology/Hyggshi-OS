@@ -11,6 +11,6 @@ playerctl                    # media keys
 numlockx htop                # utilities
 arandr lxappearance pavucontrol network-manager-gnome blueman
 dex xdg-user-dirs            # XDG autostart + user directories
-fonts-noto fonts-noto-color-emoji papirus-icon-theme
+fonts-noto-core fonts-noto-color-emoji papirus-icon-theme
 x11-xserver-utils            # xrandr, xset, xrdb
 fcitx5 fcitx5-config-qt      # input method (or your NexKey)

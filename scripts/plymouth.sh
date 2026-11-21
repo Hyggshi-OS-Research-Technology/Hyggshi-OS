@@ -64,10 +64,6 @@ if [ -d "iso-config/branding/plymouth" ]; then
   sudo mkdir -p "$CHROOT/usr/share/plymouth/themes"
   sudo cp -r iso-config/branding/plymouth/* "$CHROOT/usr/share/plymouth/themes/" 2>/dev/null || true
 fi
-if [ -d "iso-config/branding" ]; then
-  sudo mkdir -p "$CHROOT/usr/share/plymouth/themes"
-  sudo cp -r iso-config/branding/* "$CHROOT/usr/share/plymouth/themes/" 2>/dev/null || true
-fi
 
 echo "===== Plymouth boot splash (logo + spinner tròn xoay) ====="
 # Theme riêng "hyggshi-boot" dùng module "script" của Plymouth — logo tự
